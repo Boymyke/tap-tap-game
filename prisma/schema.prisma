@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountTier { FREE ODOGWO }
+enum PoolStatus { DRAFT SCHEDULED OPEN LIVE LOCKED CALCULATING COMPLETED CANCELLED }
+enum LedgerType { CREDIT DEBIT }
+enum FraudStatus { NORMAL SUSPICIOUS REVIEW BLOCKED }
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String
+  displayName   String
+  tier          AccountTier  @default(FREE)
+  fraudStatus   FraudStatus  @default(NORMAL)
+  lifetimeTaps  BigInt       @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  wallet        Wallet?
+  poolEntries   PoolEntry[]
+  sessions      GameSession[]
+  tapBatches    TapBatch[]
+  suggestions   Suggestion[]
+}
+
+model Pool {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+  status          PoolStatus   @default(DRAFT)
+  startsAt        DateTime
+  endsAt          DateTime
+  entryFeeKobo    BigInt       @default(0)
+  odogwoOnly      Boolean      @default(false)
+  boostersAllowed Boolean      @default(false)
+  maxPlayers      Int?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  entries         PoolEntry[]
+  sessions        GameSession[]
+  tapBatches      TapBatch[]
+  @@index([status, startsAt, endsAt])
+}
+
+model PoolEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  poolId    String
+  joinedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pool      Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  @@unique([userId, poolId])
+  @@index([poolId])
+}
+
+model GameSession {
+  id          String   @id @default(cuid())
+  userId      String
+  poolId      String
+  nonce       String   @unique
+  lastSequence Int     @default(0)
+  startedAt   DateTime @default(now())
+  expiresAt   DateTime
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pool        Pool     @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  tapBatches  TapBatch[]
+  @@index([userId, poolId])
+}
+
+model TapBatch {
+  id          String      @id @default(cuid())
+  userId      String
+  poolId      String
+  sessionId   String
+  sequence    Int
+  submitted   Int
+  accepted    Int
+  rejected    Int         @default(0)
+  createdAt   DateTime    @default(now())
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pool        Pool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  session     GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  @@unique([sessionId, sequence])
+  @@index([poolId, userId])
+}
+
+model Wallet {
+  id           String              @id @default(cuid())
+  userId       String              @unique
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id          String     @id @default(cuid())
+  walletId    String
+  type        LedgerType
+  amountKobo  BigInt
+  reference   String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+  wallet      Wallet     @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  @@index([walletId, createdAt])
+}
+
+model Suggestion {
+  id        String   @id @default(cuid())
+  userId    String?
+  name      String
+  email     String?
+  message   String
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model AdPlacement {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  title     String
+  imageUrl  String?
+  targetUrl String?
+  active    Boolean  @default(false)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
