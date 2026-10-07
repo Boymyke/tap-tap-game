@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nak-am",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-07",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nak-am",
+      "database_id": "a2dcb4a4-f383-4a52-ad4a-15405b049cc8"
+    }
+  ]
+}
