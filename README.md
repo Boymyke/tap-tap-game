@@ -2,63 +2,46 @@
 
 NAK AM is a competitive tapping game powered by Ferrn Agency.
 
-## MVP goal
+## Current MVP
 
-The first release prioritizes correct gameplay and backend structure over custom visual design. The application is being structured for an initial audience of roughly 1,000 users with a clear path to scale horizontally.
-
-## Current MVP surface
-
-- Single-page landing site
-- Navigation to Play, How to Play, Policy and Suggestions
-- Basic playable tap prototype
+- Real user signup/login sessions
 - Free and Odogwo account tiers
-- Advertising placement placeholders
-- PostgreSQL/Prisma production data model
-- Server-authoritative tap batch model
-- Wallet ledger foundation
-- Pool and game-session foundation
+- Admin pool creation
+- Pool joining
+- Server-verified batched tapping
+- Live leaderboard polling
+- Lifetime tap totals
+- Suggestions
+- How to Play and Policy pages
+- Advertising placements
+- D1-backed persistence
+- Cloudflare Workers deployment
 
-## Stack
+## Architecture
 
-- Next.js + React + TypeScript
-- PostgreSQL
-- Prisma
-- Redis planned for tap counters, rate limiting and live leaderboards
-- Paystack planned for payments
-- Cloudflare planned for CDN/WAF/rate limiting
+- Cloudflare Workers: website + API
+- Cloudflare D1: users, sessions, pools, scores, wallet ledger, ads and suggestions
+- Client-side tap batching to reduce server/database traffic
 
-## Required production services
+For higher sustained concurrency, the next scaling layer is a Durable Object per live pool so live scores stay out of D1 until settlement.
 
-1. PostgreSQL database
-2. Redis instance
-3. App hosting account
-4. Domain/DNS access
-5. Paystack API keys when wallet/payments are enabled
-6. Transactional email provider credentials when account verification/reset flows are enabled
-
-## Local setup
+## Local development
 
 ```bash
 npm install
-cp .env.example .env
-npm run prisma:generate
+npm run db:local
 npm run dev
 ```
 
-## Scale model
+## Deploy
 
-The browser is not trusted as the game authority. Taps are displayed instantly on the client, batched, validated on the server, incremented in Redis, reflected in live leaderboards, and periodically persisted to PostgreSQL. This avoids one database write per tap and makes the platform practical to scale beyond the first 1,000 users.
+```bash
+npm run db:migrate
+npm run deploy
+```
 
-## Next engineering milestones
+The D1 database binding is configured in `wrangler.jsonc` as `DB`.
 
-- Authentication
-- Pool admin CRUD and scheduling
-- Server tap-session API
-- Redis leaderboard
-- Anti-cheat validation
-- Odogwo subscription rules
-- Wallet ledger services
-- Paystack webhook verification
-- Admin dashboard
-- Real suggestion persistence
-- Ad campaign management
+## Important
+
+Real-money deposits, withdrawals and prize settlement are intentionally not enabled in this gameplay-first MVP. The wallet tables exist for the later payment phase.
