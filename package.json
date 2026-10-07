@@ -1,7 +1,0 @@
-{
-  "name": "tap-am-demo",
-  "private": true,
-  "version": "0.1.0",
-  "scripts": {"dev":"wrangler dev","deploy":"wrangler deploy","db:apply":"wrangler d1 execute tap-am-demo --remote --file=schema.sql"},
-  "devDependencies":{"wrangler":"^4.45.0"}
-}
