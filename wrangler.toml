@@ -1,9 +1,0 @@
-name = "tap-am-v2"
-main = "worker.js"
-compatibility_date = "2026-10-07"
-workers_dev = true
-
-[[d1_databases]]
-binding = "DB"
-database_name = "tap-am-v2"
-database_id = "e97a94ce-0f10-4a87-a290-d77b1822b830"
