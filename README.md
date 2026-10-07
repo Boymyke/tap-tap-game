@@ -1,45 +1,39 @@
-# Lagos Mode
+# Tap Am — Demo MVP
 
-Mobile-first Lagos life/tapping game MVP.
+Tap Am is a mobile-first competitive tapping game demo running on Cloudflare Workers with a Cloudflare D1 database.
 
-## Live Cloudflare deployment
+## Live demo scope
 
-- Landing page: https://lagos-mode.aiwebcourse.workers.dev/
-- Game: https://lagos-mode.aiwebcourse.workers.dev/play
-- Admin: https://lagos-mode.aiwebcourse.workers.dev/admin
-- Production database: Cloudflare D1 database `lagos-mode-prod`
+- One-page landing page with Free vs Mega account explanation and rules
+- Shared user signup/login with hashed passwords and secure HttpOnly sessions
+- Free and Mega plans, with an in-demo Mega upgrade
+- Timed tap pools with start/end dates, entry amount, prize seed, creator, booster rules, join/leave/rejoin/share flows
+- Per-pool player count and tap totals
+- Standard and Mega-only boosters
+- Referral links that reward the inviter with a booster
+- Daily, monthly and lifetime tap stats
+- Separate funded and earned wallet balances
+- Mobile-first tap console
+- Free users tap one pool at a time; Mega users can link up to four pools to one tap box
+- Spaces feed where only the current top 10 Mega tappers can post
+- Super-admin dashboard with users, pools, taps, official pool creation and booster creation
 
-The live test deployment uses Cloudflare Workers + D1 so player creation, taps, story stage, shop data, billboard data, admin accounts/sessions and payment settings persist in a real database.
+## Demo payments
 
-On the first visit to `/admin`, create the first super-admin. After that the one-time setup is disabled. Admin passwords are PBKDF2-hashed, five failed attempts trigger a 30-minute lockout, sessions use Secure/HttpOnly/SameSite cookies, and the Paystack secret is AES-GCM encrypted before database storage.
+Funding is simulated in this demo. Real deposits, withdrawals and cash prize settlement are intentionally disabled until production payment, fraud, KYC/AML, age-control, chargeback, terms/privacy and applicable gaming/promotion compliance work is complete.
 
-## Included
+## Cloudflare
 
-- One-page landing page with rules and admin login link
-- Mobile-first virtual-phone game UI inspired by Lagos road/danfo visual language
-- Cloudflare D1 production database for the live Worker deployment
-- PostgreSQL/Drizzle application source for the Next.js build path
-- Player creation, unique life seeds and persisted story state foundation
-- Server-authoritative tap batches, adjustable tap zone and basic anti-cheat limits
-- Secure admin authentication and session handling
-- 5 failed admin logins -> 30-minute lockout
-- Paystack public/secret key settings in admin
-- Paystack secret encrypted at rest and never returned to the browser
-- Shops, phone upgrade inventory foundation and billboard inventory
+D1 database: `tap-am-demo`
 
-## Local Next.js setup
+Worker binding: `DB`
 
-1. Copy `.env.example` to `.env.local` and fill in the values.
-2. Create a PostgreSQL database and set `DATABASE_URL`.
-3. Install dependencies: `npm install`
-4. Create database tables: `npm run db:push`
-5. Create the first super admin: `npm run db:seed`
-6. Start locally: `npm run dev`
+## Local deploy
 
-## Payment safety
+```bash
+npm install
+npx wrangler d1 execute tap-am-demo --remote --file=schema.sql
+npx wrangler deploy
+```
 
-Do not commit real Paystack keys to GitHub or expose the secret key to client-side code. Enter the keys through the secure admin UI. The current MVP treats real-money payments as purchases only; payment initialization, webhook verification, receipts/refunds and production reconciliation still need to be completed before accepting public payments.
-
-## Next build phases
-
-Expand the live build into player businesses, jobs, housing, deeper phone upgrades, interactive billboard bidding/upload approval, social/chat, Vibe feed, Telegram integration, moderated user uploads, and complete Paystack purchase flows.
+Open `/admin` and use **First setup** once to create the super-admin account.
