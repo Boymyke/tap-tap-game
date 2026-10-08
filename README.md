@@ -52,6 +52,16 @@ npm run dev
 
 The Tap Am logo and backgrounds live in `public/assets` and are served as Workers static assets. The shared theme (colours from the Figma reference) is in `src/ui/theme.js`.
 
+## Preview link for testing the UI
+
+`wrangler.preview.jsonc` deploys this code to a separate Worker, `tap-am-ui-preview`, with its own D1 database (`tap-am-ui-preview`, schema already applied). It never touches the live `nak-am` Worker or its data.
+
+```bash
+npm install
+npx wrangler login      # once, if not already logged in
+npm run preview:deploy  # prints https://tap-am-ui-preview.<your-subdomain>.workers.dev
+```
+
 ## Upgrading an existing database
 
 The sign-up form made email optional and added `date_of_birth`, `terms_accepted_at` and `terms_version` to `users`. New databases get this from `schema.sql`. A database created before 8 Oct 2026 needs a one-time upgrade (it rebuilds `users` and keeps all existing rows):

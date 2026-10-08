@@ -1,0 +1,20 @@
+// Preview deployment for testing the new Tap Am UI.
+// Deploys to a separate Worker ("tap-am-ui-preview") with its own empty D1 database,
+// so the live "nak-am" Worker and its data are never touched.
+//   npm run preview:deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tap-am-ui-preview",
+  "main": "src/worker.js",
+  "assets": { "directory": "./public" },
+  "compatibility_date": "2026-10-08",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tap-am-ui-preview",
+      "database_id": "8b06ac2c-47da-449e-a2c2-9490498aca81"
+    }
+  ]
+}
