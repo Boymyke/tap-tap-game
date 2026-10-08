@@ -1,8 +1,10 @@
 import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
-import { homePage } from './ui/home.js';
+import { landingPage, demoPools } from './ui/landing.js';
+import { howToPlayPage, rulesPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
+import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
-import { COOKIE, json, html, uid, nowIso, esc, sessionCookie, getCookie, hashPassword, currentUser, createSession, sameOrigin } from './lib.js';
+import { json, html, uid, nowIso, esc, sessionCookie, hashPassword, currentUser, createSession, destroySession, sameOrigin, readJson, allow, clientIp } from './lib.js';
 
 async function requireUser(req,env){const user=await currentUser(req,env);return user?{user}:{response:json({error:'Unauthorized'},401)};}
 async function requireAdmin(req,env){const r=await requireUser(req,env);if(r.response)return r;if(r.user.role!=='ADMIN')return{response:json({error:'Admin only'},403)};return r;}
@@ -37,7 +39,7 @@ async function handleApi(req,env,path){
       return json({message:'Super admin created'},200,{'set-cookie':sessionCookie(sid)});
     }catch(e){console.error('setup-admin',e);await env.DB.prepare('DELETE FROM users WHERE id=?').bind(id).run().catch(()=>{});return json({error:'Could not create admin. Please retry.'},500);}
   }
-  if(path==='/api/logout'&&req.method==='POST'){const sid=getCookie(req,COOKIE);if(sid)await env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(sid).run();return json({message:'Logged out'},200,{'set-cookie':sessionCookie('',0)});}
+  if(path==='/api/logout'&&req.method==='POST'){await destroySession(req,env);return json({message:'Logged out'},200,{'set-cookie':sessionCookie('',0)});}
   if(path==='/api/suggestions'&&req.method==='POST'){const b=await body();if(String(b.message||'').trim().length<3)return json({error:'Suggestion is too short'},400);const user=await currentUser(req,env);await env.DB.prepare('INSERT INTO suggestions(id,user_id,name,email,message) VALUES(?,?,?,?,?)').bind(uid(),user?.id||null,String(b.name||'').trim()||null,String(b.email||'').trim()||null,String(b.message).trim().slice(0,2000)).run();return json({message:'Suggestion received. Thank you.'});}
   const join=path.match(/^\/api\/pools\/([^/]+)\/join$/);if(join&&req.method==='POST'){const a=await requireUser(req,env);if(a.response)return a.response;const p=await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(join[1]).first();if(!p)return json({error:'Pool not found'},404);if(p.min_tier==='ODOGWO'&&a.user.tier!=='ODOGWO')return json({error:'This pool is for Odogwo members'},403);const c=await env.DB.prepare('SELECT COUNT(*) c FROM pool_entries WHERE pool_id=?').bind(p.id).first();if(Number(c.c)>=Number(p.max_players))return json({error:'Pool is full'},409);await env.DB.prepare('INSERT OR IGNORE INTO pool_entries(pool_id,user_id) VALUES(?,?)').bind(p.id,a.user.id).run();return json({message:'Joined pool'});}
   const tap=path.match(/^\/api\/pools\/([^/]+)\/tap$/);if(tap&&req.method==='POST'){const a=await requireUser(req,env);if(a.response)return a.response;const b=await body(),n=Math.floor(Number(b.taps));if(!Number.isFinite(n)||n<1||n>20)return json({error:'Invalid tap batch'},400);const p=await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(tap[1]).first();if(!p)return json({error:'Pool not found'},404);const now=Date.now();if(now<Date.parse(p.starts_at))return json({error:'Pool has not started'},409);if(now>Date.parse(p.ends_at))return json({error:'Pool has ended'},409);const e=await env.DB.prepare('SELECT taps,last_batch_at FROM pool_entries WHERE pool_id=? AND user_id=?').bind(p.id,a.user.id).first();if(!e)return json({error:'Join the pool first'},403);if(e.last_batch_at&&now-Date.parse(e.last_batch_at)<700&&n>12)return json({error:'Tap batch rejected by anti-cheat'},429);await env.DB.batch([env.DB.prepare('UPDATE pool_entries SET taps=taps+?,last_batch_at=? WHERE pool_id=? AND user_id=?').bind(n,nowIso(),p.id,a.user.id),env.DB.prepare('UPDATE users SET lifetime_taps=lifetime_taps+? WHERE id=?').bind(n,a.user.id)]);const fresh=await env.DB.prepare('SELECT taps FROM pool_entries WHERE pool_id=? AND user_id=?').bind(p.id,a.user.id).first();return json({taps:fresh.taps,accepted:n});}
@@ -46,29 +48,89 @@ async function handleApi(req,env,path){
   return json({error:'Not found'},404);
 }
 
+// ── landing data ────────────────────────────────────────────────────────────
+async function siteStats(env){
+  const since=new Date(Date.now()-120000).toISOString();
+  const r=await env.DB.prepare('SELECT (SELECT COUNT(*) FROM visitors WHERE last_seen>?) AS online,(SELECT COUNT(*) FROM visitors) AS visits').bind(since).first();
+  return {online:Math.max(1,Number(r?.online||0)),visits:Number(r?.visits||0)};
+}
+async function featuredPools(env,user){
+  const href=user?'/dashboard':'/signup';
+  const demo=(await env.DB.prepare("SELECT value FROM settings WHERE key='landing_demo_pools'").first())?.value!=='0';
+  if(!demo){
+    const now=nowIso();
+    const r=await env.DB.prepare(`SELECT p.id,p.name,p.ends_at,p.entry_fee,p.min_tier,(SELECT COUNT(*) FROM pool_entries pe WHERE pe.pool_id=p.id) AS players
+      FROM pools p WHERE p.ends_at>? ORDER BY p.starts_at ASC LIMIT 6`).bind(now).all();
+    if(r.results.length) return r.results.map((p,i)=>({name:p.name,players:p.players,endsAt:p.ends_at,prize:0,color:['green','orange','gold','mustard'][i%4],href}));
+  }
+  return demoPools().map(p=>({...p,href}));
+}
+
+// ── extra API: presence + merch interest ────────────────────────────────────
+async function handleSiteApi(req,env,path){
+  if(path==='/api/presence'&&req.method==='POST'){
+    const {data,response}=await readJson(req);if(response)return response;
+    const vid=String(data.vid||'');
+    if(!/^[0-9a-z-]{10,40}$/i.test(vid))return json({error:'Bad visitor id'},400);
+    if(await allow(env,'presence:'+clientIp(req),120,3600)){
+      const now=nowIso();
+      await env.DB.prepare('INSERT INTO visitors(vid,first_seen,last_seen) VALUES(?,?,?) ON CONFLICT(vid) DO UPDATE SET last_seen=excluded.last_seen').bind(vid,now,now).run();
+    }
+    return json(await siteStats(env));
+  }
+  if(path==='/api/merch/notify'&&req.method==='POST'){
+    const {data,response}=await readJson(req);if(response)return response;
+    if(!await allow(env,'merch:'+clientIp(req),20,3600))return json({error:'Too many tries. Wait small.'},429);
+    const email=String(data.email||'').trim().toLowerCase(),item=String(data.item||'');
+    if(emailProblem(email))return json({error:'That email no look correct.'},400);
+    if(!/^[a-z0-9-]{2,40}$/.test(item))return json({error:'Unknown item.'},400);
+    await env.DB.prepare('INSERT OR IGNORE INTO merch_interest(email,item,created_at) VALUES(?,?,?)').bind(email,item,nowIso()).run();
+    return json({message:'Saved'});
+  }
+  return null;
+}
+
+const asResponse=(x,status=200)=>x instanceof Response?x:html(x,status);
+
 export default{async fetch(req,env){
   const requestId=uid();
+  let user=null;
   try{
-    const url=new URL(req.url),path=url.pathname;
-    if(path.startsWith('/api/'))return await handleApi(req,env,path);
-    const user=await currentUser(req,env);
-    if(path==='/'){
-      const now=nowIso();
-      const [ps,ad]=await Promise.all([
-        env.DB.prepare("SELECT id,name,description,starts_at,ends_at,status,entry_fee,min_tier FROM pools ORDER BY CASE WHEN ends_at>? AND starts_at<=? THEN 0 WHEN starts_at>? THEN 1 ELSE 2 END, starts_at DESC LIMIT 6").bind(now,now,now).all(),
-        env.DB.prepare('SELECT title,image_url,target_url FROM ads WHERE slot=? AND active=1').bind('TOP').first()
-      ]);
-      return html(homePage({user,pools:ps.results,ad}));
+    const url=new URL(req.url),path=url.pathname.length>1?url.pathname.replace(/\/+$/,''):url.pathname;
+    if(path.startsWith('/api/')){
+      if(req.method!=='GET'&&!sameOrigin(req))return json({error:'Request blocked.'},403);
+      const site=await handleSiteApi(req,env,path);if(site)return site;
+      return await handleApi(req,env,path);
     }
-    if(path==='/login'||path==='/signup'){if(user)return Response.redirect(new URL(user.role==='ADMIN'?'/admin':'/dashboard',req.url),302);return html(authPage(path.slice(1)));}
-    if(LEGAL_PATHS.includes(path.slice(1)))return html(legalPage(path.slice(1)));
-    if(path==='/policy')return Response.redirect(new URL('/privacy',req.url),301);
-    if(path==='/dashboard')return html(await pageDashboard(req,env,user));
-    if(path==='/play')return html(await pagePlay(req,env,user));
-    if(path==='/suggest')return html(await pageSuggest(env,user));
-    if(path==='/admin')return html(await pageAdmin(req,env,user));
-    if(path==='/admin/setup')return html(setupPage(user));
-    if(path==='/how-to-play')return html(shell('How to Play',`<div class="wrap"><div class="card"><h1>How to Play</h1><ol><li>Create an account.</li><li>Choose a pool.</li><li>Join before or while it is live.</li><li>Tap as fast as you can.</li><li>The server verifies taps in batches.</li><li>Climb the leaderboard before the pool closes.</li></ol></div></div>`,user));
-    return html(shell('Not Found','<div class="wrap"><div class="card"><h1>404</h1></div></div>',user),404);
-  }catch(e){console.error('fatal',requestId,e?.stack||e);if(new URL(req.url).pathname.startsWith('/api/'))return json({error:'Server error. Please retry.',requestId},500);return html(shell('Error',`<div class="wrap"><div class="notice danger">Something went wrong. Reference: ${requestId}</div></div>`),500);}
+    user=await currentUser(req,env);
+    const res=await route(req,env,url,path,user);
+    if(user&&user._renewCookie&&!res.headers.has('set-cookie')){const r2=new Response(res.body,res);r2.headers.append('set-cookie',user._renewCookie);return r2;}
+    return res;
+  }catch(e){
+    console.error('fatal',requestId,e?.stack||e);
+    if(new URL(req.url).pathname.startsWith('/api/'))return json({error:'Server error. Please retry.',requestId},500);
+    return html(errorPage(500,{user,ref:requestId.slice(0,8)}),500);
+  }
 }};
+
+async function route(req,env,url,path,user){
+  if(req.method!=='GET'&&req.method!=='HEAD')return html(errorPage(400,{user}),405);
+  switch(path){
+    case '/':{const [stats,pools]=await Promise.all([siteStats(env),featuredPools(env,user)]);return html(landingPage({user,pools,stats}));}
+    case '/login':case '/signup':if(user)return Response.redirect(new URL(user.role==='ADMIN'?'/admin':'/dashboard',req.url),302);return html(authPage(path.slice(1)));
+    case '/how-to-play':return html(howToPlayPage(user));
+    case '/rules':return html(rulesPage(user));
+    case '/merch':return html(merchPage(user));
+    case '/faq':return html(faqPage(user));
+    case '/about':return html(aboutPage(user));
+    case '/offline':return html(offlinePage());
+    case '/policy':return Response.redirect(new URL('/rules',req.url),301);
+    case '/dashboard':return asResponse(await pageDashboard(req,env,user));
+    case '/play':return asResponse(await pagePlay(req,env,user));
+    case '/suggest':return asResponse(await pageSuggest(env,user));
+    case '/admin':return asResponse(await pageAdmin(req,env,user));
+    case '/admin/setup':return asResponse(setupPage(user));
+  }
+  if(LEGAL_PATHS.includes(path.slice(1)))return html(legalPage(path.slice(1),user));
+  return html(errorPage(404,{user}),404);
+}

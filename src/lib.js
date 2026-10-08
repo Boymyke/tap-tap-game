@@ -1,7 +1,7 @@
 // Shared server helpers: responses, security headers, sessions, hashing, rate limits.
 
 export const COOKIE = 'nakam_session';
-export const SESSION_DAYS = 14;
+export const SESSION_DAYS = 30;              // sliding: renewed when used
 export const LEGACY_PBKDF2_ITERATIONS = 10000;   // hashes created before 8 Oct 2026
 export const PBKDF2_ITERATIONS = 100000;         // Workers' PBKDF2 maximum
 export const MAX_BODY_BYTES = 10_000;
@@ -37,6 +37,8 @@ export function html(body, status = 200, headers = {}) {
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
       "connect-src 'self'",
+      "worker-src 'self'",
+      "manifest-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'none'",
       "form-action 'self'",
@@ -84,20 +86,36 @@ export function safeEqual(a, b) {
   return diff === 0;
 }
 
+// Sessions: the cookie holds a random 256-bit token; the database only stores its SHA-256,
+// so a leaked database can't be used to log in. Sessions slide: each day of use extends them.
+const tokenOk = t => typeof t === 'string' && /^[0-9a-f]{64}$/.test(t);
+const DAY = 86400000;
+
 export async function currentUser(req, env) {
-  const sid = getCookie(req, COOKIE);
-  if (!sid || !/^[0-9a-f-]{36}$/.test(sid)) return null;
-  const row = await env.DB.prepare('SELECT u.id,u.username,u.email,u.role,u.tier,u.lifetime_taps,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?').bind(sid).first();
+  const token = getCookie(req, COOKIE);
+  if (!tokenOk(token)) return null;
+  const id = await sha256Hex(token);
+  const row = await env.DB.prepare('SELECT u.id,u.username,u.email,u.role,u.tier,u.lifetime_taps,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?').bind(id).first();
   if (!row) return null;
-  if (Date.parse(row.expires_at) <= Date.now()) { await env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(sid).run(); return null; }
+  const exp = Date.parse(row.expires_at);
+  if (exp <= Date.now()) { await env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(id).run(); return null; }
+  if (exp - Date.now() < (SESSION_DAYS - 1) * DAY) {   // used on a new day: push expiry out again
+    await env.DB.prepare('UPDATE sessions SET expires_at=? WHERE id=?').bind(new Date(Date.now() + SESSION_DAYS * DAY).toISOString(), id).run();
+    row._renewCookie = sessionCookie(token);
+  }
   return row;
 }
 
 export async function createSession(userId, env) {
-  const sid = uid();
-  const exp = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
-  await env.DB.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?)').bind(sid, userId, exp).run();
-  return sid;
+  const token = hex(crypto.getRandomValues(new Uint8Array(32)));
+  const exp = new Date(Date.now() + SESSION_DAYS * DAY).toISOString();
+  await env.DB.prepare('INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?)').bind(await sha256Hex(token), userId, exp).run();
+  return token;
+}
+
+export async function destroySession(req, env) {
+  const token = getCookie(req, COOKIE);
+  if (tokenOk(token)) await env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(await sha256Hex(token)).run();
 }
 
 export const clientIp = req => req.headers.get('cf-connecting-ip') || req.headers.get('x-real-ip') || 'unknown';

@@ -33,7 +33,10 @@ This keeps rapid live tapping out of the main relational database and gives the 
 - Sign up (all fields required): nickname, email, password (8+ chars with small letter, capital letter and number; common passwords blocked), date of birth (18+ only) and Terms/Privacy/Disclaimer acceptance
 - Email is confirmed with a 6-digit code before the account is created; forgot-password also works with an emailed code
 - Login with nickname or email; rate limits on sign-up, codes and login; strict security headers
-- Mobile-first Tap Am home page with a 10-second tap demo
+- One-screen landing page: 10-second tap challenge, rotating sponsored pools (demo until `landing_demo_pools` is set to `0`), people online and total visits
+- Installable app (manifest + service worker), offline banner/page, landscape layout puts the tap area on the right
+- How to play, Rules, Merch (notify me), FAQ, About, and themed 404/500 pages
+- See `docs/ROADMAP.md` for the phased build plan
 - Terms (`/terms`), Privacy Policy (`/privacy`) and Disclaimer (`/disclaimer`) pages — `/policy` redirects to `/privacy`
 - Advertising placements
 - Ferrn Agency attribution
@@ -84,6 +87,8 @@ npm run db:upgrade        # remote
 npm run db:upgrade:local  # local dev
 npm run db:upgrade:2        # then the email-code tables (remote)
 npm run db:upgrade:2:local  # local dev
+npm run db:upgrade:3        # visitors, merch waitlist; clears old sessions
+npm run db:upgrade:3:local
 ```
 
 ## Deploy

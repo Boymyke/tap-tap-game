@@ -12,7 +12,9 @@
     "preview:deploy": "wrangler deploy -c wrangler.preview.jsonc",
     "preview:dev": "wrangler dev -c wrangler.preview.jsonc",
     "db:upgrade:2": "wrangler d1 execute nak-am --remote --file=migrations/0002_email_codes.sql",
-    "db:upgrade:2:local": "wrangler d1 execute nak-am --local --file=migrations/0002_email_codes.sql"
+    "db:upgrade:2:local": "wrangler d1 execute nak-am --local --file=migrations/0002_email_codes.sql",
+    "db:upgrade:3": "wrangler d1 execute nak-am --remote --file=migrations/0003_landing.sql",
+    "db:upgrade:3:local": "wrangler d1 execute nak-am --local --file=migrations/0003_landing.sql"
   },
   "devDependencies": {
     "wrangler": "^4.68.0"

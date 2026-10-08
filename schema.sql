@@ -13,9 +13,12 @@ CREATE TABLE IF NOT EXISTS store_items (id TEXT PRIMARY KEY, name TEXT NOT NULL,
 CREATE TABLE IF NOT EXISTS user_boosters (user_id TEXT NOT NULL, item_id TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id,item_id), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY(item_id) REFERENCES store_items(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS email_codes (purpose TEXT NOT NULL, email TEXT NOT NULL COLLATE NOCASE, code_hash TEXT NOT NULL, nonce TEXT NOT NULL, payload TEXT, attempts INTEGER NOT NULL DEFAULT 0, sends INTEGER NOT NULL DEFAULT 1, last_sent_at TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(purpose,email));
 CREATE TABLE IF NOT EXISTS auth_throttle (key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS visitors (vid TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_visitors_seen ON visitors(last_seen);
+CREATE TABLE IF NOT EXISTS merch_interest (email TEXT NOT NULL COLLATE NOCASE, item TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(email,item));
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_pool_entries_score ON pool_entries(pool_id,taps DESC);
 CREATE INDEX IF NOT EXISTS idx_pools_dates ON pools(starts_at,ends_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pools_hashtag ON pools(hashtag);
-INSERT OR IGNORE INTO settings(key,value) VALUES ('odogwu_price_kobo','0');
+INSERT OR IGNORE INTO settings(key,value) VALUES ('odogwu_price_kobo','0'),('landing_demo_pools','1');
 INSERT OR IGNORE INTO ads(id,slot,title,active) VALUES ('ad_top','TOP','Advertise on Tap Am',1),('ad_mid','MID','Your ad could be here',1),('ad_game','GAME','Sponsor this game space',1);

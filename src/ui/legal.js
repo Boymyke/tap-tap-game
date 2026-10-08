@@ -1,7 +1,7 @@
 // Terms, Privacy Policy and Disclaimer pages.
 // NOTE: these are plain-language drafts written for the current build of the game.
 // Have them reviewed by a Nigerian lawyer before real-money features or prizes go live.
-import { themeShell, logoBlock, poweredBy } from './theme.js';
+import { docLayout } from './pages.js';
 import { MIN_AGE } from '../auth-rules.js';
 
 export const LEGAL_UPDATED = '8 October 2026';
@@ -60,8 +60,9 @@ const DOCS = {
 <li><strong>Account details:</strong> your nickname, your <strong>email address</strong>, your date of birth, your password (stored only as a salted, one-way hash, so we can’t read it), when you confirmed your email and when you accepted our Terms.</li>
 <li><strong>Email codes:</strong> the 6-digit codes we email you for sign-up and password resets. We keep them only as one-way hashes, they expire after 10 minutes, and we delete the records within an hour. While you’re confirming a new sign-up, we hold your details (with the password already hashed) until the code is confirmed.</li>
 <li><strong>Gameplay data:</strong> games you join, your taps and scores, booster inventory and use, tier, and timestamps.</li>
-<li><strong>Login session:</strong> a single cookie (<code>nakam_session</code>) that keeps you signed in for up to 14 days. It is strictly necessary and is not used for advertising.</li>
+<li><strong>Login session:</strong> a single cookie (<code>nakam_session</code>) that keeps you signed in until you log out, or for 30 days after you last opened Tap Am. We only store a scrambled (hashed) copy of it. It is strictly necessary and is not used for advertising.</li>
 <li><strong>Security records:</strong> your IP address and counts of sign-up, login and code attempts, used to block spam and password guessing. These counters reset automatically (within an hour).</li>
+<li><strong>On your device:</strong> a random visitor ID (used only to count visits and people online), your sound setting and your best practice score are kept in your browser's storage. When you install Tap Am, some pages are saved on your device so the app opens fast and works offline; logging out clears saved pages.</li>
 <li><strong>Technical data:</strong> browser and device information and request logs, processed by our hosting provider for security and to keep the service running.</li>
 <li><strong>Messages you send us</strong> through the Suggest page, including any name or email you add.</li></ul>`],
       ['Why we use it', `<ul>
@@ -77,7 +78,7 @@ const DOCS = {
 <li><strong>Authorities</strong>, if the law requires us to share it.</li></ul>
 <p>Advertisers do not receive your personal data from us. We don’t sell your data.</p>`],
       ['Where it is stored', `<p>Tap Am runs on Cloudflare’s global network, so your data may be processed outside Nigeria. Where that happens, we rely on the safeguards required by the Nigeria Data Protection Act.</p>`],
-      ['How long we keep it', `<p>We keep your account data while your account is active. When you ask us to delete your account, we delete or anonymise your personal data within a reasonable time, except anything we must keep to meet legal obligations or to deal with fraud or cheating. Login sessions expire after 14 days.</p>`],
+      ['How long we keep it', `<p>We keep your account data while your account is active. When you ask us to delete your account, we delete or anonymise your personal data within a reasonable time, except anything we must keep to meet legal obligations or to deal with fraud or cheating. Login sessions end 30 days after you last use Tap Am, or when you log out.</p>`],
       ['Your rights', `<p>Under Nigerian law you can ask to:</p>
 <ul>
 <li>see the personal data we hold about you;</li>
@@ -114,24 +115,13 @@ const DOCS = {
 
 export const LEGAL_PATHS = Object.keys(DOCS);
 
-export function legalPage(key) {
+export function legalPage(key, user = null) {
   const doc = DOCS[key];
   if (!doc) return null;
-  const tabs = LEGAL_PATHS.map(k => `<a class="ta-tab" href="/${k}" aria-current="${k === key ? 'page' : 'false'}" aria-selected="${k === key}">${DOCS[k].nav}</a>`).join('');
-  const sections = doc.sections.map(([h, html]) => `<h2>${h}</h2>${html}`).join('');
-  const body = `<main class="ta-page ta-page--doc">
-${logoBlock({ tagline: false })}
-<article class="ta-doc">
-  <nav class="ta-tabs" aria-label="Legal pages">${tabs}</nav>
-  <div class="ta-doc-body">
-    <h1>${doc.title}</h1>
-    <p class="ta-updated">Last updated ${LEGAL_UPDATED}</p>
-    <p class="ta-lede">${doc.lede}</p>
-    ${sections}
-    <div class="ta-doc-foot"><a href="/signup">← Back to sign up</a><a href="/login">Login</a></div>
-  </div>
-</article>
-${poweredBy()}
-</main>`;
-  return themeShell({ title: doc.title, description: doc.description, body });
+  const sections = doc.sections.map(([h, html]) => `<h3>${h}</h3>${html}`).join('');
+  const inner = `<h2>${doc.title}</h2><span class="doc-updated">Last updated ${LEGAL_UPDATED}</span><p class="doc-lede">${doc.lede}</p>${sections}`;
+  return docLayout({ user, title: doc.title, h1: doc.nav === 'Terms' ? 'Terms of use' : doc.title,
+    tabs: [['/rules', 'Rules'], ['/terms', 'Terms'], ['/privacy', 'Privacy'], ['/disclaimer', 'Disclaimer']], current: '/' + key,
+    cards: `<article class="tcard tcard--ink doc-card">${inner}</article>`,
+    foot: user ? '' : `<div class="doc-foot"><a class="btn" href="/signup">Back to sign up</a><a class="btn btn--ghost" href="/login">Login</a></div>` });
 }
