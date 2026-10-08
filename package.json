@@ -6,7 +6,9 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:migrate": "wrangler d1 execute nak-am --remote --file=schema.sql",
-    "db:local": "wrangler d1 execute nak-am --local --file=schema.sql"
+    "db:local": "wrangler d1 execute nak-am --local --file=schema.sql",
+    "db:upgrade": "wrangler d1 execute nak-am --remote --file=migrations/0001_signup_fields.sql",
+    "db:upgrade:local": "wrangler d1 execute nak-am --local --file=migrations/0001_signup_fields.sql"
   },
   "devDependencies": {
     "wrangler": "^4.68.0"

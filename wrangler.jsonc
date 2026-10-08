@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nak-am",
   "main": "src/worker.js",
+  "assets": { "directory": "./public" },
   "compatibility_date": "2026-10-08",
   "observability": { "enabled": true },
   "d1_databases": [

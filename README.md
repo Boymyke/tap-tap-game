@@ -28,7 +28,11 @@ This keeps rapid live tapping out of the main relational database and gives the 
 - Booster inventory and activation in eligible games
 - Mobile-first responsive interface
 - Pinch/two-finger zoom prevention inside the game UI
-- How to Play, Policy and Suggest pages
+- How to Play and Suggest pages
+- Tap Am themed Login / Sign up screen (one page, two tabs) at `/login` and `/signup`
+- Sign up: name (username), password (8+ chars, common passwords blocked), optional email, date of birth (18+ only) and Terms/Privacy/Disclaimer acceptance
+- Login with username or email
+- Terms (`/terms`), Privacy Policy (`/privacy`) and Disclaimer (`/disclaimer`) pages — `/policy` redirects to `/privacy`
 - Advertising placements
 - Ferrn Agency attribution
 
@@ -42,6 +46,19 @@ The wallet/store transaction model exists, but public wallet funding and withdra
 npm install
 npm run db:local
 npm run dev
+```
+
+## UI assets
+
+The Tap Am logo and backgrounds live in `public/assets` and are served as Workers static assets. The shared theme (colours from the Figma reference) is in `src/ui/theme.js`.
+
+## Upgrading an existing database
+
+The sign-up form made email optional and added `date_of_birth`, `terms_accepted_at` and `terms_version` to `users`. New databases get this from `schema.sql`. A database created before 8 Oct 2026 needs a one-time upgrade (it rebuilds `users` and keeps all existing rows):
+
+```bash
+npm run db:upgrade        # remote
+npm run db:upgrade:local  # local dev
 ```
 
 ## Deploy
