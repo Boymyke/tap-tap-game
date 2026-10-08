@@ -18,10 +18,12 @@ const DOCS = {
       ['Who we are', `<p>Tap Am (“the game”, “we”, “us”) is a competitive tapping game operated by <strong>Ferrn Agency</strong>. These Terms apply whenever you create an account, play a game or use any part of Tap Am. If you no agree with them, please don’t use the game.</p>`],
       ['Who can play', `<p>You must be at least <strong>${MIN_AGE} years old</strong> to create an account or play. When you sign up you confirm your date of birth is true. If we learn an account belongs to someone under ${MIN_AGE}, we will close it and delete its data.</p>`],
       ['Your account', `<ul>
+<li>You need a real email address that you own. We confirm it with a 6-digit code before your account is created.</li>
 <li>One account per person. Don’t share, sell or transfer your account.</li>
 <li>Keep your password secret. Anything done with your login is treated as done by you.</li>
-<li>Your name (username) is public on leaderboards. No impersonation, hate, insults or offensive names. We may change or remove a name that breaks this rule.</li>
+<li>Your nickname is public on leaderboards. No impersonation, hate, insults or offensive names. We may change or remove a name that breaks this rule.</li>
 <li>If you think someone is using your account, tell us quickly through the ${contact}.</li></ul>`],
+      ['Your data', `<p>To run Tap Am we store the details you give us when you sign up — your <strong>nickname, email address and date of birth</strong> — plus your password (scrambled with a one-way hash, so nobody can read it), your game activity and basic security records such as IP addresses. We use your email to send sign-up and password-reset codes and important account messages. The full details are in our <a href="/privacy">Privacy Policy</a>.</p>`],
       ['How games work', `<ul>
 <li>Each game has a start and end time. Taps only count while a game is live.</li>
 <li>Your taps are sent to our servers in batches and checked there. <strong>The score recorded on our server is the official score</strong>, even if your screen showed something different.</li>
@@ -51,24 +53,27 @@ const DOCS = {
     nav: 'Privacy',
     title: 'Privacy Policy',
     description: 'What data Tap Am collects and how it is used.',
-    lede: `We collect only what we need to run the game. We don’t sell your data, and we never send you login codes.`,
+    lede: `We store your nickname, email, date of birth and game activity so Tap Am can work. We use your email for sign-up and password-reset codes and account messages. We don’t sell your data.`,
     sections: [
       ['Who is responsible', `<p>Tap Am is operated by <strong>Ferrn Agency</strong>, which decides how your personal data is used for the game. We handle personal data in line with the <strong>Nigeria Data Protection Act 2023</strong>.</p>`],
       ['What we collect', `<ul>
-<li><strong>Account details:</strong> your name (username), your password (stored only as a salted, one-way hash, so we can’t read it), your email address if you choose to add one, your date of birth, and when you accepted our Terms.</li>
+<li><strong>Account details:</strong> your nickname, your <strong>email address</strong>, your date of birth, your password (stored only as a salted, one-way hash, so we can’t read it), when you confirmed your email and when you accepted our Terms.</li>
+<li><strong>Email codes:</strong> the 6-digit codes we email you for sign-up and password resets. We keep them only as one-way hashes, they expire after 10 minutes, and we delete the records within an hour. While you’re confirming a new sign-up, we hold your details (with the password already hashed) until the code is confirmed.</li>
 <li><strong>Gameplay data:</strong> games you join, your taps and scores, booster inventory and use, tier, and timestamps.</li>
 <li><strong>Login session:</strong> a single cookie (<code>nakam_session</code>) that keeps you signed in for up to 14 days. It is strictly necessary and is not used for advertising.</li>
-<li><strong>Technical data:</strong> IP address, browser and device information and request logs, processed by our hosting provider for security and to keep the service running.</li>
+<li><strong>Security records:</strong> your IP address and counts of sign-up, login and code attempts, used to block spam and password guessing. These counters reset automatically (within an hour).</li>
+<li><strong>Technical data:</strong> browser and device information and request logs, processed by our hosting provider for security and to keep the service running.</li>
 <li><strong>Messages you send us</strong> through the Suggest page, including any name or email you add.</li></ul>`],
       ['Why we use it', `<ul>
 <li>To create your account, run games, count taps and show leaderboards (to provide the service you signed up for).</li>
+<li>To email you sign-up and password-reset codes and important messages about your account. We don’t send marketing emails unless you agree to them.</li>
 <li>To check you are ${MIN_AGE}+ (legal obligation and protecting minors).</li>
 <li>To detect cheating, abuse and security threats (legitimate interests).</li>
 <li>To read and act on your feedback (legitimate interests).</li></ul>
 <p>We do not use your data for automated decisions that have legal effects on you, apart from automatic rejection of suspicious taps during games.</p>`],
       ['Who can see it', `<ul>
-<li><strong>Other players</strong> see your username, tier and scores on leaderboards.</li>
-<li><strong>Service providers</strong> that host and run Tap Am for us (currently Cloudflare, for hosting and databases) process data on our instructions.</li>
+<li><strong>Other players</strong> see your nickname, tier and scores on leaderboards. They never see your email or date of birth.</li>
+<li><strong>Service providers</strong> that host and run Tap Am for us process data on our instructions: Cloudflare (hosting and databases) and our email delivery provider, which receives your email address and the code so it can deliver the message.</li>
 <li><strong>Authorities</strong>, if the law requires us to share it.</li></ul>
 <p>Advertisers do not receive your personal data from us. We don’t sell your data.</p>`],
       ['Where it is stored', `<p>Tap Am runs on Cloudflare’s global network, so your data may be processed outside Nigeria. Where that happens, we rely on the safeguards required by the Nigeria Data Protection Act.</p>`],

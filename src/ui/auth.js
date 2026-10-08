@@ -1,23 +1,27 @@
-// Login + Sign up screen (one page, two tabs) built from the Tap Am Figma reference.
+// Login + Sign up screen (one page) built from the Tap Am Figma reference.
+// Views: login, signup, verify (email code), forgot (ask for reset code), reset (new password).
 import { themeShell, logoBlock, poweredBy } from './theme.js';
-import { COMMON_PASSWORDS, MIN_AGE } from '../auth-rules.js';
+import { COMMON_PASSWORDS, RESERVED_NICKNAMES, MIN_AGE, MAX_AGE, PASSWORD_MIN, PASSWORD_MAX, EMAIL_MAX } from '../auth-rules.js';
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const eyeButton = (target) => `<button type="button" class="ta-eye" data-toggle="${target}" aria-label="Show password" aria-pressed="false">
 <svg class="ta-eye-closed" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.6 2.6A7.3 7.3 0 0 1 8 2.5c3.6 0 6 3.1 6.8 4.5a11 11 0 0 1-1.9 2.5M4.1 3.9A11.4 11.4 0 0 0 1.2 7c.8 1.4 3.2 4.5 6.8 4.5a6.9 6.9 0 0 0 3.4-.9"/><path d="M6.6 5.7a2 2 0 0 0 2.7 2.8"/><path d="M1.5 1l13 12"/></svg>
 <svg class="ta-eye-open" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.2 7C2 5.6 4.4 2.5 8 2.5s6 3.1 6.8 4.5c-.8 1.4-3.2 4.5-6.8 4.5S2 8.4 1.2 7z"/><circle cx="8" cy="7" r="2"/></svg>
 </button>`;
 
+const err = id => `<p class="ta-error" id="${id}" aria-live="polite"></p>`;
+const back = (label, to) => `<button type="button" class="ta-back" data-go="${to}"><span aria-hidden="true">←</span> ${label}</button>`;
+
 function dobSelects() {
   const thisYear = new Date().getUTCFullYear();
   const days = Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, '0')}">${i + 1}</option>`).join('');
   const months = MONTHS.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}">${m}</option>`).join('');
-  const years = Array.from({ length: 100 }, (_, i) => thisYear - i).map(y => `<option value="${y}">${y}</option>`).join('');
+  const years = Array.from({ length: MAX_AGE - MIN_AGE + 1 }, (_, i) => thisYear - MIN_AGE - i).map(y => `<option value="${y}">${y}</option>`).join('');
   return `<div class="ta-dob">
-<select class="ta-input" name="dob_day" aria-label="Day" required><option value="" disabled selected>Day</option>${days}</select>
-<select class="ta-input" name="dob_month" aria-label="Month" required><option value="" disabled selected>Month</option>${months}</select>
-<select class="ta-input" name="dob_year" aria-label="Year" required><option value="" disabled selected>Year</option>${years}</select>
+<select class="ta-input" id="su-day" name="dob_day" aria-label="Day" aria-describedby="e-su-dob" required><option value="" disabled selected>Day</option>${days}</select>
+<select class="ta-input" id="su-month" name="dob_month" aria-label="Month" aria-describedby="e-su-dob" required><option value="" disabled selected>Month</option>${months}</select>
+<select class="ta-input" id="su-year" name="dob_year" aria-label="Year" aria-describedby="e-su-dob" required><option value="" disabled selected>Year</option>${years}</select>
 </div>`;
 }
 
@@ -26,123 +30,265 @@ export function authPage(mode = 'login') {
   const body = `<main class="ta-page">
 ${logoBlock()}
 <section class="ta-card" aria-label="Sign up or log in">
-  <div class="ta-tabs" role="tablist">
-    <a class="ta-tab" role="tab" id="tab-signup" href="/signup" aria-controls="panel-signup" aria-selected="${signup}">Sign up</a>
-    <a class="ta-tab" role="tab" id="tab-login" href="/login" aria-controls="panel-login" aria-selected="${!signup}">Login</a>
+  <div class="ta-tabs" role="tablist" id="tabs">
+    <a class="ta-tab" role="tab" id="tab-signup" href="/signup" aria-controls="v-signup" aria-selected="${signup}">Sign up</a>
+    <a class="ta-tab" role="tab" id="tab-login" href="/login" aria-controls="v-login" aria-selected="${!signup}">Login</a>
   </div>
 
-  <form class="ta-form" id="panel-login" role="tabpanel" aria-labelledby="tab-login" novalidate ${signup ? 'hidden' : ''}>
+  <form class="ta-form" id="v-login" role="tabpanel" aria-labelledby="tab-login" novalidate ${signup ? 'hidden' : ''}>
     <div class="ta-field">
-      <label class="ta-label" for="login-id">Username or Email</label>
-      <input class="ta-input" id="login-id" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name or email wey you take sign up" required>
+      <label class="ta-label" for="login-id">Nickname or Email</label>
+      <input class="ta-input" id="login-id" name="identifier" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="254" placeholder="your nickname or email" required aria-describedby="e-login-id">
+      ${err('e-login-id')}
     </div>
     <div class="ta-field">
       <label class="ta-label" for="login-pw">Password</label>
-      <div class="ta-pw"><input class="ta-input" id="login-pw" name="password" type="password" autocomplete="current-password" placeholder="wetin be your password?" required>${eyeButton('login-pw')}</div>
-      <div class="ta-forgot-row"><button type="button" class="ta-forgot" id="forgot">I don forget my password!</button></div>
+      <div class="ta-pw"><input class="ta-input" id="login-pw" name="password" type="password" autocomplete="current-password" maxlength="${PASSWORD_MAX}" placeholder="wetin be your password?" required aria-describedby="e-login-pw">${eyeButton('login-pw')}</div>
+      ${err('e-login-pw')}
+      <div class="ta-forgot-row"><button type="button" class="ta-forgot" data-go="forgot">I don forget my password!</button></div>
     </div>
-    <div class="ta-msg" role="alert" aria-live="polite"></div>
+    <div class="ta-msg" role="alert"></div>
     <button class="ta-btn" type="submit" data-label="Oyaaaa Enterr">Oyaaaa Enterr</button>
   </form>
 
-  <form class="ta-form" id="panel-signup" role="tabpanel" aria-labelledby="tab-signup" novalidate ${signup ? '' : 'hidden'}>
+  <form class="ta-form" id="v-signup" role="tabpanel" aria-labelledby="tab-signup" novalidate ${signup ? '' : 'hidden'}>
     <div class="ta-field">
-      <label class="ta-label" for="su-name">Your name</label>
-      <input class="ta-input" id="su-name" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="Username" required aria-describedby="su-name-hint">
-      <p class="ta-hint" id="su-name-hint">This is your player name on Tap Am. Letters, numbers and _ only.</p>
+      <label class="ta-label" for="su-name">Nickname</label>
+      <input class="ta-input" id="su-name" name="nickname" autocomplete="nickname" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="24" placeholder="Wetin dem dey call you?" required aria-describedby="e-su-name">
+      ${err('e-su-name')}
+    </div>
+    <div class="ta-field">
+      <label class="ta-label" for="su-email">Email</label>
+      <input class="ta-input" id="su-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="${EMAIL_MAX}" placeholder="you@example.com" required aria-describedby="e-su-email">
+      ${err('e-su-email')}
     </div>
     <div class="ta-field">
       <label class="ta-label" for="su-pw">Password</label>
-      <div class="ta-pw"><input class="ta-input" id="su-pw" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="make am strong o" required aria-describedby="su-pw-hint">${eyeButton('su-pw')}</div>
-      <p class="ta-hint" id="su-pw-hint">At least 8 characters. Not 123456 😅</p>
+      <div class="ta-pw"><input class="ta-input" id="su-pw" name="password" type="password" autocomplete="new-password" minlength="${PASSWORD_MIN}" maxlength="${PASSWORD_MAX}" placeholder="make am strong o" required aria-describedby="e-su-pw">${eyeButton('su-pw')}</div>
+      ${err('e-su-pw')}
     </div>
     <div class="ta-field">
-      <label class="ta-label" for="su-email">Email <small>(optional)</small></label>
-      <input class="ta-input" id="su-email" name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" aria-describedby="su-email-hint">
-      <p class="ta-hint" id="su-email-hint">You can log in with it too. We never send you codes.</p>
-    </div>
-    <div class="ta-field">
-      <span class="ta-label" id="su-dob-label">Date of birth</span>
+      <span class="ta-label" id="su-dob-label">Wen them born you</span>
       <div role="group" aria-labelledby="su-dob-label">${dobSelects()}</div>
+      ${err('e-su-dob')}
     </div>
-    <label class="ta-check"><input type="checkbox" name="agree" required>
+    <label class="ta-check"><input type="checkbox" id="su-agree" name="agree" required aria-describedby="e-su-agree">
       <span>I'm ${MIN_AGE}+ and I agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a>, <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/disclaimer" target="_blank" rel="noopener">Disclaimer</a>.</span>
     </label>
-    <div class="ta-msg" role="alert" aria-live="polite"></div>
-    <button class="ta-btn" type="submit" data-label="Oya, create my account">Oya, create my account</button>
+    ${err('e-su-agree')}
+    <div class="ta-msg" role="alert"></div>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Oya, create my account">Oya, create my account</button>
+  </form>
+
+  <form class="ta-form ta-step" id="v-verify" novalidate hidden>
+    ${back('Change my details', 'signup')}
+    <h2>Check your email</h2>
+    <p class="ta-sub">We don send 6-digit code to <b data-email></b>. E go expire in 10 minutes.</p>
+    <p class="ta-testcode" data-test hidden></p>
+    <div class="ta-field">
+      <label class="ta-label" for="vf-code">Code</label>
+      <input class="ta-input ta-otp" id="vf-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required aria-describedby="e-vf-code">
+      ${err('e-vf-code')}
+    </div>
+    <div class="ta-msg" role="alert"></div>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Confirm code">Confirm code</button>
+    <button class="ta-btn-ghost" type="button" data-resend="signup">Send new code</button>
+  </form>
+
+  <form class="ta-form ta-step" id="v-forgot" novalidate hidden>
+    ${back('Back to login', 'login')}
+    <h2>You don forget password?</h2>
+    <p class="ta-sub">No wahala. Enter the email wey you take sign up and we go send you code.</p>
+    <div class="ta-field">
+      <label class="ta-label" for="fg-email">Email</label>
+      <input class="ta-input" id="fg-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="${EMAIL_MAX}" placeholder="you@example.com" required aria-describedby="e-fg-email">
+      ${err('e-fg-email')}
+    </div>
+    <div class="ta-msg" role="alert"></div>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Send me code">Send me code</button>
+  </form>
+
+  <form class="ta-form ta-step" id="v-reset" novalidate hidden>
+    ${back('Use another email', 'forgot')}
+    <h2>Set new password</h2>
+    <p class="ta-sub">If account dey for <b data-email></b>, we don send 6-digit code there. Enter am with your new password.</p>
+    <p class="ta-testcode" data-test hidden></p>
+    <div class="ta-field">
+      <label class="ta-label" for="rs-code">Code</label>
+      <input class="ta-input ta-otp" id="rs-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required aria-describedby="e-rs-code">
+      ${err('e-rs-code')}
+    </div>
+    <div class="ta-field">
+      <label class="ta-label" for="rs-pw">New password</label>
+      <div class="ta-pw"><input class="ta-input" id="rs-pw" name="password" type="password" autocomplete="new-password" minlength="${PASSWORD_MIN}" maxlength="${PASSWORD_MAX}" placeholder="make am strong o" required aria-describedby="e-rs-pw">${eyeButton('rs-pw')}</div>
+      ${err('e-rs-pw')}
+    </div>
+    <div class="ta-msg" role="alert"></div>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Save new password">Save new password</button>
+    <button class="ta-btn-ghost" type="button" data-resend="reset">Send new code</button>
   </form>
 </section>
 ${poweredBy()}
 </main>`;
 
+  // Client-side checks mirror src/auth-rules.js. The server re-checks everything.
   const script = `
 (function(){
-var COMMON=${JSON.stringify(COMMON_PASSWORDS)},MIN_AGE=${MIN_AGE};
-var tabs={login:document.getElementById('tab-login'),signup:document.getElementById('tab-signup')};
-var panels={login:document.getElementById('panel-login'),signup:document.getElementById('panel-signup')};
-function show(mode,push){
-  for(var k in tabs){var on=k===mode;tabs[k].setAttribute('aria-selected',on);panels[k].hidden=!on;}
-  if(push&&location.pathname!=='/'+mode)history.replaceState(null,'','/'+mode+location.search);
-  document.title=(mode==='signup'?'Sign up':'Login')+' | Tap Am';
+'use strict';
+var COMMON=${JSON.stringify(COMMON_PASSWORDS)},RESERVED=${JSON.stringify(RESERVED_NICKNAMES)},MIN_AGE=${MIN_AGE},MAX_AGE=${MAX_AGE},PMIN=${PASSWORD_MIN},PMAX=${PASSWORD_MAX},EMAX=${EMAIL_MAX};
+var EMAIL_RE=/^[^\\s@<>()[\\]\\\\,;:"]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.[A-Za-z]{2,}$/;
+var $=function(id){return document.getElementById(id)};
+var views={login:$('v-login'),signup:$('v-signup'),verify:$('v-verify'),forgot:$('v-forgot'),reset:$('v-reset')};
+var tabs={login:$('tab-login'),signup:$('tab-signup')},tabBar=$('tabs');
+var state={email:'',purpose:'signup',timer:null};
+
+function show(name){
+  for(var k in views)views[k].hidden=k!==name;
+  var isTab=name==='login'||name==='signup';
+  tabBar.hidden=!isTab;
+  if(isTab){for(var t in tabs)tabs[t].setAttribute('aria-selected',t===name);if(location.pathname!=='/'+name)history.replaceState(null,'','/'+name);}
+  document.title=({login:'Login',signup:'Sign up',verify:'Confirm email',forgot:'Forgot password',reset:'New password'})[name]+' | Tap Am';
+  var first=views[name].querySelector('input:not([type=checkbox])');if(first&&name!=='login'&&name!=='signup')setTimeout(function(){first.focus()},30);
 }
-for(var k in tabs)(function(mode){tabs[mode].addEventListener('click',function(e){e.preventDefault();show(mode,true);});})(k);
+tabs.login.addEventListener('click',function(e){e.preventDefault();show('login')});
+tabs.signup.addEventListener('click',function(e){e.preventDefault();show('signup')});
+document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-go'))})});
 
 document.querySelectorAll('.ta-eye').forEach(function(b){b.addEventListener('click',function(){
-  var input=document.getElementById(b.dataset.toggle),showing=input.type==='text';
-  input.type=showing?'password':'text';b.setAttribute('aria-pressed',!showing);b.setAttribute('aria-label',showing?'Show password':'Hide password');
-});});
+  var input=$(b.getAttribute('data-toggle')),showing=input.type==='text';
+  input.type=showing?'password':'text';b.setAttribute('aria-pressed',String(!showing));b.setAttribute('aria-label',showing?'Show password':'Hide password');
+})});
 
-document.getElementById('forgot').addEventListener('click',function(){
-  msg(panels.login,'ok','No wahala. Password reset never ready yet, so send us your username through the <a href="/suggest">Suggest page</a> and we go help you sort am.');
+// ── field errors ──
+function setErr(input,errId,text){
+  var e=$(errId);e.textContent=text||'';
+  var list=input.length?input:[input];
+  for(var i=0;i<list.length;i++){list[i].classList.toggle('is-invalid',!!text);if(text)list[i].setAttribute('aria-invalid','true');else list[i].removeAttribute('aria-invalid');}
+  return !text;
+}
+function msg(form,kind,text){var m=form.querySelector('.ta-msg');m.className='ta-msg '+(text?kind:'');m.textContent=text||'';}
+
+// ── rules (same as server) ──
+function nickProblem(n){n=n.trim();
+  if(!n)return'Enter your nickname.';if(n.length<3)return'Nickname must be at least 3 characters.';if(n.length>24)return'Nickname fit only be 24 characters max.';
+  if(!/^[A-Za-z0-9_]+$/.test(n))return'Nickname fit only get letters, numbers and _ (no space).';
+  if(/^\\d+$/.test(n))return'Nickname no fit be only numbers.';if(RESERVED.indexOf(n.toLowerCase())>-1)return'That nickname no dey available. Try another one.';return'';}
+function emailProblem(e){e=e.trim();if(!e)return'Enter your email.';if(e.length>EMAX||!EMAIL_RE.test(e))return'That email no look correct.';return'';}
+function pwProblem(p,nick){
+  if(!p)return'Enter a password.';if(p.length<PMIN)return'Password must be at least '+PMIN+' characters.';if(p.length>PMAX)return'Password too long.';
+  var miss=[];if(!/[a-z]/.test(p))miss.push('one small letter');if(!/[A-Z]/.test(p))miss.push('one capital letter');if(!/[0-9]/.test(p))miss.push('one number');
+  if(miss.length)return'Password still need '+miss.join(', ')+'.';
+  var low=p.toLowerCase();if(COMMON.indexOf(low)>-1||/^(.)\\1+$/.test(p))return'That password too common. Make am stronger.';
+  if(nick&&nick.length>=3&&low.indexOf(nick.toLowerCase())>-1)return'No put your nickname inside your password.';return'';}
+function dobProblem(d,m,y){
+  if(!d||!m||!y)return'Pick your day, month and year.';
+  var dt=new Date(y,m-1,d);if(dt.getFullYear()!==y||dt.getMonth()!==m-1||dt.getDate()!==d)return'That date no exist. Check the day and month.';
+  var t=new Date(),a=t.getFullYear()-y;if(t.getMonth()<m-1||(t.getMonth()===m-1&&t.getDate()<d))a--;
+  if(a<MIN_AGE)return'Sorry, Tap Am na for '+MIN_AGE+'+ only.';if(a>MAX_AGE)return'Pick a real date.';return'';}
+
+// ── sign up ──
+var su=views.signup,suDob=[$('su-day'),$('su-month'),$('su-year')];
+var suChecks={
+  nickname:function(){return setErr($('su-name'),'e-su-name',nickProblem($('su-name').value))},
+  email:function(){return setErr($('su-email'),'e-su-email',emailProblem($('su-email').value))},
+  password:function(){return setErr($('su-pw'),'e-su-pw',pwProblem($('su-pw').value,$('su-name').value.trim()))},
+  dob:function(){return setErr(suDob,'e-su-dob',dobProblem(+suDob[0].value,+suDob[1].value,+suDob[2].value))},
+  agree:function(){return setErr($('su-agree'),'e-su-agree',$('su-agree').checked?'':'Tick the box to agree before you continue.')}
+};
+var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),dob:suDob[0],agree:$('su-agree')};
+var touched={};
+$('su-name').addEventListener('blur',function(){if(this.value)touched.nickname=1;if(touched.nickname)suChecks.nickname()});
+$('su-email').addEventListener('blur',function(){if(this.value)touched.email=1;if(touched.email)suChecks.email()});
+$('su-pw').addEventListener('blur',function(){if(this.value)touched.password=1;if(touched.password)suChecks.password()});
+$('su-name').addEventListener('input',function(){if(touched.nickname)suChecks.nickname();if(touched.password)suChecks.password()});
+$('su-email').addEventListener('input',function(){if(touched.email)suChecks.email()});
+$('su-pw').addEventListener('input',function(){if(touched.password)suChecks.password()});
+suDob.forEach(function(s){s.addEventListener('change',function(){if(suDob.every(function(x){return x.value}))touched.dob=1;if(touched.dob)suChecks.dob()})});
+$('su-agree').addEventListener('change',function(){suChecks.agree()});
+
+su.addEventListener('submit',function(e){e.preventDefault();msg(su);
+  var order=['nickname','email','password','dob','agree'],firstBad=null;
+  order.forEach(function(k){touched[k]=1;if(!suChecks[k]()&&!firstBad)firstBad=k});
+  if(firstBad){suFieldEl[firstBad].focus();return;}
+  var email=$('su-email').value.trim().toLowerCase();
+  post(su,'/api/signup/start',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,
+    dob:suDob[2].value+'-'+suDob[1].value+'-'+suDob[0].value,agree:true},function(j){
+      state.email=email;state.purpose='signup';openCodeView('verify',j);
+    },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',dob:'e-su-dob',agree:'e-su-agree'};
+      if(j.field&&ids[j.field]){setErr(j.field==='dob'?suDob:suFieldEl[j.field],ids[j.field],j.error);suFieldEl[j.field].focus();return true;}});
 });
 
-function msg(form,kind,html){var m=form.querySelector('.ta-msg');m.className='ta-msg '+(html?kind:'');m.innerHTML=html||'';}
-function bad(el,text,form){el.classList.add('is-invalid');el.focus();msg(form,'err',text);return false;}
-function clearBad(form){form.querySelectorAll('.is-invalid').forEach(function(el){el.classList.remove('is-invalid')});msg(form,'','');}
-document.querySelectorAll('.ta-form').forEach(function(f){f.addEventListener('input',function(e){e.target.classList.remove('is-invalid')});f.addEventListener('change',function(e){e.target.classList.remove('is-invalid')});});
-
-function age(y,m,d){var t=new Date(),a=t.getFullYear()-y;if(t.getMonth()+1<m||(t.getMonth()+1===m&&t.getDate()<d))a--;return a;}
-function realDate(y,m,d){var dt=new Date(y,m-1,d);return dt.getFullYear()===y&&dt.getMonth()===m-1&&dt.getDate()===d;}
-
-function validateSignup(f){
-  var u=f.username.value.trim(),p=f.password.value,e=f.email.value.trim();
-  if(!/^[A-Za-z0-9_]{3,24}$/.test(u))return bad(f.username,'Your name must be 3–24 letters, numbers or _ (no spaces).',f);
-  if(p.length<8)return bad(f.password,'Password must be at least 8 characters.',f);
-  if(COMMON.indexOf(p.toLowerCase())>-1||/^(.)\\1+$/.test(p)||/^(0123456789|1234567890|9876543210)/.test(p))return bad(f.password,'That password too common. Not 123456 😅',f);
-  if(p.toLowerCase()===u.toLowerCase())return bad(f.password,'Password no fit be the same as your name.',f);
-  if(e&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e))return bad(f.email,'That email no look correct.',f);
-  var d=+f.dob_day.value,m=+f.dob_month.value,y=+f.dob_year.value;
-  if(!d)return bad(f.dob_day,'Pick the day you were born.',f);
-  if(!m)return bad(f.dob_month,'Pick the month you were born.',f);
-  if(!y)return bad(f.dob_year,'Pick the year you were born.',f);
-  if(!realDate(y,m,d))return bad(f.dob_day,'That date no exist. Check the day and month.',f);
-  if(age(y,m,d)<MIN_AGE)return bad(f.dob_year,'Sorry, Tap Am is for '+MIN_AGE+'+ only.',f);
-  if(!f.agree.checked)return bad(f.agree,'Tick the box to agree to the Terms, Privacy Policy and Disclaimer.',f);
-  return true;
+// ── email code views ──
+function openCodeView(name,j){
+  var v=views[name];v.querySelectorAll('[data-email]').forEach(function(b){b.textContent=j.email||state.email});
+  var tc=v.querySelector('[data-test]');
+  if(j.testCode){tc.hidden=false;tc.innerHTML='';tc.appendChild(document.createTextNode('Test mode (no email is sent yet). Your code: '));var b=document.createElement('b');b.textContent=j.testCode;tc.appendChild(b);}else{tc.hidden=true;}
+  v.querySelector('.ta-otp').value='';setErr(v.querySelector('.ta-otp'),v.querySelector('.ta-otp').getAttribute('aria-describedby'),'');msg(v);
+  show(name);startCooldown(v,j.resendIn||60);
 }
-function validateLogin(f){
-  if(!f.identifier.value.trim())return bad(f.identifier,'Enter your name or email.',f);
-  if(!f.password.value)return bad(f.password,'Enter your password.',f);
-  return true;
+function startCooldown(v,secs){
+  var b=v.querySelector('[data-resend]');clearInterval(state.timer);var left=secs;state.cooling=true;
+  function tick(){if(left>0){b.disabled=true;b.textContent='Send new code ('+left+'s)';left--;}else{state.cooling=false;b.disabled=false;b.textContent='Send new code';clearInterval(state.timer);}}
+  tick();state.timer=setInterval(tick,1000);
 }
+document.querySelectorAll('.ta-otp').forEach(function(i){i.addEventListener('input',function(){
+  var d=i.value.replace(/\\D/g,'').slice(0,6);if(i.value!==d)i.value=d;setErr(i,i.getAttribute('aria-describedby'),'');
+  if(d.length===6&&i.form.id==='v-verify'&&i.form.requestSubmit)i.form.requestSubmit();
+})});
+document.querySelectorAll('[data-resend]').forEach(function(b){b.addEventListener('click',function(){
+  var v=b.form;msg(v);
+  post(v,'/api/code/resend',{email:state.email,purpose:b.getAttribute('data-resend')},function(j){
+    msg(v,'ok','New code don go your email.');
+    var tc=v.querySelector('[data-test]'),tb=tc.querySelector('b');if(j.testCode&&tb){tc.hidden=false;tb.textContent=j.testCode;}
+    startCooldown(v,j.resendIn||60);
+  },function(j){if(j.retryAfter){startCooldown(v,j.retryAfter);}},b);
+})});
 
-async function submit(f,url,payload){
-  var btn=f.querySelector('.ta-btn');btn.disabled=true;btn.textContent='Small wait…';
+views.verify.addEventListener('submit',function(e){e.preventDefault();var v=views.verify,c=$('vf-code');msg(v);
+  if(!/^\\d{6}$/.test(c.value)){setErr(c,'e-vf-code','Enter the 6-digit code from your email.');c.focus();return;}
+  post(v,'/api/signup/verify',{email:state.email,code:c.value},function(){msg(v,'ok','Account don ready! Taking you in…');setTimeout(function(){location.href='/dashboard'},500)},
+    function(j){if(j.field==='code'){setErr(c,'e-vf-code',j.error);c.select();return true;}});
+});
+
+// ── forgot / reset ──
+views.forgot.addEventListener('submit',function(e){e.preventDefault();var v=views.forgot,i=$('fg-email');msg(v);
+  if(!setErr(i,'e-fg-email',emailProblem(i.value))){i.focus();return;}
+  var email=i.value.trim().toLowerCase();
+  post(v,'/api/password/forgot',{email:email},function(j){state.email=email;state.purpose='reset';openCodeView('reset',j)},
+    function(j){if(j.field==='email'){setErr(i,'e-fg-email',j.error);return true;}});
+});
+$('rs-pw').addEventListener('input',function(){if(this.value.length>=PMIN)setErr(this,'e-rs-pw',pwProblem(this.value,''))});
+views.reset.addEventListener('submit',function(e){e.preventDefault();var v=views.reset,c=$('rs-code'),p=$('rs-pw');msg(v);
+  var ok1=setErr(c,'e-rs-code',/^\\d{6}$/.test(c.value)?'':'Enter the 6-digit code from your email.');
+  var ok2=setErr(p,'e-rs-pw',pwProblem(p.value,''));
+  if(!ok1){c.focus();return}if(!ok2){p.focus();return}
+  post(v,'/api/password/reset',{email:state.email,code:c.value,password:p.value},function(){msg(v,'ok','Password don change! Taking you in…');setTimeout(function(){location.href='/dashboard'},500)},
+    function(j){if(j.field==='code'){setErr(c,'e-rs-code',j.error);c.focus();return true;}if(j.field==='password'){setErr(p,'e-rs-pw',j.error);p.focus();return true;}});
+});
+
+// ── login ──
+views.login.addEventListener('submit',function(e){e.preventDefault();var v=views.login,id=$('login-id'),pw=$('login-pw');msg(v);
+  var ok1=setErr(id,'e-login-id',id.value.trim()?'':'Enter your nickname or email.');
+  var ok2=setErr(pw,'e-login-pw',pw.value?'':'Enter your password.');
+  if(!ok1){id.focus();return}if(!ok2){pw.focus();return}
+  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok','Correct! Taking you in…');setTimeout(function(){location.href=j.role==='ADMIN'?'/admin':'/dashboard'},300)},
+    function(j){if(j.field==='identifier'){setErr(id,'e-login-id',j.error);return true;}if(j.field==='password'){setErr(pw,'e-login-pw',j.error);return true;}});
+});
+[$('login-id'),$('login-pw')].forEach(function(i){i.addEventListener('input',function(){setErr(i,i.getAttribute('aria-describedby'),'')})});
+
+// ── network ──
+async function post(form,url,payload,onOk,onErr,button){
+  var btn=button||form.querySelector('button[type=submit]');var label=btn.getAttribute('data-label')||btn.textContent;btn.disabled=true;if(!button)btn.textContent='Small wait…';
   try{
-    var r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+    var r=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
     var j={};try{j=await r.json()}catch(_){}
-    if(r.ok){msg(f,'ok',(j.message||'Done')+'. Taking you in…');setTimeout(function(){location.href='/dashboard'},350);return;}
-    msg(f,'err',(j.error||'Something no work. Try again.').replace(/</g,'&lt;'));
-  }catch(_){msg(f,'err','Network wahala. Check your connection and try again.');}
-  btn.disabled=false;btn.textContent=btn.dataset.label;
+    if(r.ok){onOk(j);if(!button){btn.textContent=label;btn.disabled=false;}return;}
+    var handled=onErr&&onErr(j);
+    if(!handled)msg(form,'err',j.error||'Something no work. Try again.');
+  }catch(_){msg(form,'err','Network wahala. Check your connection and try again.');}
+  if(button){if(!state.cooling)btn.disabled=false;}else{btn.disabled=false;btn.textContent=label;}
 }
-
-panels.login.addEventListener('submit',function(e){e.preventDefault();var f=e.target;clearBad(f);if(!validateLogin(f))return;
-  submit(f,'/api/login',{identifier:f.identifier.value.trim(),password:f.password.value});});
-panels.signup.addEventListener('submit',function(e){e.preventDefault();var f=e.target;clearBad(f);if(!validateSignup(f))return;
-  submit(f,'/api/signup',{username:f.username.value.trim(),password:f.password.value,email:f.email.value.trim(),dob:f.dob_year.value+'-'+f.dob_month.value+'-'+f.dob_day.value,agree:f.agree.checked});});
 })();`;
 
   return themeShell({ title: signup ? 'Sign up' : 'Login', body, script });
 }
-

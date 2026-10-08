@@ -1,10 +1,11 @@
-// Tap Am visual theme — shared by the auth and legal pages.
+// Tap Am visual theme — shared by the home, auth and legal pages.
 // Colours and sizes come from the Figma reference (Work / Draft / Dump, node 8656:13447).
 
 export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const BRAND = 'Tap Am';
-export const TAGLINE = 'tap am , make you chop ammmm !! A game for the peopleeee';
+export const TAGLINE = 'tap ammm jor, make you chop ammm';
+export const FERRN_URL = 'https://www.ferrnagency.com';
 
 const CSS = `
 :root{
@@ -28,11 +29,12 @@ a{color:inherit}
 .ta-page{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:max(60px,calc(env(safe-area-inset-top) + 24px)) 20px max(32px,env(safe-area-inset-bottom))}
 .ta-logo{display:block;width:179px;line-height:0}
 .ta-logo img{width:100%;height:auto}
-.ta-tagline{margin:13px 0 0;width:184px;text-align:center;font-size:12px;line-height:1.2;color:var(--tagline)}
+.ta-tagline{margin:13px 0 0;max-width:220px;text-align:center;font-size:12px;line-height:1.2;color:var(--tagline)}
 .ta-powered{margin:60px 0 0;font-size:14px;color:#fff;text-align:center}
-.ta-powered span{color:var(--brand-red);font-weight:600}
+.ta-powered a{color:var(--brand-red);font-weight:600;text-decoration:none}
+.ta-powered a:hover{text-decoration:underline;text-underline-offset:3px}
 
-.ta-card{width:100%;max-width:362px;margin-top:44px;padding:19px 20px 37px;border-radius:16px;background:linear-gradient(180deg,var(--card-top),var(--card-bot));box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.ta-card{width:100%;max-width:362px;margin-top:44px;padding:19px 20px 32px;border-radius:16px;background:linear-gradient(180deg,var(--card-top),var(--card-bot));box-shadow:0 24px 60px rgba(0,0,0,.35)}
 
 .ta-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;height:60px;padding:4px 5px;border-radius:8px;background:var(--tabs-bg)}
 .ta-tab{display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:var(--tab);color:var(--tab-text);font-family:inherit;font-size:18px;font-weight:500;text-decoration:none;cursor:pointer;transition:background .15s,color .15s}
@@ -51,6 +53,9 @@ select.ta-input{appearance:none;-webkit-appearance:none;padding-right:28px;curso
 select.ta-input:invalid{color:var(--placeholder);font-size:14px}
 select.ta-input option{color:#fff;background:#063a28}
 .ta-hint{margin:7px 0 0;font-size:12px;line-height:1.35;color:var(--hint)}
+.ta-error{display:flex;gap:6px;align-items:flex-start;margin:7px 0 0;font-size:12.5px;line-height:1.4;color:#ff9a8a}
+.ta-error::before{content:"!";flex:none;display:grid;place-items:center;width:15px;height:15px;margin-top:1px;border-radius:50%;background:var(--danger);color:#1a0400;font-size:11px;font-weight:700}
+.ta-error:empty{display:none}
 
 .ta-pw{position:relative}
 .ta-pw .ta-input{padding-right:46px}
@@ -61,10 +66,10 @@ select.ta-input option{color:#fff;background:#063a28}
 .ta-eye[aria-pressed="true"] .ta-eye-closed{display:none}
 
 .ta-forgot-row{display:flex;justify-content:flex-end}
-.ta-forgot{margin:3px 0 0;padding:4px 0;border:0;background:none;color:var(--accent);font-family:inherit;font-size:10px;cursor:pointer}
+.ta-forgot{margin:4px 0 0;padding:6px 0;border:0;background:none;color:var(--accent);font-family:inherit;font-size:12px;cursor:pointer}
 .ta-forgot:hover{text-decoration:underline}
 
-.ta-dob{display:grid;grid-template-columns:1fr 1.45fr 1.2fr;gap:8px}
+.ta-dob{display:grid;grid-template-columns:1fr 1.2fr 1.2fr;gap:8px}
 
 .ta-check{display:flex;gap:10px;align-items:flex-start;margin:0 0 4px;font-size:13px;line-height:1.5;color:var(--label);cursor:pointer}
 .ta-check input{appearance:none;-webkit-appearance:none;flex:none;display:grid;place-content:center;width:20px;height:20px;margin:0;border:1px solid var(--placeholder);border-radius:4px;background:var(--input);cursor:pointer}
@@ -77,11 +82,32 @@ select.ta-input option{color:#fff;background:#063a28}
 .ta-btn:hover{filter:brightness(1.06)}
 .ta-btn:active{transform:translateY(1px)}
 .ta-btn[disabled]{cursor:progress;filter:saturate(.6) brightness(.9)}
+.ta-btn--shine{position:relative;overflow:hidden;isolation:isolate}
+.ta-btn--shine::after{content:"";position:absolute;top:-30%;bottom:-30%;left:-70%;width:45%;background:linear-gradient(100deg,transparent 0%,rgba(255,255,255,.15) 30%,rgba(255,255,255,.85) 50%,rgba(255,255,255,.15) 70%,transparent 100%);transform:skewX(-22deg);animation:ta-shine 2.6s ease-in-out infinite;pointer-events:none;z-index:-1}
+@keyframes ta-shine{0%{left:-70%}55%,100%{left:135%}}
+@media (prefers-reduced-motion:reduce){.ta-btn--shine::after{animation:none;display:none}}
+.ta-btn-ghost{display:block;width:100%;margin:12px 0 0;padding:10px;border:1px solid rgba(89,255,180,.25);border-radius:8px;background:transparent;color:var(--tagline);font-family:inherit;font-size:14px;cursor:pointer}
+.ta-btn-ghost:hover:not([disabled]){border-color:var(--accent);color:var(--accent)}
+.ta-btn-ghost[disabled]{opacity:.55;cursor:not-allowed}
+.ta-link{border:0;background:none;padding:0;color:var(--accent);font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.ta-form.ta-step{margin-top:2px}
+.ta-step h2{margin:6px 0 6px;font-size:20px;font-weight:600;color:#fff}
+.ta-step p.ta-sub{margin:0 0 18px;font-size:14px;line-height:1.5;color:var(--body)}
+.ta-step p.ta-sub b{color:#fff;font-weight:500}
+.ta-otp{height:56px;text-align:center;font-size:26px;letter-spacing:12px;font-variant-numeric:tabular-nums;padding-left:24px}
+.ta-otp::placeholder{font-size:22px;letter-spacing:12px}
+.ta-testcode{margin:0 0 16px;padding:10px 12px;border-radius:6px;border:1px dashed #ffd23f;background:rgba(255,210,63,.08);color:#ffe28a;font-size:13px;line-height:1.45}
+.ta-testcode b{font-size:16px;letter-spacing:3px;color:#fff}
+.ta-back{display:inline-flex;align-items:center;gap:6px;margin:0 0 6px;padding:4px 0;border:0;background:none;color:var(--tagline);font-family:inherit;font-size:14px;cursor:pointer}
+.ta-back:hover{color:var(--accent)}
 
 .ta-msg{font-size:13px;line-height:1.45}
 .ta-msg:empty{display:none}
 .ta-msg.err{margin:4px 0 0;padding:10px 12px;border-radius:6px;background:rgba(255,38,0,.12);border:1px solid rgba(255,107,87,.45);color:#ffc2b8}
 .ta-msg.ok{margin:4px 0 0;padding:10px 12px;border-radius:6px;background:rgba(0,255,110,.1);border:1px solid rgba(0,255,110,.4);color:#c9ffe2}
+
+@media (max-width:359px){.ta-page{padding-left:14px;padding-right:14px}.ta-card{padding:16px 14px 26px}.ta-tab{font-size:16px}.ta-dob{gap:6px}select.ta-input{padding-left:9px;padding-right:22px;background-position:right 7px center}}
+@media (min-width:700px){.ta-card{max-width:400px;padding:22px 24px 36px}}
 
 /* Legal pages */
 .ta-page--doc .ta-logo{width:132px}
@@ -113,9 +139,9 @@ export function logoBlock({ tagline = true } = {}) {
   return `<a class="ta-logo" href="/" aria-label="${BRAND} home"><img src="/assets/logo-tapam.svg" width="179" height="48" alt="tap am"></a>${tagline ? `<p class="ta-tagline">${esc(TAGLINE)}</p>` : ''}`;
 }
 
-export const poweredBy = () => `<p class="ta-powered">Powered by <span>Ferrn Agency</span></p>`;
+export const poweredBy = () => `<p class="ta-powered">Powered by <a href="${FERRN_URL}" target="_blank" rel="noopener">Ferrn Agency</a></p>`;
 
-export function themeShell({ title, description = 'Tap am, make you chop am. A competitive tapping game for the people.', body, script = '' }) {
+export function themeShell({ title, description = 'Tap ammm jor, make you chop ammm. A competitive tapping game for the people.', body, script = '', css = '' }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#01240c">
@@ -124,5 +150,5 @@ export function themeShell({ title, description = 'Tap am, make you chop am. A c
 <link rel="icon" href="/assets/logo-tapam.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>${CSS}</style></head><body>${body}${script ? `<script>${script}</script>` : ''}</body></html>`;
+<style>${CSS}${css}</style></head><body>${body}${script ? `<script nonce="__NONCE__">${script}</script>` : ''}</body></html>`;
 }

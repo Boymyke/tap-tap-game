@@ -10,6 +10,9 @@
   "compatibility_date": "2026-10-08",
   "workers_dev": true,
   "observability": { "enabled": true },
+  // Test mode: until an email service is connected, sign-up/reset codes are shown on
+  // screen instead of emailed. Never set this on the live Worker.
+  "vars": { "OTP_DEV_MODE": "1" },
   "d1_databases": [
     {
       "binding": "DB",

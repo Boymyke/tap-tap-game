@@ -30,8 +30,10 @@ This keeps rapid live tapping out of the main relational database and gives the 
 - Pinch/two-finger zoom prevention inside the game UI
 - How to Play and Suggest pages
 - Tap Am themed Login / Sign up screen (one page, two tabs) at `/login` and `/signup`
-- Sign up: name (username), password (8+ chars, common passwords blocked), optional email, date of birth (18+ only) and Terms/Privacy/Disclaimer acceptance
-- Login with username or email
+- Sign up (all fields required): nickname, email, password (8+ chars with small letter, capital letter and number; common passwords blocked), date of birth (18+ only) and Terms/Privacy/Disclaimer acceptance
+- Email is confirmed with a 6-digit code before the account is created; forgot-password also works with an emailed code
+- Login with nickname or email; rate limits on sign-up, codes and login; strict security headers
+- Mobile-first Tap Am home page with a 10-second tap demo
 - Terms (`/terms`), Privacy Policy (`/privacy`) and Disclaimer (`/disclaimer`) pages — `/policy` redirects to `/privacy`
 - Advertising placements
 - Ferrn Agency attribution
@@ -62,6 +64,17 @@ npx wrangler login      # once, if not already logged in
 npm run preview:deploy  # prints https://tap-am-ui-preview.<your-subdomain>.workers.dev
 ```
 
+## Email codes
+
+Sign-up and password reset email a 6-digit code. Connect one sender (the code picks the first that is set):
+
+1. **Cloudflare Email Service** — onboard your domain under Compute → Email Service, then add to `wrangler.jsonc`:
+   `"send_email": [{ "name": "EMAIL" }]` and `"vars": { "EMAIL_FROM": "no-reply@yourdomain.com" }`.
+   Sending to any address needs the Workers Paid plan.
+2. **Resend** — `npx wrangler secret put RESEND_API_KEY` and set the `EMAIL_FROM` var to an address on a domain verified in Resend.
+
+Optionally set a random `OTP_PEPPER` secret. The preview Worker sets `OTP_DEV_MODE = "1"`, which shows the code on screen while no sender is connected. Never set it on the live Worker.
+
 ## Upgrading an existing database
 
 The sign-up form made email optional and added `date_of_birth`, `terms_accepted_at` and `terms_version` to `users`. New databases get this from `schema.sql`. A database created before 8 Oct 2026 needs a one-time upgrade (it rebuilds `users` and keeps all existing rows):
@@ -69,6 +82,8 @@ The sign-up form made email optional and added `date_of_birth`, `terms_accepted_
 ```bash
 npm run db:upgrade        # remote
 npm run db:upgrade:local  # local dev
+npm run db:upgrade:2        # then the email-code tables (remote)
+npm run db:upgrade:2:local  # local dev
 ```
 
 ## Deploy

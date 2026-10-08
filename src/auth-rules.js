@@ -1,23 +1,58 @@
-// Validation rules shared by the sign-up API and the sign-up page.
+// Validation rules shared by the auth API (server) and the sign-up page (client).
+// Keep the client copy in src/ui/auth.js in sync with these messages.
 
 export const MIN_AGE = 18;
+export const MAX_AGE = 100;
 export const TERMS_VERSION = '2026-10-08';
-export const USERNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const NICKNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
+export const USERNAME_RE = NICKNAME_RE; // kept for older call sites
+export const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
+export const EMAIL_MAX = 254;
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 128;
+
+export const RESERVED_NICKNAMES = ['admin', 'administrator', 'support', 'tapam', 'tap_am', 'ferrn', 'ferrnagency', 'moderator', 'system', 'root', 'official'];
 
 export const COMMON_PASSWORDS = [
   '12345678', '123456789', '1234567890', '87654321', '11111111', '00000000', '12341234', '12121212',
   'password', 'password1', 'password123', 'passw0rd', 'qwerty123', 'qwertyuiop', 'abc12345', 'abcd1234',
-  'iloveyou', 'admin123', 'welcome1', 'letmein1', '1q2w3e4r', 'asdfghjk', 'zxcvbnm1', 'naija123', 'lagos123'
+  'iloveyou', 'admin123', 'welcome1', 'letmein1', '1q2w3e4r', 'asdfghjk', 'zxcvbnm1', 'naija123', 'lagos123',
+  'password1!', 'qwerty1!', 'p@ssw0rd', 'p@ssword1', 'welcome123', 'iloveyou1', 'abc123456', 'aa123456'
 ];
 
-// Returns null when the password is fine, otherwise a message for the player.
-export function passwordProblem(password, username = '') {
-  if (password.length < 8) return 'Password must be at least 8 characters.';
-  if (password.length > 128) return 'Password is too long.';
-  const lower = password.toLowerCase();
-  if (COMMON_PASSWORDS.includes(lower) || /^(.)\1+$/.test(password) || /^(0123456789|1234567890|9876543210)/.test(password)) return 'That password too common. Not 123456 😅';
-  if (username && lower === username.toLowerCase()) return 'Password no fit be the same as your name.';
+// Each returns null when fine, otherwise a message for the player.
+export function nicknameProblem(nick) {
+  const n = String(nick || '').trim();
+  if (!n) return 'Enter your nickname.';
+  if (n.length < 3) return 'Nickname must be at least 3 characters.';
+  if (n.length > 24) return 'Nickname fit only be 24 characters max.';
+  if (!NICKNAME_RE.test(n)) return 'Nickname fit only get letters, numbers and _ (no space).';
+  if (/^\d+$/.test(n)) return 'Nickname no fit be only numbers.';
+  if (RESERVED_NICKNAMES.includes(n.toLowerCase())) return 'That nickname no dey available. Try another one.';
+  return null;
+}
+
+export function emailProblem(email) {
+  const e = String(email || '').trim();
+  if (!e) return 'Enter your email.';
+  if (e.length > EMAIL_MAX || !EMAIL_RE.test(e)) return 'That email no look correct.';
+  return null;
+}
+
+export function passwordProblem(password, nickname = '') {
+  const p = String(password || '');
+  if (!p) return 'Enter a password.';
+  if (p.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
+  if (p.length > PASSWORD_MAX) return 'Password too long.';
+  const missing = [];
+  if (!/[a-z]/.test(p)) missing.push('one small letter');
+  if (!/[A-Z]/.test(p)) missing.push('one capital letter');
+  if (!/[0-9]/.test(p)) missing.push('one number');
+  if (missing.length) return 'Password still need ' + missing.join(', ') + '.';
+  const lower = p.toLowerCase();
+  if (COMMON_PASSWORDS.includes(lower) || /^(.)\1+$/.test(p)) return 'That password too common. Make am stronger.';
+  if (nickname && nickname.length >= 3 && lower.includes(String(nickname).toLowerCase())) return 'No put your nickname inside your password.';
   return null;
 }
 
@@ -32,4 +67,12 @@ export function ageFromDob(dob, today = new Date()) {
   const beforeBirthday = today.getUTCMonth() < mo - 1 || (today.getUTCMonth() === mo - 1 && today.getUTCDate() < d);
   if (beforeBirthday) age--;
   return age;
+}
+
+export function dobProblem(dob) {
+  const age = ageFromDob(dob);
+  if (age === null) return 'Pick a real date.';
+  if (age < 0 || age > MAX_AGE) return 'Pick a real date.';
+  if (age < MIN_AGE) return `Sorry, Tap Am na for ${MIN_AGE}+ only.`;
+  return null;
 }
