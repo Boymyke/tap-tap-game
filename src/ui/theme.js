@@ -8,7 +8,7 @@ export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const BRAND = 'Tap Am';
 export const TAGLINE = 'tap ammm jor, make you chop ammm';
 export const FERRN_URL = 'https://www.ferrnagency.com';
-export const ASSET_VERSION = '3';
+export const ASSET_VERSION = '4';
 
 // Tone-on-tone geometric pattern for cards (like printed match cards).
 const PATTERN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Cpath d='M0 0l14 14L0 28zM28 0l14 14-14 14zM14 28l14 14-14 14zM42 28l14 14-14 14z'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='.09'%3E%3Cpath d='M28 0L14 14l14 14zM56 0L42 14l14 14zM28 28L14 42l14 14zM56 28L42 42l14 14z'/%3E%3C/g%3E%3C/svg%3E\")";
@@ -98,6 +98,16 @@ button{font-family:inherit}
 .sheet-foot a:hover{color:var(--neon)}
 
 /* ── offline banner ───────────────────────────── */
+.ta-note{font:600 14px/1.45 var(--body);color:var(--muted)}.ta-note a{color:var(--neon);font-weight:700}
+.cele{position:fixed;inset:0;z-index:120;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(239,192,50,.35),rgba(1,20,8,.94) 60%)}
+.cele-rays{position:absolute;left:50%;top:50%;width:220vmax;height:220vmax;margin:-110vmax 0 0 -110vmax;background:repeating-conic-gradient(from 0deg,rgba(255,236,140,.16) 0 8deg,transparent 8deg 22deg);animation:cele-spin 14s linear infinite}
+@keyframes cele-spin{to{transform:rotate(360deg)}}
+.cele-in{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;text-align:center;animation:cele-pop .6s cubic-bezier(.2,1.6,.4,1)}
+@keyframes cele-pop{0%{transform:scale(.2) rotate(-14deg);opacity:0}100%{transform:none;opacity:1}}
+.cele-k{padding:8px 22px;border-radius:14px;background:linear-gradient(180deg,#ffe37a,#d9a520);border:3px solid #fff6c8;box-shadow:0 6px 0 #8a6510,0 18px 40px rgba(0,0,0,.5);font:800 italic clamp(44px,13vw,96px)/1 var(--display);text-transform:uppercase;color:#2a1d00}
+.cele-t{font:800 clamp(30px,8vw,60px)/1 var(--display);text-transform:uppercase;color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.35)}
+.cele-bit{position:absolute;left:0;top:0;width:12px;height:16px;border-radius:2px;pointer-events:none;opacity:0}
+@media (prefers-reduced-motion:reduce){.cele-rays,.cele-in{animation:none}}
 .netbar{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:80;transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 24px);padding:12px 16px;border-radius:12px;background:#2a0b06;border:2px solid var(--danger);color:#ffd9d2;font:600 14px/1.35 var(--body);box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .netbar.ok{background:#05301a;border-color:var(--neon);color:#d6ffe9}
 .netbar b{color:#fff}
@@ -243,7 +253,7 @@ export function topBar(user, { back = false, extra = '' } = {}) {
 </header>`;
 }
 
-export function themeShell({ title, description = 'Tap ammm jor, make you chop ammm. Live tapping games for the people.', body, script = '', css = '', bodyClass = '' }) {
+export function themeShell({ title, description = 'Tap ammm jor, make you chop ammm. Live tapping games for the people.', body, script = '', css = '', bodyClass = '', scripts = [] }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#01240c">
@@ -260,5 +270,6 @@ export function themeShell({ title, description = 'Tap ammm jor, make you chop a
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>${CSS}${css}</style>
-<script nonce="__NONCE__" src="/assets/app.js?v=${ASSET_VERSION}" defer></script></head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}${script ? `<script nonce="__NONCE__">${script}</script>` : ''}</body></html>`;
+<script nonce="__NONCE__" src="/assets/app.js?v=${ASSET_VERSION}" defer></script>${scripts.map(src => `<script nonce="__NONCE__" src="${src}?v=${ASSET_VERSION}" defer></script>`).join('')}</head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}${script ? `<script nonce="__NONCE__">document.addEventListener('DOMContentLoaded',function(){${script}
+});</script>` : ''}</body></html>`;
 }

@@ -25,8 +25,9 @@ function dobSelects() {
 </div>`;
 }
 
-export function authPage(mode = 'login') {
+export function authPage(mode = 'login', { ref = '', sponsor = false } = {}) {
   const signup = mode === 'signup';
+  const refCode = /^[A-Za-z0-9]{4,12}$/.test(ref) ? ref.toUpperCase() : '';
   const body = `<main class="ta-page">
 ${logoBlock()}
 <section class="ta-card" aria-label="Sign up or log in">
@@ -51,7 +52,13 @@ ${logoBlock()}
     <button class="ta-btn" type="submit" data-label="Oyaaaa Enterr">Oyaaaa Enterr</button>
   </form>
 
-  <form class="ta-form" id="v-signup" role="tabpanel" aria-labelledby="tab-signup" novalidate ${signup ? '' : 'hidden'}>
+  <form class="ta-form" id="v-signup" role="tabpanel" aria-labelledby="tab-signup" novalidate ${signup ? '' : 'hidden'} data-type="${sponsor ? 'SPONSOR' : 'USER'}" data-ref="${refCode}">
+    ${sponsor ? `<p class="ta-note" style="margin:0 0 4px">Sponsor account: create sponsored pools and run ads. <a href="/signup">Sign up as a player instead</a></p>
+    <div class="ta-field">
+      <label class="ta-label" for="su-company">Company or brand</label>
+      <input class="ta-input" id="su-company" name="company" autocomplete="organization" maxlength="60" placeholder="Your brand name" required aria-describedby="e-su-company">
+      ${err('e-su-company')}
+    </div>` : refCode ? `<p class="ta-note" style="margin:0 0 4px">Your friend invited you. You both get boosters as more people join.</p>` : ''}
     <div class="ta-field">
       <label class="ta-label" for="su-name">Nickname</label>
       <input class="ta-input" id="su-name" name="nickname" autocomplete="nickname" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="24" placeholder="Wetin dem dey call you?" required aria-describedby="e-su-name">
@@ -78,6 +85,7 @@ ${logoBlock()}
     ${err('e-su-agree')}
     <div class="ta-msg" role="alert"></div>
     <button class="ta-btn ta-btn--shine" type="submit" data-label="Oya, create my account">Oya, create my account</button>
+    ${sponsor ? '' : '<p class="ta-note" style="margin:10px 0 0;text-align:center">Be a brand? <a href="/signup?type=sponsor">Sign up as a sponsor</a></p>'}
   </form>
 
   <form class="ta-form ta-step" id="v-verify" novalidate hidden>
@@ -193,9 +201,10 @@ var suChecks={
   email:function(){return setErr($('su-email'),'e-su-email',emailProblem($('su-email').value))},
   password:function(){return setErr($('su-pw'),'e-su-pw',pwProblem($('su-pw').value,$('su-name').value.trim()))},
   dob:function(){return setErr(suDob,'e-su-dob',dobProblem(+suDob[0].value,+suDob[1].value,+suDob[2].value))},
-  agree:function(){return setErr($('su-agree'),'e-su-agree',$('su-agree').checked?'':'Tick the box to agree before you continue.')}
+  agree:function(){return setErr($('su-agree'),'e-su-agree',$('su-agree').checked?'':'Tick the box to agree before you continue.')},
+  company:function(){var c=$('su-company');if(!c)return true;var v=c.value.trim();return setErr(c,'e-su-company',v.length<2?'Enter your company or brand name.':'')}
 };
-var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),dob:suDob[0],agree:$('su-agree')};
+var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),dob:suDob[0],agree:$('su-agree'),company:$('su-company')};
 var touched={};
 $('su-name').addEventListener('blur',function(){if(this.value)touched.nickname=1;if(touched.nickname)suChecks.nickname()});
 $('su-email').addEventListener('blur',function(){if(this.value)touched.email=1;if(touched.email)suChecks.email()});
@@ -207,14 +216,14 @@ suDob.forEach(function(s){s.addEventListener('change',function(){if(suDob.every(
 $('su-agree').addEventListener('change',function(){suChecks.agree()});
 
 su.addEventListener('submit',function(e){e.preventDefault();msg(su);
-  var order=['nickname','email','password','dob','agree'],firstBad=null;
+  var order=($('su-company')?['company']:[]).concat(['nickname','email','password','dob','agree']),firstBad=null;
   order.forEach(function(k){touched[k]=1;if(!suChecks[k]()&&!firstBad)firstBad=k});
   if(firstBad){suFieldEl[firstBad].focus();return;}
   var email=$('su-email').value.trim().toLowerCase();
   post(su,'/api/signup/start',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,
-    dob:suDob[2].value+'-'+suDob[1].value+'-'+suDob[0].value,agree:true},function(j){
+    dob:suDob[2].value+'-'+suDob[1].value+'-'+suDob[0].value,agree:true,accountType:su.getAttribute('data-type'),company:$('su-company')?$('su-company').value.trim():'',ref:su.getAttribute('data-ref')},function(j){
       state.email=email;state.purpose='signup';openCodeView('verify',j);
-    },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',dob:'e-su-dob',agree:'e-su-agree'};
+    },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',dob:'e-su-dob',agree:'e-su-agree',company:'e-su-company'};
       if(j.field&&ids[j.field]){setErr(j.field==='dob'?suDob:suFieldEl[j.field],ids[j.field],j.error);suFieldEl[j.field].focus();return true;}});
 });
 
@@ -246,7 +255,7 @@ document.querySelectorAll('[data-resend]').forEach(function(b){b.addEventListene
 
 views.verify.addEventListener('submit',function(e){e.preventDefault();var v=views.verify,c=$('vf-code');msg(v);
   if(!/^\\d{6}$/.test(c.value)){setErr(c,'e-vf-code','Enter the 6-digit code from your email.');c.focus();return;}
-  post(v,'/api/signup/verify',{email:state.email,code:c.value},function(){msg(v,'ok','Account don ready! Taking you in…');setTimeout(function(){location.href='/dashboard'},500)},
+  post(v,'/api/signup/verify',{email:state.email,code:c.value},function(j){msg(v,'ok','Account don ready! Taking you in…');setTimeout(function(){location.href=j.redirect||'/dashboard'},500)},
     function(j){if(j.field==='code'){setErr(c,'e-vf-code',j.error);c.select();return true;}});
 });
 
@@ -271,7 +280,7 @@ views.login.addEventListener('submit',function(e){e.preventDefault();var v=views
   var ok1=setErr(id,'e-login-id',id.value.trim()?'':'Enter your nickname or email.');
   var ok2=setErr(pw,'e-login-pw',pw.value?'':'Enter your password.');
   if(!ok1){id.focus();return}if(!ok2){pw.focus();return}
-  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok','Correct! Taking you in…');setTimeout(function(){location.href=j.role==='ADMIN'?'/admin':'/dashboard'},300)},
+  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok','Correct! Taking you in…');setTimeout(function(){var n=new URLSearchParams(location.search).get('next');location.href=(n&&n.charAt(0)==='/'&&/^[a-z]/.test(n.charAt(1))&&n.indexOf('//')<0)?n:(j.redirect||(j.role==='ADMIN'?'/admin':'/dashboard'))},300)},
     function(j){if(j.field==='identifier'){setErr(id,'e-login-id',j.error);return true;}if(j.field==='password'){setErr(pw,'e-login-pw',j.error);return true;}});
 });
 [$('login-id'),$('login-pw')].forEach(function(i){i.addEventListener('input',function(){setErr(i,i.getAttribute('aria-describedby'),'')})});

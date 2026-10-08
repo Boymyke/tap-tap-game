@@ -39,6 +39,7 @@ export function html(body, status = 200, headers = {}) {
       "connect-src 'self'",
       "worker-src 'self'",
       "manifest-src 'self'",
+      "frame-src https://www.youtube-nocookie.com",
       "frame-ancestors 'none'",
       "base-uri 'none'",
       "form-action 'self'",
@@ -95,8 +96,9 @@ export async function currentUser(req, env) {
   const token = getCookie(req, COOKIE);
   if (!tokenOk(token)) return null;
   const id = await sha256Hex(token);
-  const row = await env.DB.prepare('SELECT u.id,u.username,u.email,u.role,u.tier,u.lifetime_taps,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?').bind(id).first();
+  const row = await env.DB.prepare('SELECT u.id,u.username,u.email,u.role,u.tier,u.nepo_until,u.status,u.lifetime_taps,u.games_played,u.wins,u.rank_level,u.referral_code,u.referral_count,u.equipped_skin,u.prefs,u.created_at,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?').bind(id).first();
   if (!row) return null;
+  if (row.status && row.status !== 'ACTIVE') return null;
   const exp = Date.parse(row.expires_at);
   if (exp <= Date.now()) { await env.DB.prepare('DELETE FROM sessions WHERE id=?').bind(id).run(); return null; }
   if (exp - Date.now() < (SESSION_DAYS - 1) * DAY) {   // used on a new day: push expiry out again

@@ -1,10 +1,10 @@
 /* Tap Am service worker: makes the app installable, loads fast, and shows a friendly
    offline page when the internet is down. API calls are never cached. */
-const VERSION = 'tapam-v3';
+const VERSION = 'tapam-v4';
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const FONTS = 'tapam-fonts';
-const PRECACHE = ['/offline', '/assets/app.js?v=3', '/assets/logo-tapam.svg', '/assets/bg-mobile.jpg', '/assets/bg-desktop.jpg',
+const PRECACHE = ['/offline', '/assets/app.js?v=4', '/assets/game.js?v=4', '/assets/logo-tapam.svg', '/assets/bg-mobile.jpg', '/assets/bg-desktop.jpg',
   '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/manifest.webmanifest'];
 const PUBLIC_PAGES = ['/', '/how-to-play', '/rules', '/merch', '/faq', '/about', '/terms', '/privacy', '/disclaimer', '/login', '/signup'];
 

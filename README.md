@@ -1,6 +1,6 @@
-# NAK AM
+# Tap Am
 
-NAK AM is a mobile-first competitive tapping game powered by Ferrn Agency.
+Tap Am (formerly NAK AM) is a mobile-first competitive tapping game powered by Ferrn Agency.
 
 ## Live architecture
 
@@ -14,36 +14,42 @@ This keeps rapid live tapping out of the main relational database and gives the 
 
 ## Current features
 
-- Civil Servant standard accounts
-- Odogwu premium tier with admin-controlled price
-- Super Admin management-only account (admin cannot play)
-- Game creation with automatic `#NAK...` hashtag
-- Join games by hashtag
-- Start/end scheduling
-- Disabled tap control before start and after end
-- Combo feedback and tap sound
-- Live leaderboards
-- Booster store
-- Admin-created booster products with multiplier and duration
-- Booster inventory and activation in eligible games
-- Mobile-first responsive interface
-- Pinch/two-finger zoom prevention inside the game UI
-- How to Play and Suggest pages
-- Tap Am themed Login / Sign up screen (one page, two tabs) at `/login` and `/signup`
-- Sign up (all fields required): nickname, email, password (8+ chars with small letter, capital letter and number; common passwords blocked), date of birth (18+ only) and Terms/Privacy/Disclaimer acceptance
-- Email is confirmed with a 6-digit code before the account is created; forgot-password also works with an emailed code
-- Login with nickname or email; rate limits on sign-up, codes and login; strict security headers
-- One-screen landing page: 10-second tap challenge, rotating sponsored pools (demo until `landing_demo_pools` is set to `0`), people online and total visits
-- Installable app (manifest + service worker), offline banner/page, landscape layout puts the tap area on the right
-- How to play, Rules, Merch (notify me), FAQ, About, and themed 404/500 pages
-- See `docs/ROADMAP.md` for the phased build plan
-- Terms (`/terms`), Privacy Policy (`/privacy`) and Disclaimer (`/disclaimer`) pages — `/policy` redirects to `/privacy`
-- Advertising placements
-- Ferrn Agency attribution
+**Accounts and tiers**
+- Lapo babies (free), Nepo babies (₦13,000/month or ₦120,000/year — prices set by the admin), Sponsors (sign up at `/signup?type=sponsor`) and one Super admin
+- Sign-up with emailed 6-digit code, 18+ check, strong passwords; login by nickname or email; 30-day sliding sessions
+- 100 ranks (20 named tiers × 5) unlocked by lifetime taps, games and wins; admin can rename, re-threshold and add ranks
+- Referral links: every 10 sign-ups (setting) gives the referrer a free booster; starter boosters for new players, bonus boosters on Nepo upgrade
 
-## Payments
+**Game**
+- One `GameRoom` Durable Object per pool: live scores, anti-cheat token bucket (25 taps/sec), boosters (one per pool), leaderboard, settlement by alarm (plus a 5-minute cron sweep)
+- Game screen: big animated tap card, +1/+2 bursts, combos with vibration, score and position milestones, boosters, mute, live board, VS team bar, landscape/desktop layout with the tap area on the right, end screen
+- Nepo babies play up to 10 pools at once (one tap counts in all), create pools, gift boosters (Nepo boosters only to Nepo babies), use the booster calculator, change tap colours/shapes/skins
+- Pools: free, paid (entry fees form the prize) or sponsored; winner-takes-all or top 3/5/10 split; tie rule chosen by the creator; Lapo-only / Nepo-only / everybody; private pools with a generated password; VS pools with two sides
+- Pools can't be deleted by their creator; the admin can cancel (refunds every entry fee)
 
-The wallet/store transaction model exists, but public wallet funding and withdrawals are intentionally not enabled yet. Odogwu and paid boosters should not be treated as cash-purchasable until a payment provider is connected and the payment/prize rules are finalized.
+**Money** (Paystack, test mode on the preview)
+- Wallet (money added — spend only, never withdrawable, with a clear notice) and Winnings (withdrawable)
+- Withdrawals from ₦10,000 (Lapo) / ₦5,000 (Nepo); one pending request at a time; admin pays via Paystack transfer or marks paid / rejects with refund
+
+**Sponsors and ads**
+- Sponsor dashboard: players reached, ad views and clicks, sponsored pools, brand profile
+- Ads (picture or YouTube) shown as closable pop-ups before games, in the lobby and after games; sponsor ads need admin approval
+
+**Super admin** (`/admin`)
+- Overview numbers and all settings; users (search, tier, suspend, gift boosters/skins, adjust money, see taps and games, delete); pools (create any type, pay out, cancel); store (skins/shapes/boosters with Lapo/Nepo availability and rank); ranks; ads; payouts; suggestions
+
+**Site**
+- One-screen landing page with the 10-second tap challenge, rotating pools, people online and total visits; installable app, offline banner/page; How to play, Rules, Merch, FAQ, About, Terms, Privacy, Disclaimer, 404/500 pages
+
+## Secrets and switches
+
+| Name | What it does |
+| --- | --- |
+| `PAYSTACK_SECRET_KEY` (secret) | Real card payments, bank lookup and transfers. Without it the preview simulates payments (`PAYMENTS_TEST_MODE=1`). |
+| `RESEND_API_KEY` or Cloudflare Email | Real sign-up emails. Without it the preview shows the code on screen (`OTP_DEV_MODE=1`). |
+| `CALLS_APP_ID`, `CALLS_APP_TOKEN` (secrets) | Live voice in games (Cloudflare Realtime). The mic button only shows once these are set. |
+| `ADMIN_SETUP_KEY` (secret) | Lets you create the first super admin at `/admin/setup`. |
+| R2 bucket `MEDIA` | Picture uploads for ads, skins and logos. Turn on R2 in the dashboard, create the bucket and uncomment it in `wrangler.preview.jsonc`. |
 
 ## Local development
 
@@ -89,6 +95,8 @@ npm run db:upgrade:2        # then the email-code tables (remote)
 npm run db:upgrade:2:local  # local dev
 npm run db:upgrade:3        # visitors, merch waitlist; clears old sessions
 npm run db:upgrade:3:local
+npm run db:upgrade:4        # full game: tiers, ranks, pools v2, money, store, ads, voice
+npm run db:upgrade:4:local
 ```
 
 ## Deploy

@@ -129,8 +129,139 @@
     window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {}); });
   }
 
+  /* ── toast + confirm dialog ─────────────────────────────────────── */
+  var toastEl = null, toastTimer = 0;
+  TA.toast = function (text, kind, link) {
+    if (toastEl) toastEl.remove();
+    toastEl = document.createElement('div'); toastEl.className = 'toast' + (kind === 'err' ? ' err' : ''); toastEl.setAttribute('role', 'status');
+    toastEl.textContent = text;
+    if (link) { var a = document.createElement('a'); a.href = link; a.textContent = ' Go →'; toastEl.appendChild(a); }
+    document.body.appendChild(toastEl); clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { if (toastEl) { toastEl.remove(); toastEl = null; } }, 4200);
+  };
+  TA.confirm = function (text, okLabel) {
+    return new Promise(function (resolve) {
+      var d = document.createElement('div'); d.className = 'dlg'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+      d.innerHTML = '<div class="tcard tcard--ink"><h3>Sure?</h3><p></p><div class="actions"><button type="button" class="btn btn--ghost" data-no>Cancel</button><button type="button" class="btn" data-yes></button></div></div>';
+      d.querySelector('p').textContent = text; d.querySelector('[data-yes]').textContent = okLabel || 'Yes, do it';
+      function done(v) { d.remove(); resolve(v); }
+      d.addEventListener('click', function (e) { if (e.target === d || e.target.hasAttribute('data-no')) done(false); if (e.target.hasAttribute('data-yes')) done(true); });
+      document.body.appendChild(d); d.querySelector('[data-yes]').focus();
+    });
+  };
+
+  /* ── JSON API helper ────────────────────────────────────────────── */
+  TA.api = function (url, body, method) {
+    return fetch(url, { method: method || 'POST', credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : {}, body: body !== undefined ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._ok = r.ok; j._status = r.status; return j; }); })
+      .catch(function () { TA.netFailed(); return { _ok: false, error: 'Network wahala. Check your connection.' }; });
+  };
+  function after(j, el) {
+    var ok = el.getAttribute('data-ok') || '';
+    if (j.redirect && (j._ok || j.code === 'FUNDS')) { if (!j._ok) { TA.toast(j.error, 'err', j.redirect); return; } location.href = j.redirect; return; }
+    if (ok === 'reload' || j.reload) { if (j.message) sessionStorage.setItem('ta-flash', j.message); location.reload(); return; }
+    if (ok.indexOf('redirect:') === 0) { location.href = ok.slice(9); return; }
+    if (j.message) TA.toast(j.message);
+  }
+  try { var flash = sessionStorage.getItem('ta-flash'); if (flash) { sessionStorage.removeItem('ta-flash'); setTimeout(function () { TA.toast(flash); }, 50); } } catch (e) {}
+
+  /* ── generic forms: <form data-api="/api/..."> ─────────────────── */
+  function collect(f) {
+    var out = {};
+    f.querySelectorAll('input[name],select[name],textarea[name]').forEach(function (i) {
+      if (i.type === 'radio') { if (i.checked) out[i.name] = i.value; return; }
+      if (i.type === 'checkbox') { out[i.name] = i.checked; return; }
+      if (i.type === 'file') return;
+      if (i.type === 'datetime-local') { out[i.name] = i.value ? new Date(i.value).toISOString() : ''; return; }
+      out[i.name] = i.value;
+    });
+    return out;
+  }
+  function clearErrs(f) { f.querySelectorAll('[data-err]').forEach(function (e) { e.textContent = ''; }); f.querySelectorAll('.is-invalid').forEach(function (e) { e.classList.remove('is-invalid'); }); var m = f.querySelector('.ta-msg'); if (m) { m.className = 'ta-msg'; m.textContent = ''; } }
+  document.addEventListener('submit', function (e) {
+    var f = e.target; if (!f.matches || !f.matches('form[data-api]')) return;
+    e.preventDefault(); clearErrs(f);
+    var btn = f.querySelector('button[type=submit]'), label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Small wait…'; }
+    TA.api(f.getAttribute('data-api'), collect(f)).then(function (j) {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+      if (j._ok) { after(j, f); if (f.hasAttribute('data-reset')) f.reset(); if (f._onok) f._onok(j); return; }
+      var errEl = j.field && f.querySelector('[data-err="' + j.field + '"]');
+      if (errEl) { errEl.textContent = j.error; var inp = f.querySelector('[name="' + j.field + '"]'); if (inp) { inp.classList.add('is-invalid'); inp.focus(); } }
+      else { var m = f.querySelector('.ta-msg'); if (m) { m.className = 'ta-msg err'; m.textContent = j.error || 'Something no work. Try again.'; } }
+      if (j.redirect && j.code === 'FUNDS') TA.toast(j.error, 'err', j.redirect);
+    });
+  });
+  /* ── post buttons: <button data-post="/api/..." data-body='{}' data-confirm="..."> ── */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-post]') : null; if (!b) return;
+    e.preventDefault();
+    var go = function () {
+      var body = {}; try { body = JSON.parse(b.getAttribute('data-body') || '{}'); } catch (x) {}
+      b.disabled = true;
+      TA.api(b.getAttribute('data-post'), body).then(function (j) { b.disabled = false; if (j._ok) after(j, b); else TA.toast(j.error || 'Something no work.', 'err', j.code === 'FUNDS' ? j.redirect : null); });
+    };
+    var c = b.getAttribute('data-confirm'); if (c) TA.confirm(c).then(function (y) { if (y) go(); }); else go();
+  });
+  /* ── image uploads: <input type=file data-upload="fieldName"> ───── */
+  document.addEventListener('change', function (e) {
+    var i = e.target; if (!i.matches || !i.matches('input[type=file][data-upload]') || !i.files[0]) return;
+    var name = i.getAttribute('data-upload'), f = i.closest('form'), fd = new FormData(); fd.append('file', i.files[0]);
+    TA.toast('Uploading…');
+    fetch('/api/upload', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.url) { TA.toast(j.error || 'Upload failed', 'err'); return; }
+      var h = f.querySelector('input[name="' + name + '"]'); if (h) h.value = j.url;
+      var p = f.querySelector('[data-preview="' + name + '"]'); if (p) p.src = j.url;
+      TA.toast('Image ready');
+    }).catch(function () { TA.toast('Upload failed', 'err'); });
+  });
+  /* ── live countdowns: <span class="seg" data-countdown="ISO"> ───── */
+  function fmtLeft(ms) {
+    if (ms <= 0) return '00:00:00';
+    var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); s %= 60;
+    if (d > 0) return (d > 99 ? 99 : d) + 'd:' + ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+    return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2) + ':' + ('0' + s).slice(-2);
+  }
+  TA.fmtLeft = fmtLeft;
+  function tickCountdowns() {
+    var now = Date.now();
+    document.querySelectorAll('[data-countdown]').forEach(function (el) {
+      var t = Date.parse(el.getAttribute('data-countdown')); if (!t) return;
+      var v = fmtLeft(t - now).replace('d', '');
+      TA.seg(el, v);
+      if (t - now <= 0 && el.hasAttribute('data-reload-at-zero') && !el._done) { el._done = true; setTimeout(function () { location.reload(); }, 1200); }
+    });
+  }
+
+  /* ── big celebration (rank ups) ─────────────────────────────────── */
+  TA.celebrate = function (title, sub) {
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var d = document.createElement('div'); d.className = 'cele'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', title);
+    d.innerHTML = '<div class="cele-rays"></div><div class="cele-in"><div class="cele-k"></div><div class="cele-t"></div><button type="button" class="btn btn--shine">Oya, continue</button></div>';
+    d.querySelector('.cele-k').textContent = title; d.querySelector('.cele-t').textContent = sub || '';
+    document.body.appendChild(d);
+    if (navigator.vibrate) { try { navigator.vibrate([60, 40, 60, 40, 120]); } catch (e) {} }
+    if (!reduce) {
+      var C = ['#ffffff', '#00ff6e', '#efc032', '#e2802a', '#9fb0ff', '#59ffb4'], w = innerWidth, h = innerHeight;
+      for (var i = 0; i < 70; i++) { var b = document.createElement('i'); b.className = 'cele-bit'; b.style.background = C[i % C.length]; d.appendChild(b);
+        var a = Math.random() * Math.PI * 2, r = 120 + Math.random() * Math.max(w, h) * 0.6;
+        b.animate([{ transform: 'translate(' + w / 2 + 'px,' + h / 2 + 'px) rotate(0)', opacity: 1 }, { transform: 'translate(' + (w / 2 + Math.cos(a) * r) + 'px,' + (h / 2 + Math.sin(a) * r + 200) + 'px) rotate(' + (Math.random() * 1080 - 540) + 'deg)', opacity: 0 }], { duration: 1400 + Math.random() * 1200, easing: 'cubic-bezier(.15,.7,.3,1)', delay: Math.random() * 300 }); }
+    }
+    var close = function () { d.remove(); };
+    d.querySelector('button').addEventListener('click', close); d.querySelector('button').focus();
+    setTimeout(close, 9000);
+  };
+  function rankCheck() {
+    var el = document.querySelector('[data-rank-level]'); if (!el) return;
+    var lvl = +el.getAttribute('data-rank-level'), seen = 0;
+    try { seen = +(localStorage.getItem('ta-rank-seen') || 0); localStorage.setItem('ta-rank-seen', String(lvl)); } catch (e) { return; }
+    if (seen && lvl > seen) setTimeout(function () { TA.celebrate('Rank up!', el.getAttribute('data-rank-name')); }, 500);
+  }
+
   function ready() {
+    rankCheck();
     initSegs();
+    if (document.querySelector('[data-countdown]')) { tickCountdowns(); setInterval(tickCountdowns, 1000); }
     if (isIOS && !standalone) showInstallButtons();
     if (!TA.isOnline()) showNet(false);
   }

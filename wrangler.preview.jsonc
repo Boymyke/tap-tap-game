@@ -12,7 +12,17 @@
   "observability": { "enabled": true },
   // Test mode: until an email service is connected, sign-up/reset codes are shown on
   // screen instead of emailed. Never set this on the live Worker.
-  "vars": { "OTP_DEV_MODE": "1" },
+  // PAYMENTS_TEST_MODE: wallet funding and Nepo card payments are simulated until a
+  // Paystack key is added as a secret (PAYSTACK_SECRET_KEY). Never set this on the live Worker.
+  "vars": { "OTP_DEV_MODE": "1", "PAYMENTS_TEST_MODE": "1" },
+  // Every 5 minutes: settle any ended pool whose room alarm didn't run, and tidy old rows.
+  "triggers": { "crons": ["*/5 * * * *"] },
+  // One GameRoom per pool keeps live scores and settles the pool when it ends.
+  "durable_objects": { "bindings": [{ "name": "GAME_ROOMS", "class_name": "GameRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }],
+  // Sponsor ad pictures, tap skins and logos live in R2. R2 must be switched on in the
+  // Cloudflare dashboard first; then create the bucket and uncomment this line:
+  // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "tap-am-media-preview" }],
   "d1_databases": [
     {
       "binding": "DB",

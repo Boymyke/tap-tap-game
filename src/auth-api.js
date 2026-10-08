@@ -5,6 +5,24 @@ import {
 } from './lib.js';
 import { nicknameProblem, emailProblem, passwordProblem, dobProblem, TERMS_VERSION } from './auth-rules.js';
 import { sendCodeEmail, maskEmail, testMode } from './email.js';
+import { randomCode, giveItem, notify, settings, num } from './core.js';
+
+// Starter boosters for every new player, plus a booster for the referrer on every Nth sign-up.
+async function welcomePlayer(env, id, referrer) {
+  const s = await settings(env);
+  const starter = num(s, 'starter_boosters', 3);
+  if (starter > 0) await giveItem(env, id, 'booster-2x', starter);
+  await notify(env, id, `Welcome to Tap Am! We put ${starter} free Turbo 2× boosters for your bag.`, '/bag');
+  if (referrer) {
+    await env.DB.prepare('UPDATE users SET referral_count=referral_count+1 WHERE id=?').bind(referrer.id).run();
+    const r = await env.DB.prepare('SELECT referral_count FROM users WHERE id=?').bind(referrer.id).first();
+    const batch = num(s, 'referral_batch', 10);
+    if (batch > 0 && r.referral_count % batch === 0) {
+      await giveItem(env, referrer.id, 'booster-2x', 1, { gift: true, from: null, note: `${batch} friends joined` });
+      await notify(env, referrer.id, `${batch} more people joined with your link! You get a free Turbo 2× booster.`, '/bag');
+    }
+  }
+}
 
 const CODE_TTL_MS = 10 * 60 * 1000;     // a code works for 10 minutes
 const RESEND_WAIT_MS = 60 * 1000;       // one new code per minute
@@ -95,11 +113,16 @@ export async function handleAuthApi(req, env, path) {
     if ((p = passwordProblem(password, nickname))) return fieldError('password', p);
     if ((p = dobProblem(dob))) return fieldError('dob', p);
     if (data.agree !== true) return fieldError('agree', 'Tick the box to agree before you continue.');
+    const sponsor = data.accountType === 'SPONSOR';
+    const company = sponsor ? String(data.company || '').trim() : '';
+    if (sponsor && (company.length < 2 || company.length > 60)) return fieldError('company', 'Enter your company or brand name (2–60 characters).');
+    const ref = String(data.ref || '').trim().toUpperCase();
+    const refOk = /^[A-Z0-9]{4,12}$/.test(ref) ? ref : null;
     if (await env.DB.prepare('SELECT 1 FROM users WHERE username=?').bind(nickname).first()) return fieldError('nickname', 'That nickname don already dey. Try another one.', 409);
     if (await env.DB.prepare('SELECT 1 FROM users WHERE email=?').bind(email).first()) return fieldError('email', 'That email don already get account. Try Login instead.', 409);
     await cleanup(env);
     const hp = await hashPassword(password);
-    const issued = await issueCode(env, 'signup', email, JSON.stringify({ nickname, hash: hp.hash, salt: hp.salt, iterations: hp.iterations, dob }));
+    const issued = await issueCode(env, 'signup', email, JSON.stringify({ nickname, hash: hp.hash, salt: hp.salt, iterations: hp.iterations, dob, role: sponsor ? 'SPONSOR' : 'USER', company, ref: sponsor ? null : refOk }));
     if (issued.wait) return json({ error: `We just send code to this email. Wait ${issued.wait}s before you ask for another one.`, retryAfter: issued.wait, field: 'email' }, 429);
     if (issued.tooMany) return tooMany('Too many codes for this email. Try again in one hour.');
     const sent = await deliver(env, 'signup', email, issued.code);
@@ -121,19 +144,25 @@ export async function handleAuthApi(req, env, path) {
       return json({ error: 'Somebody don take that nickname or email. Start again with another one.' }, 409);
     }
     const id = uid(), now = nowIso();
+    const role = pending.role === 'SPONSOR' ? 'SPONSOR' : 'USER';
+    const referrer = role === 'USER' && pending.ref ? await env.DB.prepare("SELECT id,username FROM users WHERE referral_code=? AND role='USER'").bind(pending.ref).first() : null;
+    let myCode = null;
+    for (let i = 0; i < 5 && role === 'USER'; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
     try {
       await env.DB.batch([
-        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,date_of_birth,terms_accepted_at,terms_version,email_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
-          .bind(id, pending.nickname, email, pending.hash, pending.salt, pending.iterations, pending.dob, now, TERMS_VERSION, now),
+        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,date_of_birth,terms_accepted_at,terms_version,email_verified_at,role,tier,referral_code,referred_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+          .bind(id, pending.nickname, email, pending.hash, pending.salt, pending.iterations, pending.dob, now, TERMS_VERSION, now, role, 'LAPO', myCode, referrer?.id || null),
         env.DB.prepare('INSERT INTO wallets(user_id,balance_kobo) VALUES(?,0)').bind(id),
-        env.DB.prepare("DELETE FROM email_codes WHERE purpose='signup' AND email=?").bind(email)
+        env.DB.prepare("DELETE FROM email_codes WHERE purpose='signup' AND email=?").bind(email),
+        ...(role === 'SPONSOR' ? [env.DB.prepare('INSERT INTO sponsor_profiles(user_id,company) VALUES(?,?)').bind(id, pending.company)] : [])
       ]);
     } catch (e) {
       console.error('signup verify insert', e);
       return json({ error: 'Somebody don take that nickname or email. Start again with another one.' }, 409);
     }
+    if (role === 'USER') await welcomePlayer(env, id, referrer);
     const sid = await createSession(id, env);
-    return json({ message: 'Account created' }, 200, { 'set-cookie': sessionCookie(sid) });
+    return json({ message: 'Account created', role, redirect: role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
   }
 
   // ── Send a fresh code (sign-up or reset) ─────────────────────────────────
@@ -172,13 +201,14 @@ export async function handleAuthApi(req, env, path) {
     const iterations = user.password_iter || LEGACY_PBKDF2_ITERATIONS;
     const hp = await hashPassword(password, user.password_salt, iterations);
     if (!safeEqual(hp.hash, user.password_hash)) return wrong();
+    if (user.status && user.status !== 'ACTIVE') return json({ error: 'This account is suspended. Contact Tap Am through the Suggest page.' }, 403);
     await clearLimit(env, idKey);
     if (iterations < PBKDF2_ITERATIONS) {   // quietly upgrade old, weaker hashes
       const up = await hashPassword(password);
       await env.DB.prepare('UPDATE users SET password_hash=?,password_salt=?,password_iter=? WHERE id=?').bind(up.hash, up.salt, up.iterations, user.id).run();
     }
     const sid = await createSession(user.id, env);
-    return json({ message: 'Logged in', role: user.role }, 200, { 'set-cookie': sessionCookie(sid) });
+    return json({ message: 'Logged in', role: user.role, redirect: user.role === 'ADMIN' ? '/admin' : user.role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
   }
 
   // ── Forgot password, step 1: email a reset code ──────────────────────────

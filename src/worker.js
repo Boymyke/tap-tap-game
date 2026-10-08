@@ -1,136 +1,393 @@
+// Tap Am worker: routes pages and APIs, settles ended pools on a schedule.
 import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
 import { landingPage, demoPools } from './ui/landing.js';
 import { howToPlayPage, rulesPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
+import { dashboardPage, poolsPage, poolPage, storePage, bagPage, walletPage, nepoPage, mePage, createPoolPage, calcPage, notificationsPage, leaderboardPage } from './ui/player.js';
+import { playPage } from './ui/game.js';
+import { sponsorHome, sponsorPools, sponsorAds } from './ui/sponsor.js';
+import { adminHome, adminUsers, adminUser, adminPools, adminStore, adminRanks, adminAds, adminWithdrawals, adminSuggestions, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
-import { json, html, uid, nowIso, esc, sessionCookie, hashPassword, currentUser, createSession, destroySession, sameOrigin, readJson, allow, clientIp } from './lib.js';
+import { handlePlayApi } from './api/play.js';
+import { handleMoneyApi, payCallback, paystackOn, testPayments, BANKS } from './api/money.js';
+import { handleAdminApi } from './api/admin.js';
+import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
+import { handleVoiceApi } from './api/voice.js';
+import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, sameOrigin, readJson, allow, clientIp, safeEqual } from './lib.js';
+import { isNepo, isAdmin, tierLabel, getWallet, settings, num, parseJson, itemBlocked, ensureWallet, randomCode } from './core.js';
+import { allRanks, rankInfo } from './game/ranks.js';
+import { listPools, getPool, poolPublic, poolState, roomCall, joinBlocked } from './game/pools.js';
 
-async function requireUser(req,env){const user=await currentUser(req,env);return user?{user}:{response:json({error:'Unauthorized'},401)};}
-async function requireAdmin(req,env){const r=await requireUser(req,env);if(r.response)return r;if(r.user.role!=='ADMIN')return{response:json({error:'Admin only'},403)};return r;}
+export { GameRoom } from './game/room.js';
 
-function nav(user){return `<header><a class="brand" href="/">NAK AM</a><nav><a href="/">Home</a><a href="/how-to-play">How to Play</a><a href="/privacy">Privacy</a><a href="/suggest">Suggest</a>${user?`<a href="/dashboard">Dashboard</a>${user.role==='ADMIN'?'<a href="/admin">Admin</a>':''}<button class="linkbtn" onclick="logout()">Logout</button>`:'<a href="/login">Login</a><a class="pill" href="/signup">Sign Up</a>'}</nav></header>`;}
-function shell(title,content,user=null,script=''){return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} | NAK AM</title><style>*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f7f7f8;color:#111}a{color:inherit;text-decoration:none}header{min-height:68px;background:#fff;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;padding:10px 5%;position:sticky;top:0;z-index:10}.brand{font-size:24px;font-weight:900;letter-spacing:-1px}nav{display:flex;align-items:center;gap:18px;font-size:14px;flex-wrap:wrap}.pill,.btn{background:#111;color:#fff;border:0;border-radius:8px;padding:11px 16px;cursor:pointer;font-weight:700;display:inline-block}.btn.secondary{background:#eee;color:#111}.linkbtn{border:0;background:none;cursor:pointer}.wrap{max-width:1120px;margin:auto;padding:48px 20px}.hero{padding:90px 0 70px;display:grid;grid-template-columns:1.3fr .7fr;gap:32px;align-items:center}.hero h1{font-size:64px;line-height:.95;margin:0 0 20px;letter-spacing:-4px}.hero p{font-size:19px;line-height:1.6;color:#555}.card{background:#fff;border:1px solid #dedede;border-radius:14px;padding:24px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.two{grid-template-columns:repeat(2,1fr)}.ad{min-height:110px;border:2px dashed #bbb;border-radius:12px;display:flex;align-items:center;justify-content:center;text-align:center;color:#666;background:#fff;margin:20px 0;padding:20px}.muted{color:#666}.section{padding:28px 0}.section h2{font-size:34px;margin:0 0 18px}.stat{font-size:34px;font-weight:900}.tap{width:240px;height:240px;border-radius:50%;border:0;background:#111;color:#fff;font-weight:900;font-size:42px;cursor:pointer;user-select:none;touch-action:manipulation}.tap:active{transform:scale(.96)}.center{text-align:center}input,textarea,select{width:100%;padding:12px;border:1px solid #ccc;border-radius:8px;margin:6px 0 14px;font:inherit}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #eee}.badge{font-size:12px;background:#eee;border-radius:999px;padding:5px 9px}.odogwo{background:#111;color:#fff}.notice{padding:12px 14px;border-radius:8px;background:#eee;margin:12px 0}.danger{background:#ffe8e8}.success{background:#e8fff0}.actions{display:flex;gap:10px;flex-wrap:wrap}.footer{border-top:1px solid #ddd;margin-top:60px;padding:30px 5%;display:flex;justify-content:space-between;color:#666;font-size:14px}@media(max-width:800px){header{align-items:flex-start}.hero{grid-template-columns:1fr;padding-top:50px}.hero h1{font-size:48px}.grid,.two{grid-template-columns:1fr}.wrap{padding:30px 16px}.tap{width:210px;height:210px}nav{gap:10px;font-size:13px}}</style></head><body>${nav(user)}<main>${content}</main><footer class="footer"><span>Tap Am</span><span>Powered by <a href="https://www.ferrnagency.com" target="_blank" rel="noopener" style="color:#ff2600;font-weight:700">Ferrn Agency</a></span></footer><script>async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/'}${script}</script></body></html>`;}
-async function adSlot(env,slot){const a=await env.DB.prepare('SELECT title,image_url,target_url FROM ads WHERE slot=? AND active=1').bind(slot).first();if(!a)return'';const inner=a.image_url?`<img src="${esc(a.image_url)}" alt="${esc(a.title)}" style="max-width:100%;max-height:120px">`:`<div><strong>${esc(a.title)}</strong><br><small>Advertising space</small></div>`;return `<div class="ad">${a.target_url?`<a href="${esc(a.target_url)}" target="_blank" rel="noopener">${inner}</a>`:inner}</div>`;}
+// ── small helpers ───────────────────────────────────────────────────────────
+const go = (req, path, status = 302) => Response.redirect(new URL(path, req.url), status);
+const homeFor = u => (u?.role === 'ADMIN' ? '/admin' : u?.role === 'SPONSOR' ? '/sponsor' : '/dashboard');
+const loginFirst = (req, url) => go(req, '/login?next=' + encodeURIComponent(url.pathname + url.search));
+const unreadCount = async (env, u) => Number((await env.DB.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND read=0').bind(u.id).first())?.n || 0);
+const payMode = env => (paystackOn(env) ? 'paystack' : testPayments(env) ? 'test' : 'off');
+const asResponse = (x, status = 200) => (x instanceof Response ? x : html(x, status));
 
-async function pageDashboard(req,env,user){if(!user)return Response.redirect(new URL('/login',req.url),302);const ps=await env.DB.prepare(`SELECT p.*,pe.taps my_taps,pe.joined_at FROM pools p LEFT JOIN pool_entries pe ON pe.pool_id=p.id AND pe.user_id=? ORDER BY p.starts_at DESC LIMIT 20`).bind(user.id).all();const cards=ps.results.map(p=>`<div class="card"><span class="badge">${esc(p.status)}</span> <span class="badge ${p.min_tier==='ODOGWO'?'odogwo':''}">${esc(p.min_tier)}</span><h3>${esc(p.name)}</h3><p class="muted">${esc(p.description)}</p><p><b>Score:</b> ${Number(p.my_taps||0).toLocaleString()}</p>${p.joined_at?`<a class="btn" href="/play?pool=${p.id}">Play</a>`:`<button class="btn" onclick="joinPool('${p.id}')">Join pool</button>`}</div>`).join('')||'<div class="card">No pools yet.</div>';return shell('Dashboard',`<div class="wrap"><h1>Welcome, ${esc(user.username)}</h1><p><span class="badge ${user.tier==='ODOGWO'?'odogwo':''}">${user.tier}</span> &nbsp; Lifetime verified taps: <b>${Number(user.lifetime_taps).toLocaleString()}</b></p><div id="msg"></div><section class="section"><h2>Pools</h2><div class="grid">${cards}</div></section></div>`,user,`async function joinPool(id){let r=await fetch('/api/pools/'+id+'/join',{method:'POST'});let j=await r.json();msg.innerHTML='<div class="notice '+(r.ok?'success':'danger')+'">'+(j.message||j.error)+'</div>';if(r.ok)setTimeout(()=>location.href='/play?pool='+id,300)}`);}
-async function pagePlay(req,env,user){if(!user)return Response.redirect(new URL('/login',req.url),302);const poolId=new URL(req.url).searchParams.get('pool');if(!poolId)return Response.redirect(new URL('/dashboard',req.url),302);const p=await env.DB.prepare('SELECT p.*,pe.taps FROM pools p JOIN pool_entries pe ON pe.pool_id=p.id WHERE p.id=? AND pe.user_id=?').bind(poolId,user.id).first();if(!p)return shell('Play','<div class="wrap"><div class="notice danger">Join this pool first.</div></div>',user);const lr=await env.DB.prepare(`SELECT u.username,pe.taps FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? ORDER BY pe.taps DESC LIMIT 20`).bind(poolId).all();const rows=lr.results.map((r,i)=>`<tr><td>#${i+1}</td><td>${esc(r.username)}</td><td>${Number(r.taps).toLocaleString()}</td></tr>`).join('');return shell('Play',`<div class="wrap"><div class="grid two"><section class="card center"><span class="badge">${esc(p.status)}</span><h1>${esc(p.name)}</h1><div class="stat" id="score">${Number(p.taps).toLocaleString()}</div><p>verified taps</p><button id="tap" class="tap">TAP</button><p class="muted">Pending: <span id="pending">0</span></p><div id="tapmsg"></div></section><section class="card"><h2>Leaderboard</h2><table><tbody id="leader">${rows}</tbody></table></section></div>${await adSlot(env,'GAME')}</div>`,user,`let pending=0,display=${Number(p.taps)||0},sending=false,pid=${JSON.stringify(poolId)};tap.onpointerdown=()=>{pending++;display++;score.textContent=display.toLocaleString();document.getElementById('pending').textContent=pending};async function flush(){if(sending||pending===0)return;sending=true;const n=Math.min(pending,20);pending-=n;document.getElementById('pending').textContent=pending;let r=await fetch('/api/pools/'+pid+'/tap',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taps:n})});let j=await r.json();if(r.ok){display=j.taps;score.textContent=display.toLocaleString()}else{display-=n;score.textContent=display.toLocaleString();tapmsg.innerHTML='<div class="notice danger">'+(j.error||'Tap rejected')+'</div>'}sending=false}setInterval(flush,1200);setInterval(async()=>{let r=await fetch('/api/pools/'+pid+'/leaderboard');if(!r.ok)return;let j=await r.json();leader.innerHTML=j.leaderboard.map((x,i)=>'<tr><td>#'+(i+1)+'</td><td>'+x.username+'</td><td>'+Number(x.taps).toLocaleString()+'</td></tr>').join('')},2500);`);}
-function setupPage(user){if(user?.role==='ADMIN')return `<script>location.href='/admin'</script>`;return shell('Admin Setup',`<div class="wrap" style="max-width:620px"><div class="card"><h1>Set up super admin</h1><form id="setup"><label>Setup key</label><input name="setupKey" required><label>Username</label><input name="username" minlength="3" maxlength="24" required><label>Email</label><input type="email" name="email" required><label>Password</label><input type="password" name="password" minlength="10" required><button class="btn">Create admin</button></form><div id="msg"></div></div></div>`,user,`setup.onsubmit=async e=>{e.preventDefault();let d=Object.fromEntries(new FormData(e.target));let r=await fetch('/api/setup-admin',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)});let j;try{j=await r.json()}catch{j={error:'Server returned an invalid response'}}msg.innerHTML='<div class="notice '+(r.ok?'success':'danger')+'">'+(j.message||j.error||'Request failed')+'</div>';if(r.ok)setTimeout(()=>location.href='/admin',300)}`);}
-async function pageAdmin(req,env,user){if(!user||user.role!=='ADMIN')return Response.redirect(new URL('/admin/setup',req.url),302);const [ps,ss,us]=await Promise.all([env.DB.prepare('SELECT * FROM pools ORDER BY created_at DESC LIMIT 50').all(),env.DB.prepare('SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 20').all(),env.DB.prepare('SELECT id,username,email,role,tier,lifetime_taps,created_at FROM users ORDER BY created_at DESC LIMIT 50').all()]);return shell('Admin',`<div class="wrap"><h1>Super Admin</h1><div id="msg"></div><div class="grid"><div class="card"><div class="stat">${us.results.length}</div><p>Recent users</p></div><div class="card"><div class="stat">${ps.results.length}</div><p>Pools</p></div><div class="card"><div class="stat">${ss.results.length}</div><p>Suggestions</p></div></div><section class="section"><div class="card"><h2>Create pool</h2><form id="pool"><label>Name</label><input name="name" required><label>Description</label><textarea name="description"></textarea><label>Starts</label><input type="datetime-local" name="starts_at" required><label>Ends</label><input type="datetime-local" name="ends_at" required><label>Entry fee (₦)</label><input type="number" min="0" name="entry_fee" value="0"><label>Minimum tier</label><select name="min_tier"><option>FREE</option><option>ODOGWO</option></select><label><input style="width:auto" type="checkbox" name="boosters_allowed"> Boosters allowed</label><br><br><button class="btn">Create pool</button></form></div></section><section class="section"><h2>Pools</h2><div class="grid">${ps.results.map(p=>`<div class="card"><b>${esc(p.name)}</b><p>${esc(p.status)} · ${esc(p.min_tier)}</p><small>${esc(p.starts_at)} → ${esc(p.ends_at)}</small></div>`).join('')}</div></section></div>`,user,`pool.onsubmit=async e=>{e.preventDefault();let f=new FormData(e.target),d=Object.fromEntries(f);d.boosters_allowed=f.get('boosters_allowed')==='on';let r=await fetch('/api/admin/pools',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)});let j=await r.json();msg.innerHTML='<div class="notice '+(r.ok?'success':'danger')+'">'+(j.message||j.error)+'</div>';if(r.ok)setTimeout(()=>location.reload(),400)}`);}
-async function pageSuggest(env,user){return shell('Suggest',`<div class="wrap" style="max-width:700px"><div class="card"><h1>Suggest something</h1><form id="sug"><label>Name</label><input name="name" value="${user?esc(user.username):''}"><label>Email</label><input type="email" name="email" value="${user?esc(user.email):''}"><label>Suggestion</label><textarea name="message" rows="7" required></textarea><button class="btn">Send suggestion</button></form><div id="msg"></div></div></div>`,user,`sug.onsubmit=async e=>{e.preventDefault();let d=Object.fromEntries(new FormData(e.target));let r=await fetch('/api/suggestions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)});let j=await r.json();msg.innerHTML='<div class="notice '+(r.ok?'success':'danger')+'">'+(j.message||j.error)+'</div>';if(r.ok)e.target.reset()}`);}
-
-async function handleApi(req,env,path){
-  if(req.method!=='GET'&&!sameOrigin(req))return json({error:'Request blocked.'},403);
-  const authResponse=await handleAuthApi(req,env,path);if(authResponse)return authResponse;
-  const body=async()=>{try{return await req.json()}catch{return{}}};
-  if(path==='/api/setup-admin'&&req.method==='POST'){
-    const b=await body();
-    if(!env.ADMIN_SETUP_KEY||b.setupKey!==env.ADMIN_SETUP_KEY)return json({error:'Invalid setup key'},403);
-    const exists=await env.DB.prepare("SELECT id FROM users WHERE role='ADMIN' LIMIT 1").first();if(exists)return json({error:'Admin already exists'},409);
-    const username=String(b.username||'').trim(),email=String(b.email||'').trim().toLowerCase(),password=String(b.password||'');
-    if(!/^[A-Za-z0-9_]{3,24}$/.test(username))return json({error:'Username must be 3-24 letters, numbers or underscores'},400);
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json({error:'Valid email required'},400);
-    if(password.length<10)return json({error:'Password must be at least 10 characters'},400);
-    const hp=await hashPassword(password);const id=uid();
-    try{
-      await env.DB.prepare(`INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,role,tier,email_verified_at) VALUES(?,?,?,?,?,?,'ADMIN','ODOGWO',?)`).bind(id,username,email,hp.hash,hp.salt,hp.iterations,nowIso()).run();
-      await env.DB.prepare('INSERT INTO wallets(user_id,balance_kobo) VALUES(?,0)').bind(id).run();
-      const sid=await createSession(id,env);
-      return json({message:'Super admin created'},200,{'set-cookie':sessionCookie(sid)});
-    }catch(e){console.error('setup-admin',e);await env.DB.prepare('DELETE FROM users WHERE id=?').bind(id).run().catch(()=>{});return json({error:'Could not create admin. Please retry.'},500);}
-  }
-  if(path==='/api/logout'&&req.method==='POST'){await destroySession(req,env);return json({message:'Logged out'},200,{'set-cookie':sessionCookie('',0)});}
-  if(path==='/api/suggestions'&&req.method==='POST'){const b=await body();if(String(b.message||'').trim().length<3)return json({error:'Suggestion is too short'},400);const user=await currentUser(req,env);await env.DB.prepare('INSERT INTO suggestions(id,user_id,name,email,message) VALUES(?,?,?,?,?)').bind(uid(),user?.id||null,String(b.name||'').trim()||null,String(b.email||'').trim()||null,String(b.message).trim().slice(0,2000)).run();return json({message:'Suggestion received. Thank you.'});}
-  const join=path.match(/^\/api\/pools\/([^/]+)\/join$/);if(join&&req.method==='POST'){const a=await requireUser(req,env);if(a.response)return a.response;const p=await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(join[1]).first();if(!p)return json({error:'Pool not found'},404);if(p.min_tier==='ODOGWO'&&a.user.tier!=='ODOGWO')return json({error:'This pool is for Odogwo members'},403);const c=await env.DB.prepare('SELECT COUNT(*) c FROM pool_entries WHERE pool_id=?').bind(p.id).first();if(Number(c.c)>=Number(p.max_players))return json({error:'Pool is full'},409);await env.DB.prepare('INSERT OR IGNORE INTO pool_entries(pool_id,user_id) VALUES(?,?)').bind(p.id,a.user.id).run();return json({message:'Joined pool'});}
-  const tap=path.match(/^\/api\/pools\/([^/]+)\/tap$/);if(tap&&req.method==='POST'){const a=await requireUser(req,env);if(a.response)return a.response;const b=await body(),n=Math.floor(Number(b.taps));if(!Number.isFinite(n)||n<1||n>20)return json({error:'Invalid tap batch'},400);const p=await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(tap[1]).first();if(!p)return json({error:'Pool not found'},404);const now=Date.now();if(now<Date.parse(p.starts_at))return json({error:'Pool has not started'},409);if(now>Date.parse(p.ends_at))return json({error:'Pool has ended'},409);const e=await env.DB.prepare('SELECT taps,last_batch_at FROM pool_entries WHERE pool_id=? AND user_id=?').bind(p.id,a.user.id).first();if(!e)return json({error:'Join the pool first'},403);if(e.last_batch_at&&now-Date.parse(e.last_batch_at)<700&&n>12)return json({error:'Tap batch rejected by anti-cheat'},429);await env.DB.batch([env.DB.prepare('UPDATE pool_entries SET taps=taps+?,last_batch_at=? WHERE pool_id=? AND user_id=?').bind(n,nowIso(),p.id,a.user.id),env.DB.prepare('UPDATE users SET lifetime_taps=lifetime_taps+? WHERE id=?').bind(n,a.user.id)]);const fresh=await env.DB.prepare('SELECT taps FROM pool_entries WHERE pool_id=? AND user_id=?').bind(p.id,a.user.id).first();return json({taps:fresh.taps,accepted:n});}
-  const lead=path.match(/^\/api\/pools\/([^/]+)\/leaderboard$/);if(lead&&req.method==='GET'){const r=await env.DB.prepare(`SELECT u.username,pe.taps FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? ORDER BY pe.taps DESC LIMIT 20`).bind(lead[1]).all();return json({leaderboard:r.results});}
-  if(path==='/api/admin/pools'&&req.method==='POST'){const a=await requireAdmin(req,env);if(a.response)return a.response;const b=await body();if(!b.name||!b.starts_at||!b.ends_at)return json({error:'Name, start and end are required'},400);const start=new Date(b.starts_at),end=new Date(b.ends_at);if(!(start<end))return json({error:'End time must be after start time'},400);const id=uid(),status=start.getTime()>Date.now()?'SCHEDULED':end.getTime()>Date.now()?'LIVE':'COMPLETED';await env.DB.prepare(`INSERT INTO pools(id,name,description,starts_at,ends_at,entry_fee,min_tier,boosters_allowed,max_players,status,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(id,String(b.name).slice(0,100),String(b.description||'').slice(0,500),start.toISOString(),end.toISOString(),Math.max(0,Math.floor(Number(b.entry_fee)||0)),b.min_tier==='ODOGWO'?'ODOGWO':'FREE',b.boosters_allowed?1:0,1000,status,a.user.id).run();return json({message:'Pool created',id});}
-  return json({error:'Not found'},404);
+async function base(env, user) {
+  const [wallet, unread] = await Promise.all([getWallet(env, user.id), unreadCount(env, user)]);
+  return { user, wallet, unread, nepo: isNepo(user), tier: tierLabel(user) };
 }
 
 // ── landing data ────────────────────────────────────────────────────────────
-async function siteStats(env){
-  const since=new Date(Date.now()-120000).toISOString();
-  const r=await env.DB.prepare('SELECT (SELECT COUNT(*) FROM visitors WHERE last_seen>?) AS online,(SELECT COUNT(*) FROM visitors) AS visits').bind(since).first();
-  return {online:Math.max(1,Number(r?.online||0)),visits:Number(r?.visits||0)};
+async function siteStats(env) {
+  const since = new Date(Date.now() - 120000).toISOString();
+  const r = await env.DB.prepare('SELECT (SELECT COUNT(*) FROM visitors WHERE last_seen>?) AS online,(SELECT COUNT(*) FROM visitors) AS visits').bind(since).first();
+  return { online: Math.max(1, Number(r?.online || 0)), visits: Number(r?.visits || 0) };
 }
-async function featuredPools(env,user){
-  const href=user?'/dashboard':'/signup';
-  const demo=(await env.DB.prepare("SELECT value FROM settings WHERE key='landing_demo_pools'").first())?.value!=='0';
-  if(!demo){
-    const now=nowIso();
-    const r=await env.DB.prepare(`SELECT p.id,p.name,p.ends_at,p.entry_fee,p.min_tier,(SELECT COUNT(*) FROM pool_entries pe WHERE pe.pool_id=p.id) AS players
-      FROM pools p WHERE p.ends_at>? ORDER BY p.starts_at ASC LIMIT 6`).bind(now).all();
-    if(r.results.length) return r.results.map((p,i)=>({name:p.name,players:p.players,endsAt:p.ends_at,prize:0,color:['green','orange','gold','mustard'][i%4],href}));
-  }
-  return demoPools().map(p=>({...p,href}));
+async function featuredPools(env, user) {
+  const s = await settings(env);
+  const href = user ? homeFor(user) : '/signup';
+  const real = (await env.DB.prepare(`SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p
+    WHERE p.ends_at>? AND p.status!='CANCELLED' AND p.is_private=0 ORDER BY CASE p.kind WHEN 'SPONSORED' THEN 0 WHEN 'PAID' THEN 1 ELSE 2 END, p.starts_at ASC LIMIT 6`).bind(nowIso()).all()).results;
+  const colors = ['green', 'orange', 'gold', 'mustard'];
+  const mapped = real.map((p, i) => ({
+    name: p.name, sponsor: p.sponsor_name, players: p.players, endsAt: p.ends_at, prize: Math.round(p.prize_kobo / 100),
+    vs: p.game_type === 'MATCH' && p.side_a ? [p.side_a.slice(0, 3).toUpperCase(), p.side_b.slice(0, 3).toUpperCase()] : null,
+    tier: p.audience === 'NEPO' ? 'Nepo only' : p.audience === 'LAPO' ? 'Lapo only' : '', color: p.kind === 'SPONSORED' ? 'orange' : p.kind === 'PAID' ? 'gold' : colors[i % 4],
+    href: user ? `/pool/${p.id}` : '/signup'
+  }));
+  if (s.landing_demo_pools === '0') return mapped.length ? mapped : demoPools().map(p => ({ ...p, href }));
+  return [...mapped, ...demoPools().map(p => ({ ...p, href }))].slice(0, 6);
 }
 
-// ── extra API: presence + merch interest ────────────────────────────────────
-async function handleSiteApi(req,env,path){
-  if(path==='/api/presence'&&req.method==='POST'){
-    const {data,response}=await readJson(req);if(response)return response;
-    const vid=String(data.vid||'');
-    if(!/^[0-9a-z-]{10,40}$/i.test(vid))return json({error:'Bad visitor id'},400);
-    if(await allow(env,'presence:'+clientIp(req),120,3600)){
-      const now=nowIso();
-      await env.DB.prepare('INSERT INTO visitors(vid,first_seen,last_seen) VALUES(?,?,?) ON CONFLICT(vid) DO UPDATE SET last_seen=excluded.last_seen').bind(vid,now,now).run();
+// ── site API: presence, merch, suggestions, logout, first admin ─────────────
+async function handleSiteApi(req, env, path) {
+  if (path === '/api/presence' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    const vid = String(data.vid || '');
+    if (!/^[0-9a-z-]{10,40}$/i.test(vid)) return json({ error: 'Bad visitor id' }, 400);
+    if (await allow(env, 'presence:' + clientIp(req), 120, 3600)) {
+      const now = nowIso();
+      await env.DB.prepare('INSERT INTO visitors(vid,first_seen,last_seen) VALUES(?,?,?) ON CONFLICT(vid) DO UPDATE SET last_seen=excluded.last_seen').bind(vid, now, now).run();
     }
     return json(await siteStats(env));
   }
-  if(path==='/api/merch/notify'&&req.method==='POST'){
-    const {data,response}=await readJson(req);if(response)return response;
-    if(!await allow(env,'merch:'+clientIp(req),20,3600))return json({error:'Too many tries. Wait small.'},429);
-    const email=String(data.email||'').trim().toLowerCase(),item=String(data.item||'');
-    if(emailProblem(email))return json({error:'That email no look correct.'},400);
-    if(!/^[a-z0-9-]{2,40}$/.test(item))return json({error:'Unknown item.'},400);
-    await env.DB.prepare('INSERT OR IGNORE INTO merch_interest(email,item,created_at) VALUES(?,?,?)').bind(email,item,nowIso()).run();
-    return json({message:'Saved'});
+  if (path === '/api/merch/notify' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'merch:' + clientIp(req), 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const email = String(data.email || '').trim().toLowerCase(), item = String(data.item || '');
+    if (emailProblem(email)) return json({ error: 'That email no look correct.' }, 400);
+    if (!/^[a-z0-9-]{2,40}$/.test(item)) return json({ error: 'Unknown item.' }, 400);
+    await env.DB.prepare('INSERT OR IGNORE INTO merch_interest(email,item,created_at) VALUES(?,?,?)').bind(email, item, nowIso()).run();
+    return json({ message: 'Saved' });
+  }
+  if (path === '/api/logout' && req.method === 'POST') {
+    await destroySession(req, env);
+    return json({ message: 'Logged out' }, 200, { 'set-cookie': sessionCookie('', 0) });
+  }
+  if (path === '/api/suggestions' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'suggest:' + clientIp(req), 10, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const message = String(data.message || '').trim();
+    if (message.length < 3) return json({ error: 'Write small more.', field: 'message' }, 400);
+    const user = await currentUser(req, env);
+    await env.DB.prepare('INSERT INTO suggestions(id,user_id,name,email,message) VALUES(?,?,?,?,?)').bind(uid(), user?.id || null, String(data.name || '').trim().slice(0, 60) || null, user?.email || null, message.slice(0, 2000)).run();
+    return json({ message: 'Thank you! We don receive am.' });
+  }
+  if (path === '/api/setup-admin' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'setup:' + clientIp(req), 10, 3600)) return json({ error: 'Too many tries.' }, 429);
+    if (!env.ADMIN_SETUP_KEY || !safeEqual(String(data.setupKey || ''), env.ADMIN_SETUP_KEY)) return json({ error: 'Wrong setup key.', field: 'setupKey' }, 403);
+    if (await env.DB.prepare("SELECT 1 FROM users WHERE role='ADMIN' LIMIT 1").first()) return json({ error: 'Admin already exists.' }, 409);
+    const username = String(data.username || '').trim(), email = String(data.email || '').trim().toLowerCase(), password = String(data.password || '');
+    if (!/^[A-Za-z0-9_]{3,24}$/.test(username)) return json({ error: '3–24 letters, numbers or _.', field: 'username' }, 400);
+    if (emailProblem(email)) return json({ error: 'Enter a valid email.', field: 'email' }, 400);
+    if (password.length < 10) return json({ error: 'Use at least 10 characters.', field: 'password' }, 400);
+    const hp = await hashPassword(password); const id = uid(), now = nowIso();
+    await env.DB.prepare("INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,role,tier,email_verified_at) VALUES(?,?,?,?,?,?,'ADMIN','LAPO',?)").bind(id, username, email, hp.hash, hp.salt, hp.iterations, now).run();
+    await ensureWallet(env, id);
+    return json({ message: 'Super admin created', redirect: '/admin' }, 200, { 'set-cookie': sessionCookie(await createSession(id, env)) });
   }
   return null;
 }
 
-const asResponse=(x,status=200)=>x instanceof Response?x:html(x,status);
+// ── scheduled: settle pools whose room alarm didn't run, tidy up ────────────
+async function sweep(env) {
+  const cutoff = new Date(Date.now() - 20000).toISOString();
+  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status!='CANCELLED' AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
+  for (const p of due) { try { await roomCall(env, p.id, '/settle', { id: p.id }); } catch (e) { console.error('sweep settle', p.id, e?.message); } }
+  const now = nowIso();
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM auth_throttle WHERE reset_at<?').bind(now),
+    env.DB.prepare('DELETE FROM sessions WHERE expires_at<?').bind(now),
+    env.DB.prepare('DELETE FROM voice_sessions WHERE updated_at<?').bind(new Date(Date.now() - 120000).toISOString()),
+    env.DB.prepare('DELETE FROM email_codes WHERE expires_at<?').bind(new Date(Date.now() - 86400000).toISOString())
+  ]);
+  // Nepo ending in ~3 days: remind once
+  const soon = (await env.DB.prepare("SELECT id,nepo_until FROM users WHERE tier='NEPO' AND nepo_until BETWEEN ? AND ? AND id NOT IN (SELECT user_id FROM notifications WHERE text LIKE 'Your Nepo ends%' AND created_at>?)")
+    .bind(new Date(Date.now() + 2 * 86400000).toISOString(), new Date(Date.now() + 3 * 86400000).toISOString(), new Date(Date.now() - 5 * 86400000).toISOString()).all()).results;
+  for (const u of soon) await env.DB.prepare('INSERT INTO notifications(id,user_id,text,link) VALUES(?,?,?,?)').bind(uid(), u.id, `Your Nepo ends on ${u.nepo_until.slice(0, 10)}. Renew to keep your perks.`, '/nepo').run();
+  return due.length;
+}
 
-export default{async fetch(req,env){
-  const requestId=uid();
-  let user=null;
-  try{
-    const url=new URL(req.url),path=url.pathname.length>1?url.pathname.replace(/\/+$/,''):url.pathname;
-    if(path.startsWith('/api/')){
-      if(req.method!=='GET'&&!sameOrigin(req))return json({error:'Request blocked.'},403);
-      const site=await handleSiteApi(req,env,path);if(site)return site;
-      return await handleApi(req,env,path);
+// ── entry ───────────────────────────────────────────────────────────────────
+export default {
+  async fetch(req, env) {
+    const requestId = uid();
+    let user = null;
+    try {
+      const url = new URL(req.url);
+      const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
+      if (path.startsWith('/api/')) {
+        if (req.method !== 'GET' && path !== '/api/paystack/webhook' && !sameOrigin(req)) return json({ error: 'Request blocked.' }, 403);
+        const site = await handleSiteApi(req, env, path); if (site) return site;
+        const auth = await handleAuthApi(req, env, path); if (auth) return auth;
+        if (path === '/api/paystack/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
+        user = await currentUser(req, env);
+        const res = (await handlePlayApi(req, env, path, user)) || (await handleMoneyApi(req, env, path, user)) || (await handleAdminApi(req, env, path, user))
+          || (await handleSponsorApi(req, env, path, user)) || (await handleVoiceApi(req, env, path, user)) || json({ error: 'Not found' }, 404);
+        if (user?._renewCookie && !res.headers.has('set-cookie')) { const r2 = new Response(res.body, res); r2.headers.append('set-cookie', user._renewCookie); return r2; }
+        return res;
+      }
+      if (path.startsWith('/media/')) return serveMedia(env, path.slice(7));
+      user = await currentUser(req, env);
+      const res = await route(req, env, url, path, user);
+      if (user?._renewCookie && !res.headers.has('set-cookie')) { const r2 = new Response(res.body, res); r2.headers.append('set-cookie', user._renewCookie); return r2; }
+      return res;
+    } catch (e) {
+      console.error('fatal', requestId, e?.stack || e);
+      if (new URL(req.url).pathname.startsWith('/api/')) return json({ error: 'Server wahala. Try again.', requestId }, 500);
+      return html(errorPage(500, { user, ref: requestId.slice(0, 8) }), 500);
     }
-    user=await currentUser(req,env);
-    const res=await route(req,env,url,path,user);
-    if(user&&user._renewCookie&&!res.headers.has('set-cookie')){const r2=new Response(res.body,res);r2.headers.append('set-cookie',user._renewCookie);return r2;}
-    return res;
-  }catch(e){
-    console.error('fatal',requestId,e?.stack||e);
-    if(new URL(req.url).pathname.startsWith('/api/'))return json({error:'Server error. Please retry.',requestId},500);
-    return html(errorPage(500,{user,ref:requestId.slice(0,8)}),500);
-  }
-}};
+  },
+  async scheduled(event, env, ctx) { ctx.waitUntil(sweep(env)); }
+};
 
-async function route(req,env,url,path,user){
-  if(req.method!=='GET'&&req.method!=='HEAD')return html(errorPage(400,{user}),405);
-  switch(path){
-    case '/':{const [stats,pools]=await Promise.all([siteStats(env),featuredPools(env,user)]);return html(landingPage({user,pools,stats}));}
-    case '/login':case '/signup':if(user)return Response.redirect(new URL(user.role==='ADMIN'?'/admin':'/dashboard',req.url),302);return html(authPage(path.slice(1)));
-    case '/how-to-play':return html(howToPlayPage(user));
-    case '/rules':return html(rulesPage(user));
-    case '/merch':return html(merchPage(user));
-    case '/faq':return html(faqPage(user));
-    case '/about':return html(aboutPage(user));
-    case '/offline':return html(offlinePage());
-    case '/policy':return Response.redirect(new URL('/rules',req.url),301);
-    case '/dashboard':return asResponse(await pageDashboard(req,env,user));
-    case '/play':return asResponse(await pagePlay(req,env,user));
-    case '/suggest':return asResponse(await pageSuggest(env,user));
-    case '/admin':return asResponse(await pageAdmin(req,env,user));
-    case '/admin/setup':return asResponse(setupPage(user));
+// ── pages ───────────────────────────────────────────────────────────────────
+async function route(req, env, url, path, user) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return html(errorPage(400, { user }), 405);
+  const q = url.searchParams;
+
+  switch (path) {
+    case '/': { const [stats, pools] = await Promise.all([siteStats(env), featuredPools(env, user)]); return html(landingPage({ user, pools, stats })); }
+    case '/login': case '/signup':
+      if (user) return go(req, homeFor(user));
+      return html(authPage(path.slice(1), { ref: q.get('ref') || '', sponsor: q.get('type') === 'sponsor' }));
+    case '/how-to-play': return html(howToPlayPage(user));
+    case '/rules': return html(rulesPage(user));
+    case '/merch': return html(merchPage(user));
+    case '/faq': return html(faqPage(user));
+    case '/about': return html(aboutPage(user));
+    case '/offline': return html(offlinePage());
+    case '/policy': return go(req, '/rules', 301);
+    case '/suggest': return html(suggestPage(user));
+    case '/admin/setup': if (isAdmin(user)) return go(req, '/admin'); return html(setupPage());
+    case '/pay/callback': return go(req, await payCallback(req, env));
   }
-  if(LEGAL_PATHS.includes(path.slice(1)))return html(legalPage(path.slice(1),user));
-  return html(errorPage(404,{user}),404);
+  const goM = path.match(/^\/go\/([0-9a-f-]{36})$/);
+  if (goM) { const t = await promoClick(env, goM[1]); return t ? Response.redirect(t, 302) : go(req, '/'); }
+  const resM = path.match(/^\/results\/([^/]+)$/);
+  if (resM) return go(req, `/pool/${resM[1]}`);
+  if (LEGAL_PATHS.includes(path.slice(1))) return html(legalPage(path.slice(1), user));
+
+  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|nepo|me|calc|notifications|leaderboard|sponsor|admin)(\/|$)/;
+  if (!APP.test(path)) return html(errorPage(404, { user }), 404);
+  if (!user) return loginFirst(req, url);
+
+  if (path.startsWith('/admin')) return isAdmin(user) ? adminRoute(req, env, url, path, user) : html(errorPage(404, { user }), 404);
+  if (path.startsWith('/sponsor')) return user.role === 'SPONSOR' ? sponsorRoute(req, env, url, path, user) : go(req, homeFor(user));
+
+  const b = await base(env, user);
+  const origin = url.origin;
+  switch (path) {
+    case '/dashboard': {
+      if (user.role !== 'USER') return go(req, homeFor(user));
+      if (!user.referral_code) {   // accounts made before referrals existed
+        for (let i = 0; i < 5 && !user.referral_code; i++) { const c = randomCode(6); const r = await env.DB.prepare('UPDATE users SET referral_code=? WHERE id=? AND referral_code IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE referral_code=?)').bind(c, user.id, c).run(); if (r.meta.changes) user.referral_code = c; }
+      }
+      const [ranks, open, mine, notes] = await Promise.all([allRanks(env), listPools(env, user, { scope: 'open', limit: 6 }), listPools(env, user, { scope: 'mine', limit: 12 }), env.DB.prepare('SELECT text,link,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 4').bind(user.id).all()]);
+      return html(dashboardPage({ ...b, rank: rankInfo(ranks, user), live: open.map(poolPublic), mine: mine.map(poolPublic).filter(p => p.state !== 'ended' && p.state !== 'cancelled'), notes: notes.results, origin }));
+    }
+    case '/pools': {
+      const scope = ['open', 'mine', 'created', 'recent'].includes(q.get('scope')) ? q.get('scope') : 'open';
+      return html(poolsPage({ ...b, scope, pools: (await listPools(env, user, { scope })).map(poolPublic), canCreate: b.nepo || user.role !== 'USER' }));
+    }
+    case '/pools/new':
+      if (user.role === 'USER' && !b.nepo) return go(req, '/nepo');
+      return html(createPoolPage({ ...b, role: user.role }));
+    case '/play': return playRoute(req, env, url, user, b);
+    case '/store': {
+      const tab = ['BOOSTER', 'SKIN', 'SHAPE'].includes(q.get('tab')) ? q.get('tab') : 'BOOSTER';
+      const prefs = parseJson(user.prefs, {});
+      const items = (await env.DB.prepare('SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.active=1 ORDER BY s.sort, s.price_kobo').bind(user.id).all()).results
+        .map(i => ({ ...i, blocked: itemBlocked(i, user), equipped: i.kind === 'SKIN' ? user.equipped_skin === i.id : i.kind === 'SHAPE' ? (prefs.shape || 'rect') === parseJson(i.config, {}).shape : false }));
+      return html(storePage({ ...b, items, tab }));
+    }
+    case '/bag': {
+      const prefs = parseJson(user.prefs, {});
+      const inv = (await env.DB.prepare(`SELECT s.id AS item_id, s.name, s.kind, s.multiplier, s.duration_seconds, s.audience, s.config, COALESCE(i.quantity,0) AS quantity, s.price_kobo, s.min_rank
+        FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE (i.quantity>0) OR (s.kind!='BOOSTER' AND s.price_kobo=0 AND s.active=1) ORDER BY s.sort`).bind(user.id).all()).results
+        .filter(i => i.quantity > 0 || !itemBlocked(i, user))
+        .map(i => ({ ...i, equipped: i.kind === 'SKIN' ? user.equipped_skin === i.item_id : i.kind === 'SHAPE' && (prefs.shape || 'rect') === parseJson(i.config, {}).shape }));
+      return html(bagPage({ ...b, inv, prefs }));
+    }
+    case '/wallet': {
+      const s = await settings(env);
+      const [tx, wd] = await Promise.all([
+        env.DB.prepare('SELECT type,amount_kobo,balance,note,created_at FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 40').bind(user.id).all(),
+        env.DB.prepare('SELECT * FROM withdrawals WHERE user_id=? ORDER BY created_at DESC LIMIT 10').bind(user.id).all()]);
+      const flash = q.get('paid') === '1' ? 'Payment received. Your wallet don update.' : q.get('paid') === '0' ? 'Payment no go through. No money was taken.' : '';
+      return html(walletPage({ ...b, user: { ...user, isNepo: b.nepo }, tx: tx.results, withdrawals: wd.results, minWithdraw: b.nepo ? num(s, 'min_withdraw_nepo_kobo', 500000) : num(s, 'min_withdraw_lapo_kobo', 1000000), banks: BANKS, payMode: payMode(env), flash }));
+    }
+    case '/nepo': {
+      if (user.role !== 'USER') return go(req, homeFor(user));
+      const s = await settings(env);
+      return html(nepoPage({ ...b, until: user.nepo_until, monthly: num(s, 'nepo_monthly_kobo', 1300000), yearly: num(s, 'nepo_yearly_kobo', 12000000), payMode: payMode(env) }));
+    }
+    case '/me': {
+      if (user.role !== 'USER') return go(req, homeFor(user));
+      const s = await settings(env);
+      return html(mePage({ ...b, rank: rankInfo(await allRanks(env), user), prefs: parseJson(user.prefs, {}), until: user.nepo_until, voiceRank: num(s, 'voice_min_rank', 56) }));
+    }
+    case '/calc': if (!b.nepo) return go(req, '/nepo'); return html(calcPage(b));
+    case '/notifications': {
+      const notes = (await env.DB.prepare('SELECT text,link,read,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 60').bind(user.id).all()).results;
+      return html(notificationsPage({ ...b, notes }));
+    }
+    case '/leaderboard': {
+      const ranks = await allRanks(env);
+      const rows = (await env.DB.prepare("SELECT id,username,tier,nepo_until,role,rank_level,lifetime_taps,games_played,wins FROM users WHERE role='USER' AND status='ACTIVE' ORDER BY rank_level DESC, lifetime_taps DESC LIMIT 50").all()).results
+        .map(r => ({ ...r, nepo: isNepo(r), rank_name: ranks.find(x => x.level === r.rank_level)?.name || '' }));
+      return html(leaderboardPage({ ...b, rows }));
+    }
+  }
+
+  const pm = path.match(/^\/pool\/([^/]+)$/);
+  if (pm) return poolRoute(req, env, pm[1], user, b, origin);
+  return html(errorPage(404, { user }), 404);
+}
+
+async function poolRoute(req, env, id, user, b, origin) {
+  const p = await getPool(env, id, user);
+  if (!p) return html(errorPage(404, { user }), 404);
+  const pub = poolPublic(p);
+  const isCreator = p.created_by === user.id || isAdmin(user);
+  pub.boosterUsed = !!p.booster_item;
+  if (isCreator) pub.password = p.join_password;
+  let board = null, results = null;
+  if (p.settled_at && pub.state !== 'cancelled') {
+    const rows = (await env.DB.prepare(`SELECT pe.user_id, pe.final_rank AS r, u.username AS n, pe.taps AS s, u.tier, u.nepo_until, u.role, pe.side_choice AS side, pe.prize_kobo AS prize
+      FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? AND pe.final_rank IS NOT NULL ORDER BY pe.final_rank LIMIT 50`).bind(p.id).all()).results;
+    results = rows.map(r => ({ r: r.r, n: r.n, s: r.s, t: isNepo(r) ? 'NEPO' : 'LAPO', side: r.side, prize: r.prize, me: r.user_id === user.id }));
+    const mine = p.joined ? { rank: p.final_rank, score: p.my_taps } : null;
+    const teams = {};
+    if (p.side_a) for (const r of (await env.DB.prepare('SELECT side_choice, SUM(taps) t FROM pool_entries WHERE pool_id=? GROUP BY side_choice').bind(p.id).all()).results) if (r.side_choice) teams[r.side_choice] = r.t;
+    board = { top: results, me: mine, teams };
+  } else if (pub.state !== 'cancelled') {
+    try { board = (await roomCall(env, p.id, `/board?uid=${encodeURIComponent(user.id)}&n=20`)).data; } catch { board = null; }
+  }
+  const why = user.role === 'USER' ? joinBlocked(p, user) : 'Only player accounts can join pools.';
+  const myBoosters = Number((await env.DB.prepare("SELECT COALESCE(SUM(i.quantity),0) n FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND s.kind='BOOSTER'").bind(user.id).first())?.n || 0);
+  const entries = isCreator ? (await env.DB.prepare('SELECT u.username, pe.joined_at, pe.paid_kobo FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? ORDER BY pe.joined_at DESC LIMIT 200').bind(p.id).all()).results : null;
+  return html(poolPage({ ...b, pool: pub, board, results, isCreator, canJoin: !why, joinWhy: why || '', myBoosters, entries, origin }));
+}
+
+async function playRoute(req, env, url, user, b) {
+  if (user.role !== 'USER') return go(req, homeFor(user));
+  const ids = [...new Set(String(url.searchParams.get('pools') || url.searchParams.get('pool') || '').split(',').map(s => s.trim()).filter(Boolean))].slice(0, 20);
+  if (!ids.length) return go(req, '/pools?scope=mine');
+  const s = await settings(env);
+  const max = b.nepo ? num(s, 'max_multi_pools', 10) : 1;
+  const found = (await Promise.all(ids.map(id => getPool(env, id, user)))).filter(Boolean);
+  const joined = found.filter(p => p.joined).slice(0, max);
+  if (!joined.length) return go(req, found[0] ? `/pool/${found[0].id}` : '/pools');
+  const pools = joined.map(p => ({ ...poolPublic(p), boosterUsed: !!p.booster_item, mySide: p.side_choice }));
+  const prefs = parseJson(user.prefs, {});
+  const skinRow = await env.DB.prepare("SELECT config FROM store_items WHERE id=? AND kind='SKIN'").bind(user.equipped_skin || 'skin-boy').first();
+  const boosters = (await env.DB.prepare("SELECT s.*, i.quantity FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND s.kind='BOOSTER' AND i.quantity>0 ORDER BY s.sort").bind(user.id).all()).results
+    .map(x => ({ id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, blocked: itemBlocked(x, user) }));
+  const voice = { enabled: !!(env.CALLS_APP_ID && env.CALLS_APP_TOKEN), topN: num(s, 'voice_top_n', 5), minRank: num(s, 'voice_min_rank', 56) };
+  return html(playPage({ user, nepo: b.nepo, pools, boosters, skin: parseJson(skinRow?.config, { bg: '#1c5a33', art: 'boy' }), prefs: b.nepo ? prefs : { vibrate: prefs.vibrate, shape: prefs.shape }, voice, serverNow: nowIso() }));
+}
+
+// ── sponsor ─────────────────────────────────────────────────────────────────
+async function sponsorRoute(req, env, url, path, user) {
+  const b = await base(env, user);
+  const pools = (await env.DB.prepare('SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p WHERE p.created_by=? ORDER BY p.starts_at DESC LIMIT 100').bind(user.id).all()).results.map(poolPublic);
+  if (path === '/sponsor') {
+    const profile = await env.DB.prepare('SELECT * FROM sponsor_profiles WHERE user_id=?').bind(user.id).first();
+    const ad = await env.DB.prepare('SELECT COALESCE(SUM(views),0) v, COALESCE(SUM(clicks),0) c FROM promos WHERE owner_id=?').bind(user.id).first();
+    const stats = { pools: pools.length, players: pools.reduce((a, p) => a + Number(p.players || 0), 0), views: ad.v, clicks: ad.c };
+    return html(sponsorHome({ ...b, profile, stats, pools: pools.filter(p => p.state === 'live' || p.state === 'soon') }));
+  }
+  if (path === '/sponsor/pools') return html(sponsorPools({ ...b, pools }));
+  if (path === '/sponsor/ads') {
+    const ads = (await env.DB.prepare('SELECT a.*, p.name AS pool_name FROM promos a LEFT JOIN pools p ON p.id=a.pool_id WHERE a.owner_id=? ORDER BY a.created_at DESC').bind(user.id).all()).results;
+    return html(sponsorAds({ ...b, ads, pools: pools.filter(p => p.state !== 'ended' && p.state !== 'cancelled') }));
+  }
+  return html(errorPage(404, { user }), 404);
+}
+
+// ── admin ───────────────────────────────────────────────────────────────────
+async function adminRoute(req, env, url, path, user) {
+  const q = url.searchParams;
+  const b = { user, unread: await unreadCount(env, user) };
+  if (path === '/admin') {
+    const now = nowIso();
+    const s = await env.DB.prepare(`SELECT
+      (SELECT COUNT(*) FROM users WHERE role='USER') players,
+      (SELECT COUNT(*) FROM users WHERE role='USER' AND tier='NEPO' AND (nepo_until IS NULL OR nepo_until>?)) nepo,
+      (SELECT COUNT(*) FROM users WHERE role='SPONSOR') sponsors,
+      (SELECT COUNT(*) FROM pools WHERE starts_at<=? AND ends_at>? AND status!='CANCELLED') live,
+      (SELECT COALESCE(SUM(balance_kobo),0) FROM wallets) wallets,
+      (SELECT COALESCE(SUM(winnings_kobo),0) FROM wallets) winnings,
+      (SELECT COUNT(*) FROM withdrawals WHERE status='PENDING') pendingW,
+      (SELECT COUNT(*) FROM promos WHERE approved=0) pendingAds`).bind(now, now, now).first();
+    const audit = (await env.DB.prepare('SELECT action,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 15').all()).results;
+    return html(adminHome({ ...b, stats: s, settings: await settings(env), audit }));
+  }
+  if (path === '/admin/users') {
+    const term = String(q.get('q') || '').trim().slice(0, 60);
+    const users = (await env.DB.prepare(`SELECT u.*, w.balance_kobo, w.winnings_kobo FROM users u LEFT JOIN wallets w ON w.user_id=u.id WHERE (?='' OR u.username LIKE ? OR u.email LIKE ?) ORDER BY u.created_at DESC LIMIT 100`).bind(term, `%${term}%`, `%${term}%`).all()).results;
+    return html(adminUsers({ ...b, users, q: term }));
+  }
+  const um = path.match(/^\/admin\/users\/([^/]+)$/);
+  if (um) {
+    const target = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(um[1]).first();
+    if (!target) return html(errorPage(404, { user }), 404);
+    const ranks = await allRanks(env);
+    const [wallet, inv, items, entries] = await Promise.all([
+      getWallet(env, target.id),
+      env.DB.prepare('SELECT s.name, s.kind, i.quantity FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND i.quantity>0').bind(target.id).all(),
+      env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN','SHAPE') ORDER BY kind, sort").all(),
+      env.DB.prepare('SELECT pe.*, p.name FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id WHERE pe.user_id=? ORDER BY pe.joined_at DESC LIMIT 30').bind(target.id).all()]);
+    return html(adminUser({ ...b, target, wallet, inv: inv.results, items: items.results, entries: entries.results, rankName: ranks.find(r => r.level === target.rank_level)?.name || '' }));
+  }
+  if (path === '/admin/pools') {
+    const scope = ['live', 'ended', 'all'].includes(q.get('scope')) ? q.get('scope') : 'live';
+    const now = nowIso();
+    const where = scope === 'live' ? 'p.ends_at>?' : scope === 'ended' ? 'p.ends_at<=?' : "?!=''";
+    const pools = (await env.DB.prepare(`SELECT p.*, u.username AS creator, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p LEFT JOIN users u ON u.id=p.created_by WHERE ${where} ORDER BY p.starts_at ${scope === 'live' ? 'ASC' : 'DESC'} LIMIT 150`).bind(now).all()).results
+      .map(p => ({ ...poolPublic(p), creator: p.creator, settled: !!p.settled_at && p.status !== 'CANCELLED' }));
+    return html(adminPools({ ...b, pools, scope }));
+  }
+  if (path === '/admin/store') {
+    const items = (await env.DB.prepare('SELECT s.*, (SELECT COUNT(*) FROM inventory i WHERE i.item_id=s.id AND i.quantity>0) AS owners FROM store_items s ORDER BY s.kind, s.sort, s.created_at').all()).results;
+    return html(adminStore({ ...b, items, edit: items.find(i => i.id === q.get('edit')) || null }));
+  }
+  if (path === '/admin/ranks') {
+    const counts = Object.fromEntries((await env.DB.prepare("SELECT rank_level l, COUNT(*) n FROM users WHERE role='USER' GROUP BY rank_level").all()).results.map(r => [r.l, r.n]));
+    const ranks = (await allRanks(env)).map(r => ({ ...r, players: counts[r.level] || 0 }));
+    return html(adminRanks({ ...b, ranks, edit: ranks.find(r => String(r.level) === q.get('edit')) || null }));
+  }
+  if (path === '/admin/ads') {
+    const ads = (await env.DB.prepare('SELECT a.*, u.username AS owner, p.name AS pool_name FROM promos a LEFT JOIN users u ON u.id=a.owner_id LEFT JOIN pools p ON p.id=a.pool_id ORDER BY a.approved, a.created_at DESC LIMIT 200').all()).results;
+    const pools = (await env.DB.prepare("SELECT id,name FROM pools WHERE ends_at>? AND status!='CANCELLED' ORDER BY starts_at LIMIT 100").bind(nowIso()).all()).results;
+    return html(adminAds({ ...b, ads, pools }));
+  }
+  if (path === '/admin/withdrawals') {
+    const rows = (await env.DB.prepare('SELECT w.*, u.username FROM withdrawals w JOIN users u ON u.id=w.user_id ORDER BY CASE w.status WHEN \'PENDING\' THEN 0 WHEN \'PROCESSING\' THEN 1 ELSE 2 END, w.created_at DESC LIMIT 200').all()).results;
+    return html(adminWithdrawals({ ...b, rows, paystack: paystackOn(env) }));
+  }
+  if (path === '/admin/suggestions') {
+    const rows = (await env.DB.prepare('SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 100').all()).results;
+    return html(adminSuggestions({ ...b, rows }));
+  }
+  return html(errorPage(404, { user }), 404);
 }

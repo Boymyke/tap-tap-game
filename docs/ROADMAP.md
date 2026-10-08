@@ -11,6 +11,8 @@ ties are set **per pool** (first to reach the score wins, or tied players split)
 - Installable app (manifest, icons, service worker), offline banner and offline page, tilt → tap area on the right.
 - Hashed session tokens, 30-day sliding sessions. How to play, Rules, Merch (notify me), FAQ, About, 404/500.
 
+## Phases 2–5 ✅ built (Oct 2026) — waiting on keys: Paystack, email, Cloudflare Realtime (voice), R2 (uploads)
+
 ## Phase 2 — accounts, ranks and the super admin
 - Roles: `LAPO` (free), `NEPO` (paid), `SPONSOR` (separate sign-up + dashboard), `ADMIN`.
 - 100 generated ranks (name, tap threshold, games-played requirement, unlocks) — editable/addable in admin.
