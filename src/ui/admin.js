@@ -176,3 +176,24 @@ export function suggestPage(user) {
 <div class="ta-msg" role="alert"></div><button class="btn btn--block" type="submit">Send</button></form></div></main>`;
   return themeShell({ title: 'Suggest', body });
 }
+
+// ── separate admin login (/admin/login) ─────────────────────────────────────
+export function adminLoginPage() {
+  const body = `<main style="min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:20px">
+<div style="width:100%;max-width:420px">
+  <div style="text-align:center;margin-bottom:18px"><img src="/assets/logo-tapam.svg" width="150" height="40" alt="tap am"></div>
+  <div class="tcard tcard--ink" style="padding:26px 22px 22px">
+    <span style="display:inline-block;padding:4px 9px;border-radius:7px;background:var(--danger);color:#1a0400;font:800 13px/1 var(--display);text-transform:uppercase;letter-spacing:.3px">Super admin</span>
+    <h1 style="margin:12px 0 6px;font:800 34px/1 var(--display);text-transform:uppercase">Admin login</h1>
+    <p style="margin:0 0 16px;color:var(--muted)">For the Tap Am super admin only. Players and sponsors log in <a href="/login" style="color:var(--neon)">here</a>.</p>
+    <form class="form" data-api="/api/admin/login" novalidate>
+      <div class="ta-field"><label class="ta-label" for="a-id">Nickname or email</label><input class="ta-input" id="a-id" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required><p class="ta-error" data-err="identifier"></p></div>
+      <div class="ta-field"><label class="ta-label" for="a-pw">Password</label><input class="ta-input" id="a-pw" name="password" type="password" autocomplete="current-password" maxlength="128" required><p class="ta-error" data-err="password"></p></div>
+      <div class="ta-msg" role="alert"></div>
+      <button class="btn btn--block" type="submit">Enter admin</button>
+    </form>
+  </div>
+  <p style="text-align:center;margin-top:14px"><a href="/" style="color:var(--muted)">← Back to Tap Am</a></p>
+</div></main>`;
+  return themeShell({ title: 'Admin login', body, css: '.form{display:grid;gap:12px}' });
+}

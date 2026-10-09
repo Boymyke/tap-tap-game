@@ -77,7 +77,7 @@
   /* ── logout (also clears cached pages for privacy) ──────────────── */
   function logout(btn) {
     btn.disabled = true;
-    var done = function () { location.href = '/'; };
+    var done = function () { location.href = location.pathname.indexOf('/admin') === 0 ? '/admin/login' : '/'; };
     fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(function () {}).then(function () {
       if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'clear-pages' });
       setTimeout(done, 80);

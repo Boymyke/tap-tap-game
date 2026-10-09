@@ -8,7 +8,7 @@ export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const BRAND = 'Tap Am';
 export const TAGLINE = 'tap ammm jor, make you chop ammm';
 export const FERRN_URL = 'https://www.ferrnagency.com';
-export const ASSET_VERSION = '4';
+export const ASSET_VERSION = '5';
 
 // Tone-on-tone geometric pattern for cards (like printed match cards).
 const PATTERN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Cpath d='M0 0l14 14L0 28zM28 0l14 14-14 14zM14 28l14 14-14 14zM42 28l14 14-14 14z'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='.09'%3E%3Cpath d='M28 0L14 14l14 14zM56 0L42 14l14 14zM28 28L14 42l14 14zM56 28L42 42l14 14z'/%3E%3C/g%3E%3C/svg%3E\")";

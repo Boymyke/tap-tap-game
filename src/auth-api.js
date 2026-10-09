@@ -185,14 +185,16 @@ export async function handleAuthApi(req, env, path) {
   }
 
   // ── Login ────────────────────────────────────────────────────────────────
-  if (path === '/api/login') {
+  // Players and sponsors log in at /login; the super admin has a separate page (/admin/login).
+  if (path === '/api/login' || path === '/api/admin/login') {
+    const adminLogin = path === '/api/admin/login';
     const { data, response } = await readJson(req); if (response) return response;
     const identifier = String(data.identifier ?? data.email ?? '').trim(), password = String(data.password ?? '');
     if (!identifier) return fieldError('identifier', 'Enter your nickname or email.');
     if (!password) return fieldError('password', 'Enter your password.');
     if (identifier.length > 254 || password.length > 128) return json({ error: 'Wrong nickname, email or password. Check am well.' }, 401);
-    const idKey = 'login-id:' + identifier.toLowerCase();
-    if (!await allow(env, 'login-ip:' + ip, 40, 900) || !await allow(env, idKey, 10, 900)) return tooMany('Too many login tries. Wait 15 minutes and try again.');
+    const idKey = (adminLogin ? 'admin-login-id:' : 'login-id:') + identifier.toLowerCase();
+    if (!await allow(env, (adminLogin ? 'admin-login-ip:' : 'login-ip:') + ip, adminLogin ? 15 : 40, 900) || !await allow(env, idKey, adminLogin ? 5 : 10, 900)) return tooMany('Too many login tries. Wait 15 minutes and try again.');
     const user = identifier.includes('@')
       ? await env.DB.prepare('SELECT * FROM users WHERE email=?').bind(identifier.toLowerCase()).first()
       : await env.DB.prepare('SELECT * FROM users WHERE username=?').bind(identifier).first();
@@ -201,6 +203,8 @@ export async function handleAuthApi(req, env, path) {
     const iterations = user.password_iter || LEGACY_PBKDF2_ITERATIONS;
     const hp = await hashPassword(password, user.password_salt, iterations);
     if (!safeEqual(hp.hash, user.password_hash)) return wrong();
+    if (adminLogin && user.role !== 'ADMIN') return wrong();   // don't reveal which accounts exist
+    if (!adminLogin && user.role === 'ADMIN') return json({ error: 'This account uses the admin login page.' }, 403);
     if (user.status && user.status !== 'ACTIVE') return json({ error: 'This account is suspended. Contact Tap Am through the Suggest page.' }, 403);
     await clearLimit(env, idKey);
     if (iterations < PBKDF2_ITERATIONS) {   // quietly upgrade old, weaker hashes

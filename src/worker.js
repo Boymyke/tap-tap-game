@@ -6,7 +6,7 @@ import { howToPlayPage, rulesPage, merchPage, faqPage, aboutPage, offlinePage, e
 import { dashboardPage, poolsPage, poolPage, storePage, bagPage, walletPage, nepoPage, mePage, createPoolPage, calcPage, notificationsPage, leaderboardPage } from './ui/player.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds } from './ui/sponsor.js';
-import { adminHome, adminUsers, adminUser, adminPools, adminStore, adminRanks, adminAds, adminWithdrawals, adminSuggestions, setupPage, suggestPage } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminUsers, adminUser, adminPools, adminStore, adminRanks, adminAds, adminWithdrawals, adminSuggestions, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
 import { handlePlayApi } from './api/play.js';
@@ -178,6 +178,7 @@ async function route(req, env, url, path, user) {
     case '/policy': return go(req, '/rules', 301);
     case '/suggest': return html(suggestPage(user));
     case '/admin/setup': if (isAdmin(user)) return go(req, '/admin'); return html(setupPage());
+    case '/admin/login': if (isAdmin(user)) return go(req, '/admin'); return html(adminLoginPage(), 200, { 'x-robots-tag': 'noindex' });
     case '/pay/callback': return go(req, await payCallback(req, env));
   }
   const goM = path.match(/^\/go\/([0-9a-f-]{36})$/);
@@ -188,7 +189,7 @@ async function route(req, env, url, path, user) {
 
   const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|nepo|me|calc|notifications|leaderboard|sponsor|admin)(\/|$)/;
   if (!APP.test(path)) return html(errorPage(404, { user }), 404);
-  if (!user) return loginFirst(req, url);
+  if (!user) return path.startsWith('/admin') ? go(req, '/admin/login') : loginFirst(req, url);
 
   if (path.startsWith('/admin')) return isAdmin(user) ? adminRoute(req, env, url, path, user) : html(errorPage(404, { user }), 404);
   if (path.startsWith('/sponsor')) return user.role === 'SPONSOR' ? sponsorRoute(req, env, url, path, user) : go(req, homeFor(user));
