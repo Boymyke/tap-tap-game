@@ -96,8 +96,8 @@ export async function settlePool(env, poolId, ranked) {
 
   // Nobody tapped at all: give entry fees back, and the starting prize back to whoever funded it.
   if (!prizes.size && Number(pool.prize_kobo) > 0 && !ranked.some(p => p.score > 0)) {
-    const paid = (await env.DB.prepare('SELECT user_id,paid_kobo FROM pool_entries WHERE pool_id=? AND paid_kobo>0').bind(poolId).all()).results;
-    for (const e of paid) await credit(env, e.user_id, e.paid_kobo, { type: 'REFUND', reference: poolId, note: `Nobody tapped: ${pool.name}` });
+    const paid = (await env.DB.prepare("SELECT e.user_id, e.paid_kobo, COALESCE((SELECT t.balance FROM wallet_transactions t WHERE t.user_id=e.user_id AND t.reference=e.pool_id AND t.type='ENTRY_FEE' ORDER BY t.created_at DESC LIMIT 1), 'WALLET') AS src FROM pool_entries e WHERE e.pool_id=? AND e.paid_kobo>0").bind(poolId).all()).results;
+    for (const e of paid) await credit(env, e.user_id, e.paid_kobo, { balance: e.src === 'WINNINGS' ? 'WINNINGS' : 'WALLET', type: 'REFUND', reference: poolId, note: `Nobody tapped: ${pool.name}` });
     const seeded = Number(pool.prize_kobo) - paid.reduce((a, e) => a + e.paid_kobo, 0);
     const funder = await env.DB.prepare('SELECT role FROM users WHERE id=?').bind(pool.created_by || '').first();
     if (seeded > 0 && funder && funder.role !== 'ADMIN') await credit(env, pool.created_by, seeded, { type: 'REFUND', reference: poolId, note: `Prize back (nobody tapped): ${pool.name}` });

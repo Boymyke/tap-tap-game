@@ -145,7 +145,10 @@ async function sweep(env, cron) {
     env.DB.prepare('DELETE FROM sessions WHERE expires_at<?').bind(now),
     env.DB.prepare('DELETE FROM voice_sessions WHERE updated_at<?').bind(new Date(Date.now() - 120000).toISOString()),
     env.DB.prepare('DELETE FROM email_codes WHERE expires_at<?').bind(new Date(Date.now() - 86400000).toISOString()),
-    env.DB.prepare('DELETE FROM visitors WHERE last_seen<?').bind(new Date(Date.now() - 400 * 86400000).toISOString())
+    env.DB.prepare('DELETE FROM visitors WHERE last_seen<?').bind(new Date(Date.now() - 400 * 86400000).toISOString()),
+    // a withdrawal claim left half-done (worker stopped between claim and debit): keep it if the money was taken, else drop it
+    env.DB.prepare("UPDATE withdrawals SET status='PENDING' WHERE status='HOLD' AND datetime(created_at)<datetime(?) AND EXISTS (SELECT 1 FROM wallet_transactions t WHERE t.reference=withdrawals.id AND t.type='WITHDRAW')").bind(new Date(Date.now() - 600000).toISOString()),
+    env.DB.prepare("DELETE FROM withdrawals WHERE status='HOLD' AND datetime(created_at)<datetime(?)").bind(new Date(Date.now() - 600000).toISOString())
   ]);
   const size = res[0]?.meta?.size_after;
   if (size) await env.DB.prepare("INSERT INTO settings(key,value) VALUES('db_bytes',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(size)).run();
@@ -229,13 +232,13 @@ async function route(req, env, url, path, user) {
     case '/top': return topRoute(env, q, user);
   }
   const goM = path.match(/^\/go\/([0-9a-f-]{36})$/);
-  if (goM) { const t = await promoClick(env, goM[1]); return t ? Response.redirect(t, 302) : go(req, '/'); }
+  if (goM) { const t = await promoClick(env, goM[1], clientIp(req)); return t ? Response.redirect(t, 302) : go(req, '/'); }
   const slM = path.match(/^\/s\/([0-9a-z-]{8,40})$/);
   if (slM) {   // home slide click: count it, then go to its link (only Tap Am pages or https links)
     const sl = await env.DB.prepare("SELECT link FROM slides WHERE id=? AND status='LIVE'").bind(slM[1]).first();
-    if (sl) await env.DB.prepare('UPDATE slides SET clicks=clicks+1 WHERE id=?').bind(slM[1]).run();
+    if (sl && await allow(env, `sc:${clientIp(req)}:${slM[1]}`, 2, 600)) await env.DB.prepare('UPDATE slides SET clicks=clicks+1 WHERE id=?').bind(slM[1]).run();
     const link = sl?.link || '/pools';
-    return /^\/[a-z0-9/_?=&.-]*$/i.test(link) || /^https:\/\//i.test(link) ? Response.redirect(new URL(link, req.url).href, 302) : go(req, '/pools');
+    return /^\/(?!\/)[a-z0-9/_?=&.-]*$/i.test(link) || /^https:\/\//i.test(link) ? Response.redirect(new URL(link, req.url).href, 302) : go(req, '/pools');
   }
   const resM = path.match(/^\/results\/([^/]+)$/);
   if (resM) return go(req, `/pool/${resM[1]}`);

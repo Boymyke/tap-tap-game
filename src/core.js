@@ -62,10 +62,13 @@ export async function credit(env, userId, amount, { balance = 'WALLET', type, re
 export async function debit(env, userId, amount, { balance = 'WALLET', type, reference = null, note = null }) {
   if (amount <= 0) return true;
   await ensureWallet(env, userId);
-  const r = await env.DB.prepare(`UPDATE wallets SET ${col(balance)}=${col(balance)}-? WHERE user_id=? AND ${col(balance)}>=?`).bind(amount, userId, amount).run();
-  if (!r.meta.changes) return false;
-  await env.DB.prepare('INSERT INTO wallet_transactions(id,user_id,type,amount_kobo,reference,status,balance,note) VALUES(?,?,?,?,?,?,?,?)').bind(uid(), userId, type, -amount, reference, 'SUCCESS', balance, note).run();
-  return true;
+  // One transaction: the ledger row is written only if the balance update took the money (changes() > 0),
+  // so a worker stopping half-way can never leave money taken without a record.
+  const [r] = await env.DB.batch([
+    env.DB.prepare(`UPDATE wallets SET ${col(balance)}=${col(balance)}-? WHERE user_id=? AND ${col(balance)}>=?`).bind(amount, userId, amount),
+    env.DB.prepare('INSERT INTO wallet_transactions(id,user_id,type,amount_kobo,reference,status,balance,note) SELECT ?,?,?,?,?,?,?,? WHERE changes()>0').bind(uid(), userId, type, -amount, reference, 'SUCCESS', balance, note)
+  ]);
+  return !!r.meta.changes;
 }
 
 // ── inventory ───────────────────────────────────────────────────────────────

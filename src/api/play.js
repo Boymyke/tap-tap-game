@@ -240,7 +240,8 @@ export async function handlePlayApi(req, env, path, user) {
     p = await env.DB.prepare(`SELECT a.id,a.title,a.kind,a.image_url,a.video_id,a.target_url,a.owner_id,COALESCE(sp.company,'Tap Am') AS company,COALESCE(sp.lead_capture,0) AS lead_capture
       FROM promos a LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id WHERE a.active=1 AND a.approved=1 AND (a.id=? OR a.pool_id=? OR (? IS NULL AND a.pool_id IS NULL))
       ORDER BY CASE WHEN a.id=? THEN 0 WHEN a.pool_id=? THEN 1 ELSE 2 END, RANDOM() LIMIT 1`).bind(pinned || '', pool, pinned, pinned || '', pool).first();
-    if (p) await env.DB.prepare('UPDATE promos SET views=views+1 WHERE id=?').bind(p.id).run();
+    // count a view at most 3 times per player per ad every 10 minutes, so scripts can't inflate sponsor numbers
+    if (p && await allow(env, `pv:${user.id}:${p.id}`, 3, 600)) await env.DB.prepare('UPDATE promos SET views=views+1 WHERE id=?').bind(p.id).run();
     if (p && user.role === 'USER') p.lead_done = !!(await env.DB.prepare('SELECT 1 FROM leads WHERE promo_id=? AND user_id=?').bind(p.id, user.id).first());
     return json({ promo: p || null });
   }

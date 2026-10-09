@@ -75,27 +75,28 @@ export async function handleAdminApi(req, env, path, user) {
     if (!item) return json({ error: 'Pick an item.', field: 'item' }, 400);
     const qty = clampInt(data.qty, 1, 100, 1);
     const to = String(data.to || 'ALL');
-    let rows;
+    // set-based statements (D1 allows at most 100 bound values per statement, so name lists go in groups of 90):
+    // gifting 20,000 players is a handful of database calls, not thousands
+    const groups = [];
     if (to === 'LIST') {
       const names = [...new Set(String(data.names || '').split(/[\s,]+/).map(x => x.trim()).filter(Boolean))].slice(0, 500);
       if (!names.length) return json({ error: 'Paste at least one nickname.', field: 'names' }, 400);
-      rows = (await env.DB.prepare(`SELECT id FROM users WHERE role='USER' AND status='ACTIVE' AND username IN (${names.map(() => '?').join(',')})`).bind(...names).all()).results;
+      for (let i = 0; i < names.length; i += 90) { const g = names.slice(i, i + 90); groups.push({ where: `role='USER' AND status='ACTIVE' AND username IN (${g.map(() => '?').join(',')})`, binds: g }); }
     } else {
       const now = nowIso();
-      const where = to === 'NEPO' ? "AND tier='NEPO' AND (tier_until IS NULL OR tier_until>?)" : to === 'MAPO' ? "AND tier='MAPO' AND (tier_until IS NULL OR tier_until>?)" : to === 'LAPO' ? "AND (tier='LAPO' OR tier_until<=?)" : 'AND ?=?';
-      rows = (await env.DB.prepare(`SELECT id FROM users WHERE role='USER' AND status='ACTIVE' ${where} LIMIT 20000`).bind(...(to === 'ALL' ? [1, 1] : [now])).all()).results;
+      groups.push({ where: "role='USER' AND status='ACTIVE' " + (to === 'NEPO' ? "AND tier='NEPO' AND (tier_until IS NULL OR tier_until>?)" : to === 'MAPO' ? "AND tier='MAPO' AND (tier_until IS NULL OR tier_until>?)" : to === 'LAPO' ? "AND (tier='LAPO' OR tier_until<=?)" : 'AND ?=?'), binds: to === 'ALL' ? [1, 1] : [now] });
     }
-    if (!rows.length) return json({ error: 'No players match.' }, 400);
-    if (data.confirm !== true) return json({ error: `This sends ${qty}× ${item.name} to ${rows.length} players. Tick confirm to send.`, field: 'confirm', count: rows.length }, 400);
+    const counts = await env.DB.batch(groups.map(g => env.DB.prepare(`SELECT COUNT(*) n FROM users WHERE ${g.where}`).bind(...g.binds)));
+    const count = counts.reduce((a, r) => a + Number(r.results?.[0]?.n || 0), 0);
+    if (!count) return json({ error: 'No players match.' }, 400);
+    if (data.confirm !== true) return json({ error: `This sends ${qty}× ${item.name} to ${count} players. Tick confirm to send.`, field: 'confirm', count }, 400);
     const note = String(data.note || '').slice(0, 120) || 'From Tap Am';
-    for (let i = 0; i < rows.length; i += 40) {
-      const chunk = rows.slice(i, i + 40), st = [];
-      for (const r of chunk) {
-        st.push(env.DB.prepare('INSERT INTO inventory(user_id,item_id,quantity) VALUES(?,?,?) ON CONFLICT(user_id,item_id) DO UPDATE SET quantity=quantity+excluded.quantity').bind(r.id, item.id, qty));
-        st.push(env.DB.prepare('INSERT INTO notifications(id,user_id,text,link) VALUES(?,?,?,?)').bind(uid(), r.id, `Tap Am gifted you ${qty}× ${item.name}! ${note === 'From Tap Am' ? '' : note}`.trim(), '/bag'));
-      }
-      await env.DB.batch(st);
-    }
+    const text = `Tap Am gifted you ${qty}× ${item.name}! ${note === 'From Tap Am' ? '' : note}`.trim();
+    await env.DB.batch(groups.flatMap(g => [
+      env.DB.prepare(`INSERT INTO inventory(user_id,item_id,quantity) SELECT id,?,? FROM users WHERE ${g.where} ON CONFLICT(user_id,item_id) DO UPDATE SET quantity=quantity+excluded.quantity`).bind(item.id, qty, ...g.binds),
+      env.DB.prepare(`INSERT INTO notifications(id,user_id,text,link) SELECT lower(hex(randomblob(16))),id,?,'/bag' FROM users WHERE ${g.where}`).bind(text, ...g.binds)
+    ]));
+    const rows = { length: count };
     await audit(env, user.id, 'gift.bulk', { item: item.id, qty, to, count: rows.length });
     return json({ message: `Sent ${qty}× ${item.name} to ${rows.length} players`, reload: true });
   }
@@ -116,8 +117,8 @@ export async function handleAdminApi(req, env, path, user) {
       const c = await env.DB.prepare("UPDATE pools SET status='CANCELLED', settled_at=? WHERE id=? AND settled_at IS NULL").bind(nowIso(), pool.id).run();
       if (!c.meta.changes) return json({ error: 'Pool already settled.' }, 409);
       await roomCall(env, pool.id, '/init', { pool: { ...pool, ends_at: nowIso() } }).catch(() => {});   // stop taps now
-      const paid = (await env.DB.prepare('SELECT user_id,paid_kobo FROM pool_entries WHERE pool_id=? AND paid_kobo>0').bind(pool.id).all()).results;
-      for (const e of paid) { await credit(env, e.user_id, e.paid_kobo, { type: 'REFUND', reference: pool.id, note: `Refund: ${pool.name}` }); await notify(env, e.user_id, `“${pool.name}” was cancelled. Your ${naira(e.paid_kobo)} entry is back in your wallet.`, '/wallet'); }
+      const paid = (await env.DB.prepare("SELECT e.user_id, e.paid_kobo, COALESCE((SELECT t.balance FROM wallet_transactions t WHERE t.user_id=e.user_id AND t.reference=e.pool_id AND t.type='ENTRY_FEE' ORDER BY t.created_at DESC LIMIT 1), 'WALLET') AS src FROM pool_entries e WHERE e.pool_id=? AND e.paid_kobo>0").bind(pool.id).all()).results;
+      for (const e of paid) { await credit(env, e.user_id, e.paid_kobo, { balance: e.src === 'WINNINGS' ? 'WINNINGS' : 'WALLET', type: 'REFUND', reference: pool.id, note: `Refund: ${pool.name}` }); await notify(env, e.user_id, `“${pool.name}” was cancelled. Your ${naira(e.paid_kobo)} entry is back in your ${e.src === 'WINNINGS' ? 'winnings' : 'wallet'}.`, '/wallet'); }
       const seeded = Number(pool.prize_kobo) - paid.reduce((a, e) => a + e.paid_kobo, 0);
       if (seeded > 0 && pool.created_by && pool.created_by !== user.id) {
         const creator = await env.DB.prepare('SELECT role FROM users WHERE id=?').bind(pool.created_by).first();

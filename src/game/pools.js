@@ -179,18 +179,26 @@ export async function joinPool(env, user, pool, d) {
     if (!side) return json({ error: `Pick a side: ${pool.side_a} or ${pool.side_b}.`, field: 'side' }, 400);
   }
   const fee = Number(pool.entry_fee_kobo || 0);
+  let paidFrom = 'WALLET';
   if (fee > 0) {
     if (!user.adult_confirmed_at) { if (d.adult !== true) return adultError(); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
     let paid = await debit(env, user.id, fee, { type: 'ENTRY_FEE', reference: pool.id, note: pool.name });
-    if (!paid && d.use_winnings === true) paid = await debit(env, user.id, fee, { balance: 'WINNINGS', type: 'ENTRY_FEE', reference: pool.id, note: pool.name });
+    if (!paid && d.use_winnings === true && (paid = await debit(env, user.id, fee, { balance: 'WINNINGS', type: 'ENTRY_FEE', reference: pool.id, note: pool.name }))) paidFrom = 'WINNINGS';
     if (!paid) return fundsError(`You need ${naira(fee)} in your wallet to join. Fund your wallet first.`);
   }
-  const ins = await env.DB.prepare('INSERT OR IGNORE INTO pool_entries(pool_id,user_id,side_choice,paid_kobo) VALUES(?,?,?,?)').bind(pool.id, user.id, side, fee).run();
-  if (!ins.meta.changes && fee > 0) {   // raced with another join: give the money back
-    await credit(env, user.id, fee, { type: 'REFUND', reference: pool.id, note: 'Double join' });
-  } else if (fee > 0) {
-    await env.DB.prepare('UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=?').bind(fee, pool.id).run();
+  // One statement decides the seat: not full, still open, not already joined. Parallel joins can't overfill a
+  // pool or slip in after it ended (when the fee would miss the payout).
+  const ins = await env.DB.prepare(`INSERT OR IGNORE INTO pool_entries(pool_id,user_id,side_choice,paid_kobo)
+    SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM pool_entries WHERE pool_id=?) < ?
+    AND EXISTS (SELECT 1 FROM pools WHERE id=? AND settled_at IS NULL AND status!='CANCELLED' AND ends_at>?)`)
+    .bind(pool.id, user.id, side, fee, pool.id, Number(pool.max_players) || NO_LIMIT, pool.id, nowIso()).run();
+  if (!ins.meta.changes) {
+    if (fee > 0) await credit(env, user.id, fee, { balance: paidFrom, type: 'REFUND', reference: pool.id, note: 'Join did not go through' });
+    const already = await env.DB.prepare('SELECT 1 FROM pool_entries WHERE pool_id=? AND user_id=?').bind(pool.id, user.id).first();
+    if (already) return json({ message: 'You don already join', redirect: `/pool/${pool.id}` });
+    return json({ error: fee > 0 ? `This pool don full or close. Your ${naira(fee)} don return.` : 'This pool don full or close.' }, 409);
   }
+  if (fee > 0) await env.DB.prepare('UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=?').bind(fee, pool.id).run();
   await initRoom(env, pool);
   await roomCall(env, pool.id, '/join', { uid: user.id, name: user.username, tier: tierOf(user), side });
   return json({ message: fee ? `You don join! ${naira(fee)} entry paid.` : 'You don join!', redirect: `/pool/${pool.id}` });

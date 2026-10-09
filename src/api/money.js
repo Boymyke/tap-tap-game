@@ -86,7 +86,7 @@ async function needAdult(env, me, data) {
 // Withdrawals today (Lagos calendar day), not counting rejected ones.
 async function withdrawalsToday(env, userId) {
   const start = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();
-  return Number((await env.DB.prepare("SELECT COUNT(*) n FROM withdrawals WHERE user_id=? AND created_at>=? AND status!='REJECTED'").bind(userId, start).first())?.n || 0);
+  return Number((await env.DB.prepare("SELECT COUNT(*) n FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status!='REJECTED'").bind(userId, start).first())?.n || 0);
 }
 
 export async function handleMoneyApi(req, env, path, user) {
@@ -195,9 +195,17 @@ export async function handleMoneyApi(req, env, path, user) {
     const pending = await env.DB.prepare("SELECT 1 FROM withdrawals WHERE user_id=? AND status IN ('PENDING','PROCESSING')").bind(user.id).first();
     if (pending) return json({ error: 'You get one withdrawal wey still dey process. Wait for it to finish.' }, 409);
     const id = uid();
+    // Claim the slot in ONE statement, so two tabs or scripted parallel requests can't both get through
+    // the "one pending / N per day" checks above. Status HOLD is invisible to admin until the money is taken.
+    const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();
+    const claim = await env.DB.prepare(`INSERT INTO withdrawals(id,user_id,amount_kobo,bank_name,bank_code,account_number,account_name,status)
+      SELECT ?,?,?,?,?,?,?,'HOLD' WHERE NOT EXISTS (SELECT 1 FROM withdrawals WHERE user_id=? AND status IN ('HOLD','PENDING','PROCESSING'))
+      AND (SELECT COUNT(*) FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status!='REJECTED') < ?`)
+      .bind(id, user.id, kobo, bank ? bank[1] : null, String(data.bank_code), String(data.account_number), name, user.id, user.id, dayStart, perDay).run();
+    if (!claim.meta.changes) return json({ error: 'You get one withdrawal wey still dey process, or you don withdraw today. Try again tomorrow.' }, 409);
     const ok = await debit(env, user.id, kobo, { balance: 'WINNINGS', type: 'WITHDRAW', reference: id, note: `${bank ? bank[1] : data.bank_code} ${String(data.account_number).slice(-4)}` });
-    if (!ok) return json({ error: 'You no get reach that much for your winnings.', field: 'amount' }, 402);
-    await env.DB.prepare('INSERT INTO withdrawals(id,user_id,amount_kobo,bank_name,bank_code,account_number,account_name) VALUES(?,?,?,?,?,?,?)').bind(id, user.id, kobo, bank ? bank[1] : null, String(data.bank_code), String(data.account_number), name).run();
+    if (!ok) { await env.DB.prepare("DELETE FROM withdrawals WHERE id=? AND status='HOLD'").bind(id).run(); return json({ error: 'You no get reach that much for your winnings.', field: 'amount' }, 402); }
+    await env.DB.prepare("UPDATE withdrawals SET status='PENDING' WHERE id=? AND status='HOLD'").bind(id).run();
     return json({ message: `Withdrawal of ${naira(kobo)} requested. We go pay am after a quick check.`, reload: true });
   }
   return null;
@@ -256,7 +264,7 @@ export async function autoPayouts(env) {
   if (s.auto_payouts !== '1' || !paystackOn(env)) return 0;
   const max = num(s, 'auto_payout_max_kobo', 5000000), ageDays = num(s, 'auto_payout_min_age_days', 7);
   const cutoff = new Date(Date.now() - ageDays * 86400000).toISOString();
-  const rows = (await env.DB.prepare(`SELECT w.id FROM withdrawals w JOIN users u ON u.id=w.user_id WHERE w.status='PENDING' AND w.amount_kobo<=? AND u.created_at<=? AND u.status='ACTIVE'
+  const rows = (await env.DB.prepare(`SELECT w.id FROM withdrawals w JOIN users u ON u.id=w.user_id WHERE w.status='PENDING' AND w.amount_kobo<=? AND datetime(u.created_at)<=datetime(?) AND u.status='ACTIVE'
     AND NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.action='anticheat.flag' AND a.detail LIKE '%' || u.id || '%') ORDER BY w.created_at LIMIT 10`).bind(max, cutoff).all()).results;
   let n = 0;
   for (const r of rows) { const res = await processWithdrawal(env, null, r.id, 'transfer', 'Automatic payout'); if (res.ok) n++; }

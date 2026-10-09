@@ -111,9 +111,10 @@ export async function serveMedia(env, key) {
   return new Response(obj.body, { headers: { 'content-type': obj.httpMetadata?.contentType || 'application/octet-stream', 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" } });
 }
 
-export async function promoClick(env, id) {
+export async function promoClick(env, id, ip = 'unknown') {
   const p = await env.DB.prepare('SELECT target_url FROM promos WHERE id=? AND approved=1').bind(id).first();
   if (!p?.target_url) return null;
-  await env.DB.prepare('UPDATE promos SET clicks=clicks+1 WHERE id=?').bind(id).run();
+  // count at most 2 clicks per visitor per ad every 10 minutes, so scripts can't inflate sponsor numbers
+  if (await allow(env, `pc:${ip}:${id}`, 2, 600)) await env.DB.prepare('UPDATE promos SET clicks=clicks+1 WHERE id=?').bind(id).run();
   return p.target_url;
 }
