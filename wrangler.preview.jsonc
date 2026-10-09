@@ -17,9 +17,12 @@
   "vars": { "OTP_DEV_MODE": "1", "PAYMENTS_TEST_MODE": "1" },
   // Every 5 minutes: settle any ended pool whose room alarm didn't run, and tidy old rows.
   "triggers": { "crons": ["*/5 * * * *"] },
+  // Runs the worker close to the database: pages that read several things load faster.
+  "placement": { "mode": "smart" },
   // One GameRoom per pool keeps live scores and settles the pool when it ends.
-  "durable_objects": { "bindings": [{ "name": "GAME_ROOMS", "class_name": "GameRoom" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }],
+  // One TapMeter per player counts taps for daily/monthly limits (only when the admin turns limits on).
+  "durable_objects": { "bindings": [{ "name": "GAME_ROOMS", "class_name": "GameRoom" }, { "name": "TAP_METER", "class_name": "TapMeter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }, { "tag": "v2", "new_sqlite_classes": ["TapMeter"] }],
   // Sponsor ad pictures, tap skins and logos live in R2. R2 must be switched on in the
   // Cloudflare dashboard first; then create the bucket and uncomment this line:
   // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "tap-am-media-preview" }],

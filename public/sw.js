@@ -1,12 +1,12 @@
 /* Tap Am service worker: makes the app installable, loads fast, and shows a friendly
    offline page when the internet is down. API calls are never cached. */
-const VERSION = 'tapam-v5';
+const VERSION = 'tapam-v6';
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const FONTS = 'tapam-fonts';
-const PRECACHE = ['/offline', '/assets/app.js?v=5', '/assets/game.js?v=5', '/assets/logo-tapam.svg', '/assets/bg-mobile.jpg', '/assets/bg-desktop.jpg',
+const PRECACHE = ['/offline', '/assets/app.js?v=6', '/assets/game.js?v=6', '/assets/sounds.js?v=6', '/assets/logo-tapam.svg', '/favicon.svg', '/assets/brand/icon.svg', '/assets/brand/wordmark.svg',
   '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/manifest.webmanifest'];
-const PUBLIC_PAGES = ['/', '/how-to-play', '/rules', '/merch', '/faq', '/about', '/terms', '/privacy', '/disclaimer', '/login', '/signup'];
+const PUBLIC_PAGES = ['/', '/how-to-play', '/rules', '/fair-play', '/prizes', '/account-rules', '/consent', '/merch', '/faq', '/about', '/terms', '/privacy', '/disclaimer', '/login', '/signup', '/plans', '/ranks'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(SHELL).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()));

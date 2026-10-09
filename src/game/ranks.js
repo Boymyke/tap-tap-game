@@ -2,17 +2,17 @@
 // rename, re-threshold and add more from the admin panel.
 
 export const RANK_TIERS = [
-  'Fresh Finger', 'Lapo Starter', 'Danfo Tapper', 'Keke Rider', 'Molue Master',
+  'Fresh Finger', 'JJC', 'Danfo Tapper', 'Keke Rider', 'Molue Master',
   'Agbero', 'Area Boy', 'Mama Put Regular', 'Gbedu Starter', 'Owambe Guest',
   'Big Boy', 'Para Para Boy', 'Chairman', 'Oga Patapata', 'Baba Nla',
   'Ijoba', 'Odogwu', 'Eko Akete', 'Ogbonge', 'Tap Am Legend'
 ];
 const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
-const TIER_COLORS = ['#a9dcc1', '#59ffb4', '#00ff6e', '#3dd68c', '#2bb673', '#efc032', '#e2802a', '#d8a73a', '#ff9f43', '#ff6b57',
-  '#9fb0ff', '#6c7bff', '#2a39d1', '#b26bff', '#ff5ec4', '#ffd23f', '#00e5ff', '#ff2600', '#ffffff', '#00ff6e'];
+const TIER_COLORS = ['#21D4C8', '#2E8BFF', '#00C957', '#FF8A2A', '#9161FF', '#FF4FA3', '#2E8BFF', '#00C957', '#FF8A2A', '#9161FF',
+  '#FF4FA3', '#E0A800', '#2E8BFF', '#9161FF', '#FF4FA3', '#00C957', '#FF8A2A', '#21D4C8', '#FF4FA3', '#E0A800'];
 
 // Unlocks are comma-separated keys the app understands.
-const UNLOCKS = { 5: 'shape-circle', 10: 'skin-kente', 15: 'shape-hex', 20: 'booster-5x', 30: 'skin-neon', 56: 'voice' };
+const UNLOCKS = { 5: 'booster-long,sound-coin', 10: 'skin-kente,booster-4x,sound-bubble', 15: 'sound-clap', 20: 'booster-5x', 25: 'booster-8x,sound-laser', 30: 'skin-neon', 35: 'sound-kalimba', 40: 'booster-10x', 50: 'sound-bell', 56: 'voice' };
 
 export function generateRanks() {
   const out = [];

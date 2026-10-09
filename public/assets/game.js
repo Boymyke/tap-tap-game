@@ -1,31 +1,35 @@
-/* Tap Am game client: taps (batched to the server), multi-pool, boosters, combos,
-   milestones, leaderboard, promos, sound, vibration and the end screen. */
+/* Tap Am game client: taps (batched to the server), finger limits by tier, multi-pool, boosters
+   (queued, with live tips), live board strip, combos and milestones, tap sounds, vibration,
+   connection state on the card, ads around the game (close after 5s) and the end screen.
+   The server is the source of truth: it caps tap speed per tier and keeps the official score. */
 (function () {
   'use strict';
   function boot() {
     var TA = window.TA, $ = function (id) { return document.getElementById(id); };
-    var D = JSON.parse($('game-data').textContent);
+    var D = JSON.parse($('game-data').textContent), ME = D.me;
     var skew = Date.parse(D.serverNow) - Date.now();
     var now = function () { return Date.now() + skew; };
     var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+    var fmtN = function (n) { return TA.short(n); };
 
-    var pools = D.pools.map(function (p) { return { id: p.id, name: p.name, starts: Date.parse(p.startsAt), ends: Date.parse(p.endsAt), boosters: p.boosters, boosterUsed: p.boosterUsed, sideA: p.sideA, sideB: p.sideB, side: p.side, prize: p.prize, sponsor: p.sponsor, kind: p.kind, score: 0, rank: 0, total: 0, mult: 1, multUntil: 0, ended: p.state === 'ended' || p.state === 'cancelled', seenTop: 999 }; });
+    var pools = D.pools.map(function (p) { return { id: p.id, name: p.name, starts: Date.parse(p.startsAt), ends: Date.parse(p.endsAt), boosters: p.boosters, sideA: p.sideA, sideB: p.sideB, side: p.side, prize: p.prize, sponsor: p.sponsor, kind: p.kind, score: 0, rank: 0, total: 0, mult: 1, multUntil: 0, queued: 0, used: {}, ended: p.state === 'ended' || p.state === 'cancelled', seenTop: 999, top: [], near: [] }; });
     var byId = {}; pools.forEach(function (p) { byId[p.id] = p; });
     var focus = pools[0];
     var boosters = D.boosters || [];
 
-    var pad = $('pad'), fx = $('fx'), msg = $('msg'), scoreEl = $('score'), timeEl = $('time'), timeLbl = $('time-lbl'), posEl = $('pos'), comboEl = $('combo'), endEl = $('end');
+    var pad = $('pad'), fx = $('fx'), msg = $('msg'), scoreEl = $('score'), timeEl = $('time'), timeLbl = $('time-lbl'), posEl = $('pos'), comboEl = $('combo'), endEl = $('end'), netEl = $('net'), netT = $('net-t');
 
     /* ── sound + vibration ── */
-    var snd = $('snd'), muted = store.get('ta-muted') === '1', ac = null;
-    function paintSnd() { snd.setAttribute('data-muted', muted ? '1' : '0'); snd.setAttribute('aria-label', muted ? 'Sound off. Tap to turn on' : 'Sound on. Tap to mute'); }
-    paintSnd(); snd.addEventListener('click', function () { muted = !muted; store.set('ta-muted', muted ? '1' : '0'); paintSnd(); });
-    function blip(f, d, type) { if (muted) return; try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); var o = ac.createOscillator(), g = ac.createGain(); o.type = type || 'square'; o.frequency.value = f; g.gain.value = 0.035; o.connect(g); g.connect(ac.destination); var t = ac.currentTime; o.start(t); g.gain.exponentialRampToValueAtTime(0.0001, t + (d || 0.06)); o.stop(t + (d || 0.06) + 0.01); } catch (e) {} }
-    function buzz(p) { if (D.me.vibrate && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} } }
+    var S = window.TASound || { play: function () {}, fanfare: function () {}, thud: function () {}, combo: function () {} };
+    var snd = $('snd'), savedMute = store.get('ta-muted');
+    S.muted = savedMute === null ? !!ME.muted : savedMute === '1';
+    function paintSnd() { snd.setAttribute('data-muted', S.muted ? '1' : '0'); snd.setAttribute('aria-label', S.muted ? 'Sound off. Tap to turn on' : 'Sound on. Tap to mute'); }
+    paintSnd(); snd.addEventListener('click', function () { S.muted = !S.muted; store.set('ta-muted', S.muted ? '1' : '0'); paintSnd(); if (!S.muted) S.play(ME.sound, 4, true); });
+    function buzz(p) { if (ME.vibrate && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} } }
 
     /* ── effects ── */
-    var COLORS = ['#ffffff', '#00ff6e', '#efc032', '#e2802a', '#9fb0ff', '#59ffb4'];
+    var COLORS = ['#ffffff', '#00FF6E', '#FFD23F', '#FF4FA3', '#2E8BFF', '#FF8A2A'];
     function make(cls, n) { var a = []; for (var i = 0; i < n; i++) { var e = document.createElement('span'); e.className = cls; fx.appendChild(e); a.push(e); } return a; }
     var pluses = make('fx-plus', 40), rings = make('fx-ring', 8), bits = make('fx-bit', 40), ban = make('fx-banner', 1)[0];
     var pi = 0, ri = 0, bi = 0;
@@ -34,7 +38,7 @@
       var el = pluses[pi++ % pluses.length], r = pad.getBoundingClientRect(), reach = Math.min(r.width, r.height);
       var ang = rnd(0, Math.PI * 2), dist = rnd(0.22, 0.5) * reach, dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - reach * 0.08;
       var s = rnd(1, 1.9) + Math.min(combo, 40) / 40 + (big ? 0.6 : 0), rot = rnd(-35, 35), dur = rnd(700, 1050);
-      el.textContent = label; el.style.color = big ? '#ffe37a' : COLORS[(Math.random() * COLORS.length) | 0]; el.style.fontSize = (rnd(40, 62) | 0) + 'px';
+      el.textContent = label; el.style.color = big ? '#FFD23F' : COLORS[(Math.random() * COLORS.length) | 0]; el.style.fontSize = (rnd(40, 62) | 0) + 'px';
       el.animate([{ transform: 'translate(' + x + 'px,' + y + 'px) translate(-50%,-50%) scale(.4)' }, { transform: 'translate(' + (x + dx * 0.7) + 'px,' + (y + dy * 0.7) + 'px) translate(-50%,-50%) scale(' + s + ') rotate(' + rot * 0.6 + 'deg)', offset: 0.35 }, { transform: 'translate(' + (x + dx) + 'px,' + (y + dy) + 'px) translate(-50%,-50%) scale(' + s * 0.85 + ') rotate(' + rot + 'deg)' }], { duration: dur, easing: 'cubic-bezier(.15,.85,.25,1)' });
       el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: dur, easing: 'linear' });
     }
@@ -43,64 +47,92 @@
     function banner(text, gold) { ban.textContent = text; ban.className = 'fx-banner' + (gold ? ' gold' : ''); ban.animate([{ transform: 'translate(-50%,-50%) scale(.3) rotate(-12deg)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.15) rotate(-4deg)', opacity: 1, offset: 0.25 }, { transform: 'translate(-50%,-50%) scale(1) rotate(-4deg)', opacity: 1, offset: 0.75 }, { transform: 'translate(-50%,-70%) scale(.9) rotate(-4deg)', opacity: 0 }], { duration: gold ? 1400 : 900, easing: 'linear' }); }
     function kick(cls) { pad.classList.remove(cls); void pad.offsetWidth; pad.classList.add(cls); }
     function centre() { var r = pad.getBoundingClientRect(); return [r.width / 2, r.height / 2.4]; }
-    function party(text) { var c = centre(); banner(text, true); kick('flash'); kick('shake'); buzz([40, 50, 40, 50, 80]); blip(523, 0.12, 'triangle'); setTimeout(function () { blip(659, 0.12, 'triangle'); }, 110); setTimeout(function () { blip(784, 0.22, 'triangle'); }, 220); if (!reduce) { confetti(c[0], c[1], 40); for (var i = 0; i < 6; i++) shootPlus(c[0], c[1], ['🔥', '+1', '★', 'OYA!'][i % 4], true); } }
+    function party(text) { var c = centre(); banner(text, true); kick('flash'); kick('shake'); buzz([40, 50, 40, 50, 80]); S.fanfare(); if (!reduce) { confetti(c[0], c[1], 40); for (var i = 0; i < 6; i++) shootPlus(c[0], c[1], ['🔥', '+1', '★', 'OYA!'][i % 4], true); } }
 
     /* ── state helpers ── */
     function stateOf(p) { var t = now(); return p.ended ? 'ended' : t < p.starts ? 'soon' : t < p.ends ? 'live' : 'ended'; }
     function livePools() { return pools.filter(function (p) { return stateOf(p) === 'live'; }); }
-    function pad5(n) { n = Math.max(0, Math.floor(n)); var s = String(n); return s.length >= 5 ? s : ('00000' + s).slice(-5); }
-    function mmss(ms) { if (ms <= 0) return '00:00'; var s = Math.ceil(ms / 1000); if (s >= 3600) { var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return ('0' + Math.min(h, 99)).slice(-2) + ':' + ('0' + m).slice(-2); } return ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2); }
     function multOf(p) { return p.multUntil > now() ? p.mult : 1; }
 
+    /* ── connection state on the card ── */
+    var netDown = false, netTimer = 0;
+    function setNet(down, text) {
+      clearTimeout(netTimer);
+      if (down) { netDown = true; netEl.hidden = false; netEl.classList.remove('ok'); netEl.querySelector('.ring').hidden = false; netT.textContent = text || 'Connection lost — taps paused'; pad.classList.add('offline'); return; }
+      if (!netDown) return;
+      netDown = false; pad.classList.remove('offline'); netEl.classList.add('ok'); netEl.querySelector('.ring').hidden = true; netT.textContent = 'Back online ✓ Keep tapping!';
+      netTimer = setTimeout(function () { netEl.hidden = true; }, 1600);
+    }
+    window.addEventListener('offline', function () { setNet(true); });
+    window.addEventListener('online', function () { setNet(false); flush(); loadBoard(); });
+    if (!TA.isOnline()) setNet(true);
+
     /* ── tapping ── */
-    var pending = 0, inflight = 0, sending = false, combo = 0, lastTap = 0, shownScore = -1;
-    var MILESTONES = [50, 100, 250, 500, 1000, 2000, 3000, 5000, 7500, 10000, 15000, 20000, 30000, 50000, 75000, 100000];
-    var nextMs = 0;
+    var pending = 0, inflight = 0, sending = false, combo = 0, lastTap = 0, recent = [];
+    var MILESTONES = [50, 100, 250, 500, 1000, 2000, 3000, 5000, 7500, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 250000, 500000, 1000000];
+    var nextMs = 0, fingerHint = false, active = {}, activeCount = 0;
     function displayScore() { return focus.score + Math.round((pending + inflight) * multOf(focus)); }
     function hit(x, y) {
       var st = stateOf(focus);
-      if (st !== 'live') { kick('shake'); blip(140, 0.08); if (st === 'soon') msg.textContent = 'Hold on — pool never start. Watch the countdown.'; return; }
-      if (!TA.isOnline()) { kick('shake'); msg.textContent = 'Your internet don cut. Taps no fit count now.'; return; }
-      var t = performance.now(); combo = (t - lastTap < 260) ? combo + 1 : 1; lastTap = t; pending++;
+      if (st !== 'live') { kick('shake'); S.thud(); if (st === 'soon') msg.textContent = 'Hold on — the pool never start. Watch the countdown.'; return; }
+      if (netDown || !TA.isOnline()) { kick('shake'); msg.textContent = 'Your internet don cut. Taps no fit count now.'; return; }
+      var t = performance.now(); combo = (t - lastTap < 260) ? combo + 1 : 1; lastTap = t; pending++; recent.push(t);
       var m = multOf(focus);
       pad.animate([{ transform: 'scale(.985)' }, { transform: 'scale(1)' }], { duration: 110 });
       if (!reduce) { shootPlus(x, y, m > 1 ? '+' + m : '+1', m > 1); if (combo > 15 && Math.random() < 0.5) shootPlus(x, y, m > 1 ? '+' + m : '+1'); ring(x, y); }
-      blip(220 + Math.min(combo, 40) * 18, 0.05);
+      S.play(ME.sound, combo);
       if (m === 1) comboEl.textContent = 'Combo ' + combo;
-      if (combo > 0 && combo % 10 === 0) { banner('COMBO x' + combo); kick('shake'); buzz(combo % 50 === 0 ? [40, 30, 40] : 30); blip(660, 0.12, 'sawtooth'); if (!reduce) confetti(x, y, 12); }
+      if (combo > 0 && combo % 10 === 0) { banner('COMBO x' + combo); kick('shake'); buzz(combo % 50 === 0 ? [40, 30, 40] : 30); S.combo(); if (!reduce) confetti(x, y, 12); }
       var sc = displayScore();
-      while (nextMs < MILESTONES.length && sc >= MILESTONES[nextMs]) { party(MILESTONES[nextMs].toLocaleString('en-NG') + ' POINTS!'); nextMs++; }
+      while (nextMs < MILESTONES.length && sc >= MILESTONES[nextMs]) { party(fmtN(MILESTONES[nextMs]) + ' POINTS!'); nextMs++; }
       paintScore();
     }
-    pad.addEventListener('pointerdown', function (e) { if (endEl.contains(e.target)) return; e.preventDefault(); var r = pad.getBoundingClientRect(); hit(e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    // Finger limit by tier: Lapo 1, Mapo 3, Nepo unlimited (the server also caps taps per second).
+    pad.addEventListener('pointerdown', function (e) {
+      if (endEl.contains(e.target)) return;
+      e.preventDefault();
+      if (ME.fingers > 0 && activeCount >= ME.fingers) {
+        if (!fingerHint) { fingerHint = true; TA.toast(ME.fingers === 1 ? 'Lapo babies tap with one finger at a time. Mapo gets 3, Nepo unlimited.' : 'Mapo babies tap with 3 fingers. Nepo babies get unlimited.', 'err', '/plans', 'See plans'); }
+        return;
+      }
+      active[e.pointerId] = 1; activeCount++;
+      var r = pad.getBoundingClientRect(); hit(e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    function lift(e) { if (active[e.pointerId]) { delete active[e.pointerId]; activeCount = Math.max(0, activeCount - 1); } }
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { pad.addEventListener(ev, lift); });
     pad.addEventListener('keydown', function (e) { if ((e.key === ' ' || e.key === 'Enter') && !endEl.contains(e.target)) { e.preventDefault(); if (e.repeat) return; var c = centre(); hit(c[0], c[1]); } });
     pad.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-    document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+    ['gesturestart', 'gesturechange', 'dblclick'].forEach(function (ev) { document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false }); });
+    document.addEventListener('touchmove', function (e) { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
     function flush() {
-      if (sending || pending <= 0) return;
+      if (sending || pending <= 0 || netDown) return;
       var ids = livePools().map(function (p) { return p.id; });
       if (!ids.length) { pending = 0; return; }
       var n = Math.min(pending, 200); pending -= n; inflight = n; sending = true;
       TA.api('/api/tap', { pools: ids, taps: n }).then(function (j) {
         sending = false; inflight = 0;
         if (!j._ok) {
-          if (j._status === undefined) { pending = Math.min(pending + n, 60); return; }   // network: retry a little
-          if (j.error) TA.toast(j.error, 'err');
+          if (j._status === undefined) { pending = Math.min(pending + n, 60); setNet(true, TA.isOnline() ? 'Reconnecting…' : 'Connection lost — taps paused'); retry(); return; }
+          if (j.error) TA.fail(j);
           return;
         }
+        setNet(false);
+        if (j.limit) msg.textContent = j.limit;
         var slow = false;
         Object.keys(j.results || {}).forEach(function (id) {
           var r = j.results[id], p = byId[id]; if (!p || !r) return;
           if (r.code === 'ENDED') { p.ended = true; return; }
-          if (typeof r.score === 'number') { p.score = r.score; p.rank = r.rank; p.total = r.total; p.mult = r.mult || 1; p.multUntil = r.multUntil || 0; }
+          if (typeof r.score === 'number') { p.score = r.score; p.rank = r.rank; p.total = r.total; p.mult = r.mult || 1; p.multUntil = r.multUntil || 0; p.queued = r.queued || 0; p.above = r.above; }
           if (r.rejected > 0 && r.rejected >= r.accepted) slow = true;
           checkPosition(p);
         });
-        if (slow) msg.textContent = 'Easy small — taps wey pass human speed no dey count.';
-        paintChips(); paintScore();
+        if (slow) msg.textContent = 'Easy small — taps wey pass your tier speed no dey count.';
+        paintChips(); paintScore(); paintStrip();
       });
     }
+    var retryT = 0;
+    function retry() { clearTimeout(retryT); retryT = setTimeout(function () { if (TA.isOnline()) TA.api('/api/pools/' + encodeURIComponent(focus.id) + '/board?n=3', undefined, 'GET').then(function (j) { if (j._ok) { setNet(false); flush(); } else retry(); }); else retry(); }, 2500); }
     setInterval(flush, 320);
 
     function checkPosition(p) {
@@ -111,114 +143,174 @@
     }
 
     /* ── painting ── */
-    function paintScore() { var s = displayScore(); if (s !== shownScore) { TA.seg(scoreEl, pad5(s)); shownScore = s; } posEl.textContent = focus.rank ? '#' + focus.rank + ' of ' + focus.total : '#— of ' + (focus.total || '—'); }
+    var shownScore = -1;
+    function paintScore() { var s = displayScore(); if (s !== shownScore) { scoreEl.textContent = fmtN(s); shownScore = s; } posEl.textContent = focus.rank ? '#' + focus.rank + ' of ' + fmtN(focus.total) : '#— of ' + (focus.total ? fmtN(focus.total) : '—'); }
     function paintChips() {
-      document.querySelectorAll('[data-pool]').forEach(function (b) { var p = byId[b.getAttribute('data-pool')], st = stateOf(p); b.classList.toggle('ended', st === 'ended'); b.querySelector('[data-chip-rank]').textContent = st === 'soon' ? 'Starts soon' : st === 'ended' ? 'Ended' + (p.rank ? ' · #' + p.rank : '') : (p.rank ? '#' + p.rank + ' · ' + p.score.toLocaleString('en-NG') : 'Live'); });
+      document.querySelectorAll('[data-pool]').forEach(function (b) { var p = byId[b.getAttribute('data-pool')], st = stateOf(p); b.classList.toggle('ended', st === 'ended'); b.querySelector('[data-chip-rank]').textContent = st === 'soon' ? 'Starts in ' + TA.fmtFull(p.starts - now()) : st === 'ended' ? 'Ended' + (p.rank ? ' · #' + p.rank : '') : (p.rank ? '#' + p.rank + ' · ' + fmtN(p.score) : 'Live'); });
+    }
+    // Live board strip: leader, the player just above you, and you.
+    var lastStripRank = 0;
+    function paintStrip() {
+      var p = focus, list = $('lb-list'), meEl = $('lb-me');
+      meEl.textContent = p.rank ? '#' + p.rank : '#—';
+      var rows = [], top = p.top || [];
+      if (!p.rank || p.rank <= 3) rows = top.slice(0, 3);
+      else { rows.push(top[0]); var above = top.filter(function (r) { return r.r === p.rank - 1; })[0] || (p.near || []).filter(function (r) { return r.r === p.rank - 1; })[0]; if (above) rows.push(above); rows.push({ r: p.rank, n: 'You', s: displayScore(), me: true }); }
+      rows = rows.filter(Boolean);
+      list.textContent = '';
+      if (!rows.length) { var e = document.createElement('div'); e.className = 'lb-row'; e.innerHTML = '<span class="n">Nobody don tap yet — be the first!</span>'; list.appendChild(e); }
+      rows.forEach(function (r) {
+        var d = document.createElement('div'); d.className = 'lb-row' + (r.me ? ' me' : '') + (r.me && lastStripRank && p.rank < lastStripRank ? ' up' : '');
+        d.innerHTML = '<span class="r"></span><span class="n"></span><span class="s"></span>';
+        d.children[0].textContent = '#' + r.r; d.children[1].textContent = r.me ? 'You' : r.n; d.children[2].textContent = fmtN(r.me ? displayScore() : r.s);
+        list.appendChild(d);
+      });
+      if (p.rank) lastStripRank = p.rank;
     }
     var lastState = null;
     function tick() {
       var st = stateOf(focus), t = now();
-      if (st === 'soon') { timeLbl.textContent = 'starts in'; TA.seg(timeEl, mmss(focus.starts - t)); }
-      else { timeLbl.textContent = 'time left'; TA.seg(timeEl, mmss(focus.ends - t)); }
+      if (st === 'soon') { timeLbl.textContent = 'Starts in'; timeEl.textContent = TA.fmtFull(focus.starts - t); }
+      else if (st === 'live') { timeLbl.textContent = 'Ends in'; timeEl.textContent = TA.fmtFull(focus.ends - t); }
+      else { timeLbl.textContent = 'Ended'; timeEl.textContent = '0s'; }
       if (st !== lastState) {
         pad.classList.toggle('locked', st !== 'live');
         if (st === 'soon') msg.textContent = 'Lobby — the pool go start soon. Warm your finger.';
-        else if (st === 'live') { msg.textContent = pools.length > 1 ? 'Tap! Every tap counts in ' + livePools().length + ' pools.' : 'Tap anywhere on this card!'; if (lastState === 'soon') { banner('GO GO GO!', true); buzz([60, 40, 60]); blip(880, 0.2, 'triangle'); } }
+        else if (st === 'live') { msg.textContent = pools.length > 1 ? 'Tap! Every tap counts in ' + livePools().length + ' pools.' : 'Tap anywhere on this card!'; if (lastState === 'soon') { banner('GO GO GO!', true); buzz([60, 40, 60]); S.fanfare(); } }
         else if (st === 'ended') onEnd(focus);
         lastState = st; paintChips();
       }
       var m = multOf(focus);
       pad.classList.toggle('boosted', m > 1);
-      if (m > 1) { comboEl.textContent = m + '× ' + mmss(focus.multUntil - t); comboEl.classList.add('boost'); }
+      if (m > 1) { comboEl.textContent = m + '× · ' + TA.fmtFull(focus.multUntil - t) + (focus.queued ? ' · +' + focus.queued + ' queued' : ''); comboEl.classList.add('boost'); }
       else if (comboEl.classList.contains('boost')) { comboEl.classList.remove('boost'); comboEl.textContent = 'Combo ' + combo; }
       pools.forEach(function (p) { if (p !== focus && !p._endNoted && stateOf(p) === 'ended') { p._endNoted = true; TA.toast(p.name + ' don end.'); } });
+      if (st === 'soon') paintChips();
       paintBoostBtn();
     }
     setInterval(tick, 250);
 
     function setFocus(p) {
-      focus = p; lastState = null; shownScore = -1; nextMs = 0;
+      focus = p; lastState = null; shownScore = -1; nextMs = 0; lastStripRank = 0;
       var s = focus.score; while (nextMs < MILESTONES.length && s >= MILESTONES[nextMs]) nextMs++;
       document.querySelectorAll('[data-pool]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-pool') === p.id)); });
-      $('g-name').textContent = p.name; endEl.hidden = true; paintMeta(); paintScore(); tick(); loadBoard();
+      $('g-name').textContent = p.name; endEl.hidden = true; paintMeta(); paintScore(); tick(); loadBoard(); paintStrip();
     }
-    document.getElementById('chips').addEventListener('click', function (e) { var b = e.target.closest('[data-pool]'); if (b) setFocus(byId[b.getAttribute('data-pool')]); });
-    function naira(k) { return '₦' + (Number(k || 0) / 100).toLocaleString('en-NG'); }
-    function paintMeta() { var p = focus; var t = (p.prize ? 'Prize ' + naira(p.prize) : 'For glory') + (p.sponsor ? ' · by ' + p.sponsor : '') + (p.side ? ' · Team ' + p.side : ''); $('g-meta').textContent = t; $('bs-meta').textContent = p.name + ' · ' + t; }
+    $('chips').addEventListener('click', function (e) { var b = e.target.closest('[data-pool]'); if (b) setFocus(byId[b.getAttribute('data-pool')]); });
+    function paintMeta() { var p = focus; var t = (p.prize ? 'Prize ' + TA.naira(p.prize) : 'For glory') + (p.sponsor ? ' · by ' + p.sponsor : '') + (p.side ? ' · Team ' + p.side : ''); $('g-meta').textContent = t; $('bs-meta').textContent = p.name + ' · ' + t; }
 
     /* ── leaderboard ── */
     function renderBoard(list, el) {
       el.textContent = '';
-      list.forEach(function (r) { var li = document.createElement('li'); if (r.me) li.className = 'me'; li.innerHTML = '<span class="r"></span><span class="n"></span><span class="s"></span>'; li.children[0].textContent = '#' + r.r; li.children[1].textContent = r.n + (r.side ? ' · ' + r.side : ''); li.children[2].textContent = Number(r.s).toLocaleString('en-NG'); el.appendChild(li); });
-      if (!list.length) { var li = document.createElement('li'); li.innerHTML = '<span class="n" style="text-transform:none;font:600 14px var(--body);color:var(--muted)">Nobody don tap yet. Be the first!</span>'; el.appendChild(li); }
+      list.forEach(function (r) { var li = document.createElement('li'); if (r.me) li.className = 'me'; li.innerHTML = '<span class="r"></span><span class="n"></span><span class="s"></span>'; li.children[0].textContent = '#' + r.r; li.children[1].textContent = (r.me ? 'You' : r.n) + (r.side ? ' · ' + r.side : ''); li.children[2].textContent = fmtN(r.s); el.appendChild(li); });
+      if (!list.length) { var li = document.createElement('li'); li.innerHTML = '<span class="n" style="font-weight:600">Nobody don tap yet. Be the first!</span>'; el.appendChild(li); }
     }
     var boardBusy = false;
     function loadBoard() {
-      if (boardBusy || document.hidden) return; boardBusy = true;
+      if (boardBusy || document.hidden || netDown) return; boardBusy = true;
       var p = focus;
       TA.api('/api/pools/' + encodeURIComponent(p.id) + '/board?n=10', undefined, 'GET').then(function (j) {
-        boardBusy = false; if (!j._ok || p !== focus) return;
-        if (j.me) { if (!sending && !pending) p.score = j.me.score; p.rank = j.me.rank; p.mult = j.me.mult || 1; p.multUntil = j.me.multUntil || 0; if (j.me.boosted) p.boosterUsed = true; }
-        p.total = j.total;
-        renderBoard(j.top || [], $('board-side')); renderBoard(j.top || [], $('board-sheet-list'));
+        boardBusy = false; if (!j._ok) { if (j._status === undefined) setNet(true, TA.isOnline() ? 'Reconnecting…' : undefined); return; }
+        setNet(false);
+        if (p !== focus) return;
+        if (j.me) { if (!sending && !pending) p.score = j.me.score; p.rank = j.me.rank; p.mult = j.me.mult || 1; p.multUntil = j.me.multUntil || 0; p.queued = j.me.queued || 0; p.used = j.me.used || {}; }
+        p.total = j.total; p.top = j.top || []; p.near = j.near || [];
+        renderBoard(p.top.concat(p.near || []), $('board-side')); renderBoard(p.top.concat(p.near || []), $('board-sheet-list'));
         var teams = $('teams');
-        if (p.sideA && j.teams) { var a = j.teams[p.sideA] || 0, b = j.teams[p.sideB] || 0, sum = a + b || 1; teams.hidden = false; teams.children[0].style.flexGrow = Math.max(0.15, a / sum); teams.children[1].style.flexGrow = Math.max(0.15, b / sum); teams.children[0].textContent = p.sideA + ' ' + a.toLocaleString('en-NG'); teams.children[1].textContent = b.toLocaleString('en-NG') + ' ' + p.sideB; }
-        checkPosition(p); paintScore(); paintChips();
+        if (p.sideA && j.teams) { var a = j.teams[p.sideA] || 0, b = j.teams[p.sideB] || 0, sum = a + b || 1; teams.hidden = false; teams.children[0].style.flexGrow = Math.max(0.15, a / sum); teams.children[1].style.flexGrow = Math.max(0.15, b / sum); teams.children[0].textContent = p.sideA + ' ' + fmtN(a); teams.children[1].textContent = fmtN(b) + ' ' + p.sideB; }
+        checkPosition(p); paintScore(); paintChips(); paintStrip();
       });
     }
-    setInterval(loadBoard, 3000);
+    setInterval(loadBoard, 2500);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) loadBoard(); });
-    document.addEventListener('ta:online', loadBoard);
 
     /* ── sheets ── */
     function openSheet(id) { var s = $(id); s.hidden = false; var f = s.querySelector('button,a'); if (f) f.focus(); }
     function closeSheets() { document.querySelectorAll('.gsheet').forEach(function (s) { s.hidden = true; }); pad.focus({ preventScroll: true }); }
     document.querySelectorAll('.gsheet').forEach(function (s) { s.addEventListener('click', function (e) { if (e.target === s || e.target.closest('[data-close]')) closeSheets(); }); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeSheets(); closePromo(); } });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeSheets(); } });
     document.querySelectorAll('[data-open-board]').forEach(function (b) { b.addEventListener('click', function () { loadBoard(); openSheet('board-sheet'); }); });
 
-    /* ── boosters ── */
+    /* ── boosters (button bottom left) ── */
     var boostBtn = $('boost-btn');
-    function boosterTotal() { return boosters.reduce(function (s, b) { return s + (b.blocked ? 0 : b.qty); }, 0); }
+    function usable(b) { return !b.lock && b.qty > 0 && !(b.perGame && (focus.used[b.id] || 0) >= b.perGame); }
+    function boosterTotal() { return boosters.reduce(function (s, b) { return s + (usable(b) ? b.qty : 0); }, 0); }
     function paintBoostBtn() {
-      var st = stateOf(focus), why = !focus.boosters ? 'Off' : focus.boosterUsed ? 'Used' : st === 'ended' ? '' : 'x' + boosterTotal();
-      $('boost-count').textContent = why; boostBtn.disabled = !focus.boosters || focus.boosterUsed || st === 'ended';
+      var st = stateOf(focus), n = boosterTotal();
+      $('boost-count').textContent = n > 99 ? '99+' : String(n); $('boost-count').hidden = !n;
+      boostBtn.disabled = !focus.boosters || st === 'ended';
+      boostBtn.title = !focus.boosters ? 'Boosters are off for this pool' : '';
     }
     boostBtn.addEventListener('click', function () {
       var list = $('boost-list'); list.textContent = '';
-      if (!boosters.length) { list.innerHTML = '<p>You no get any booster. Buy one for the store.</p>'; }
+      if (!boosters.length) { var p = document.createElement('p'); p.textContent = 'You no get any booster. Buy some for the store.'; list.appendChild(p); }
       boosters.forEach(function (b) {
-        var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'bopt'; btn.disabled = !!b.blocked || b.qty < 1;
-        btn.innerHTML = '<span class="segbox"><span class="seg" style="font-size:22px"></span></span><span class="t"></span><span class="q"></span>';
-        TA.seg(btn.querySelector('.seg'), String(b.mult).replace(/\.0$/, ''));
-        btn.querySelector('.t').innerHTML = ''; btn.querySelector('.t').appendChild(document.createTextNode(b.name));
-        var sm = document.createElement('small'); sm.textContent = b.blocked ? b.blocked : b.mult + '× every tap for ' + b.dur + 's'; btn.querySelector('.t').appendChild(sm);
-        btn.querySelector('.q').textContent = '×' + b.qty;
-        btn.addEventListener('click', function () { useBooster(b); });
+        var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'bopt' + (b.lock ? ' locked' : ''); btn.style.setProperty('--c', b.color || '#2E8BFF');
+        var limitHit = b.perGame && (focus.used[b.id] || 0) >= b.perGame;
+        btn.innerHTML = '<span class="m"></span><span class="t"></span><span class="q"></span>';
+        btn.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
+        btn.querySelector('.t').appendChild(document.createTextNode(b.name));
+        var sm = document.createElement('small'); sm.textContent = b.lock ? '🔒 ' + b.lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
+        btn.querySelector('.q').textContent = b.lock ? (b.lock.need === 'RANK' ? 'Rank up' : 'Upgrade') : '×' + b.qty;
+        if (!b.lock && (b.qty < 1 || limitHit)) btn.disabled = true;
+        btn.addEventListener('click', function () { if (b.lock) { closeSheets(); TA.upgrade(b.lock.need || 'MAPO', b.name); return; } useBooster(b); });
         list.appendChild(btn);
       });
       openSheet('boost-sheet');
     });
-    function useBooster(b) {
-      var p = focus; closeSheets();
+    var boosting = false;
+    function useBooster(b, fromTip) {
+      if (boosting) return; boosting = true;
+      var p = focus; if (!fromTip) closeSheets();
       TA.api('/api/pools/' + encodeURIComponent(p.id) + '/boost', { item: b.id }).then(function (j) {
-        if (!j._ok) { TA.toast(j.error || 'Booster no work.', 'err', j.redirect); return; }
-        p.boosterUsed = true; p.mult = j.mult; p.multUntil = j.multUntil; b.qty--;
-        party(b.mult + '× BOOST!'); paintBoostBtn();
+        boosting = false;
+        if (!j._ok) { TA.fail(j); return; }
+        p.mult = j.mult; p.multUntil = j.multUntil; p.queued = j.queued || 0; b.qty--; p.used[b.id] = (p.used[b.id] || 0) + 1;
+        if (j.mult === b.mult && !j.queued) party(String(b.mult).replace(/\.0$/, '') + '× BOOST!'); else TA.toast(j.message || 'Booster queued');
+        paintBoostBtn(); clearTips();
       });
     }
 
-    /* ── promos (pre-game, lobby, after) ── */
-    var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoAfter = null;
-    function closePromo() { if (promoEl.hidden) return; promoEl.hidden = true; promoBody.textContent = ''; var f = promoAfter; promoAfter = null; if (f) f(); }
+    /* ── booster tips (Mapo + Nepo): "use this to reach the top 10" ── */
+    var tipsEl = $('tips'), lastTipAt = 0, tipOpen = null;
+    function clearTips() { tipsEl.textContent = ''; tipOpen = null; }
+    function suggest() {
+      if (!ME.calc || stateOf(focus) !== 'live' || !focus.boosters || multOf(focus) > 1 || focus.queued) return;
+      if (tipOpen || Date.now() - lastTipAt < 20000) return;
+      var t = performance.now(); recent = recent.filter(function (x) { return t - x < 5000; });
+      var rate = Math.max(3, recent.length / 5), my = displayScore(), top = focus.top || [];
+      var targets = [[1, 'reach #1'], [3, 'enter the top 3'], [10, 'enter the top 10']].filter(function (x) { return !focus.rank || focus.rank > x[0]; });
+      for (var i = 0; i < targets.length; i++) {
+        var row = top[targets[i][0] - 1]; if (!row || row.me) continue;
+        var gap = row.s - my + 1; if (gap <= 0) continue;
+        var best = null;
+        boosters.forEach(function (b) { if (!usable(b)) return; var extra = rate * b.dur * (b.mult - 1); if (extra >= gap && (!best || b.mult < best.mult)) best = b; });
+        if (best) { showTip(best, targets[i][1]); return; }
+      }
+    }
+    function showTip(b, goal) {
+      lastTipAt = Date.now(); clearTips();
+      var c = document.createElement('div'); c.className = 'tipcard'; c.setAttribute('role', 'status');
+      c.innerHTML = '<span>⚡</span><span class="tx"></span><button type="button" class="btn btn--green">Use</button><button type="button" class="x" aria-label="Close tip">×</button>';
+      c.querySelector('.tx').textContent = 'Use ' + b.name + ' to ' + goal + '!';
+      c.querySelector('.btn').addEventListener('click', function () { useBooster(b, true); });
+      c.querySelector('.x').addEventListener('click', clearTips);
+      tipsEl.appendChild(c); tipOpen = c;
+      setTimeout(function () { if (tipOpen === c) clearTips(); }, 9000);
+    }
+    setInterval(suggest, 2000);
+
+    /* ── ads: when you open the game, in the lobby, and before results. Close after 5s. ── */
+    var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoWait = $('promo-wait'), promoAfter = null, promoTimer = 0;
+    function closePromo() { if (promoEl.hidden || promoX.disabled) return; promoEl.hidden = true; promoBody.textContent = ''; clearInterval(promoTimer); var f = promoAfter; promoAfter = null; if (f) f(); }
     promoX.addEventListener('click', closePromo);
-    promoEl.addEventListener('click', function (e) { if (e.target === promoEl) closePromo(); });
     function showPromo(at, then) {
       var key = 'ta-promo-' + at + '-' + focus.id;
-      try { if (sessionStorage.getItem(key)) { if (then) then(); return; } sessionStorage.setItem(key, '1'); } catch (e) {}
+      try { if (at !== 'POST' && sessionStorage.getItem(key)) { if (then) then(); return; } sessionStorage.setItem(key, '1'); } catch (e) {}
       TA.api('/api/promo?at=' + at + '&pool=' + encodeURIComponent(focus.id), undefined, 'GET').then(function (j) {
         var p = j && j.promo; if (!p) { if (then) then(); return; }
         promoBody.textContent = '';
+        $('promo-by').textContent = 'Sponsored' + (p.company ? ' · ' + p.company : '');
         var media;
         if (p.kind === 'YOUTUBE' && /^[A-Za-z0-9_-]{11}$/.test(p.video_id || '')) {
           media = document.createElement('div'); media.className = 'promo-media';
@@ -231,44 +323,66 @@
         }
         if (media) promoBody.appendChild(media);
         if (p.title) { var h = document.createElement('h3'); h.textContent = p.title; promoBody.appendChild(h); }
+        if (p.lead_capture && !p.lead_done) promoBody.appendChild(leadForm(p));
         var row = document.createElement('div'); row.className = 'actions';
-        if (p.target_url) { var a = document.createElement('a'); a.className = 'btn btn--sm'; a.href = '/go/' + encodeURIComponent(p.id); a.target = '_blank'; a.rel = 'noopener sponsored'; a.textContent = 'Check am out'; row.appendChild(a); }
-        var c = document.createElement('button'); c.type = 'button'; c.className = 'btn btn--ghost btn--sm'; c.textContent = at === 'POST' ? 'See my result' : 'Close and play'; c.addEventListener('click', closePromo); row.appendChild(c);
+        if (p.target_url) { var a = document.createElement('a'); a.className = 'btn btn--green btn--sm'; a.href = '/go/' + encodeURIComponent(p.id); a.target = '_blank'; a.rel = 'noopener sponsored'; a.textContent = 'Check am out'; row.appendChild(a); }
         promoBody.appendChild(row);
-        promoAfter = then || null; promoEl.hidden = false; c.focus();
+        promoAfter = then || null; promoEl.hidden = false;
+        // close button unlocks after 5 seconds
+        var left = 5; promoX.disabled = true; promoWait.textContent = String(left); var circ = promoX.querySelector('circle');
+        circ.style.transition = 'none'; circ.style.strokeDashoffset = '0'; void circ.getBoundingClientRect(); circ.style.transition = 'stroke-dashoffset 5s linear'; circ.style.strokeDashoffset = '126';
+        clearInterval(promoTimer);
+        promoTimer = setInterval(function () { left--; if (left > 0) { promoWait.textContent = String(left); return; } clearInterval(promoTimer); promoX.disabled = false; promoWait.textContent = '×'; promoX.focus(); }, 1000);
       });
     }
+    function leadForm(p) {
+      var f = document.createElement('form'); f.className = 'lead'; f.noValidate = true;
+      f.innerHTML = '<b style="font:900 16px var(--display)">Want this offer? Leave your details</b><input class="ta-input" name="name" placeholder="Your name" maxlength="80" autocomplete="name"><input class="ta-input" name="email" type="email" placeholder="Email" maxlength="254" autocomplete="email"><input class="ta-input" name="phone" type="tel" placeholder="Phone (optional)" maxlength="16" autocomplete="tel"><label class="ta-check"><input type="checkbox" name="consent"><span></span></label><p class="ta-error" data-err></p><button class="btn btn--sm" type="submit">Send my details</button>';
+      f.querySelector('.ta-check span').textContent = 'I agree to share my name, email and phone with ' + (p.company || 'this sponsor') + ' so they can contact me about this offer. See the Privacy Policy.';
+      f.addEventListener('submit', function (e) {
+        e.preventDefault(); var err = f.querySelector('[data-err]'); err.textContent = '';
+        var btn = f.querySelector('button'); btn.classList.add('is-loading');
+        TA.api('/api/leads', { promo: p.id, name: f.name.value, email: f.email.value, phone: f.phone.value, consent: f.consent.checked }).then(function (j) {
+          btn.classList.remove('is-loading');
+          if (j._ok) { f.innerHTML = '<b>✓ ' + (j.message || 'Sent') + '</b>'; } else err.textContent = j.error || 'Something no work.';
+        });
+      });
+      return f;
+    }
 
-    /* ── end of a pool ── */
-    function rankTitle(r, total) { return r === 1 ? 'Odogwu! You win am!' : r && r <= 3 ? 'Top 3! Correct finger' : r && r <= 10 ? 'Top 10. You try well' : 'Time up!'; }
+    /* ── end of a pool: ad first, then results ── */
+    function rankTitle(r) { return r === 1 ? 'Odogwu! You win am!' : r && r <= 3 ? 'Top 3! Correct finger' : r && r <= 10 ? 'Top 10. You try well' : 'Time up!'; }
     function onEnd(p) {
       if (p._endShown) return; p._endShown = true;
-      pending = 0; flush();
+      pending = 0; flush(); clearTips();
       setTimeout(function () {
-        TA.api('/api/pools/' + encodeURIComponent(p.id) + '/board?n=3', undefined, 'GET').then(function (j) {
-          if (j._ok && j.me) { p.score = j.me.score; p.rank = j.me.rank; p.total = j.total; }
-          if (p !== focus) return;
-          endEl.textContent = '';
-          var t = document.createElement('div'); t.className = 'ttl'; t.textContent = rankTitle(p.rank, p.total);
-          var box = document.createElement('div'); box.className = 'segbox'; var s = document.createElement('span'); s.className = 'seg'; box.appendChild(s);
-          var sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = p.rank ? 'You finish #' + p.rank + ' of ' + p.total + '. Prizes land for your winnings in a few seconds.' : 'You no tap for this one. Next time!';
-          var act = document.createElement('div'); act.className = 'actions';
-          var a1 = document.createElement('a'); a1.className = 'btn btn--shine'; a1.href = '/pool/' + encodeURIComponent(p.id); a1.textContent = 'See results';
-          var a2 = document.createElement('a'); a2.className = 'btn btn--ghost'; a2.href = '/pools'; a2.textContent = 'Play another';
-          act.appendChild(a1); act.appendChild(a2);
-          [t, box, sub, act].forEach(function (n) { endEl.appendChild(n); });
-          endEl.hidden = false; TA.seg(s, pad5(p.score));
-          if (p.rank && p.rank <= 3) party(p.rank === 1 ? 'WINNER!' : 'PODIUM!'); else { buzz(80); blip(330, 0.25, 'triangle'); }
-          var others = livePools().length;
-          if (!others) setTimeout(function () { showPromo('POST', checkRankUp); }, 1600);
-        });
+        var others = livePools().length;
+        var show = function () { results(p); };
+        if (!others && p === focus) showPromo('POST', show); else show();
       }, 900);
     }
-    /* account rank-up after settlement */
+    function results(p) {
+      TA.api('/api/pools/' + encodeURIComponent(p.id) + '/board?n=3', undefined, 'GET').then(function (j) {
+        if (j._ok && j.me) { p.score = j.me.score; p.rank = j.me.rank; p.total = j.total; }
+        if (p !== focus) return;
+        endEl.textContent = '';
+        var t = document.createElement('div'); t.className = 'ttl'; t.textContent = rankTitle(p.rank);
+        var big = document.createElement('div'); big.className = 'big'; big.textContent = fmtN(p.score);
+        var sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = p.rank ? 'You finish #' + p.rank + ' of ' + fmtN(p.total) + '. Prizes land for your winnings in a few seconds.' : 'You no tap for this one. Next time!';
+        var act = document.createElement('div'); act.className = 'actions';
+        var a1 = document.createElement('a'); a1.className = 'btn btn--green btn--shine'; a1.href = '/pool/' + encodeURIComponent(p.id); a1.textContent = 'See results';
+        var a2 = document.createElement('a'); a2.className = 'btn btn--white'; a2.href = '/pools'; a2.textContent = 'Play another';
+        act.appendChild(a1); act.appendChild(a2);
+        [t, big, sub, act].forEach(function (n) { endEl.appendChild(n); });
+        endEl.hidden = false;
+        if (p.rank && p.rank <= 3) party(p.rank === 1 ? 'WINNER!' : 'PODIUM!'); else { buzz(80); S.thud(); }
+        checkRankUp();
+      });
+    }
     function checkRankUp() {
       setTimeout(function () {
         TA.api('/api/me', undefined, 'GET').then(function (j) {
-          if (j._ok && j.rank && j.rank.level > D.me.rank) { D.me.rank = j.rank.level; if (TA.celebrate) TA.celebrate('Rank up!', j.rank.name); }
+          if (j._ok && j.rank && j.rank.level > ME.rank) { ME.rank = j.rank.level; if (TA.celebrate) TA.celebrate('Rank up!', j.rank.name); }
         });
       }, 2500);
     }

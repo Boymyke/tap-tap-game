@@ -1,6 +1,7 @@
 // Sponsor (and admin) API for ads, plus image uploads to R2 and serving them.
 import { json, readJson, uid, nowIso } from '../lib.js';
-import { requireRole, isNepo, loadUser } from '../core.js';
+import { requireRole, isNepo, loadUser, notify } from '../core.js';
+import { allow } from '../lib.js';
 
 const YT = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 const safeUrl = u => { try { const x = new URL(u); return ['https:', 'http:'].includes(x.protocol) ? x.href : null; } catch { return null; } };
@@ -20,8 +21,9 @@ export async function handleSponsorApi(req, env, path, user) {
   // ── uploads (sponsors, admin, Nepo babies for pool skins) ──
   if (path === '/api/upload' && req.method === 'POST') {
     const deny = requireRole(user, ['SPONSOR', 'ADMIN', 'USER']); if (deny) return deny;
-    if (user.role === 'USER' && !isNepo(await loadUser(env, user.id))) return json({ error: 'Uploads na for Nepo babies and sponsors.' }, 403);
-    if (!env.MEDIA) return json({ error: 'Image uploads are not set up yet.' }, 503);
+    if (user.role === 'USER' && !isNepo(await loadUser(env, user.id))) return json({ error: 'Uploads na for Nepo babies and sponsors.', code: 'UPGRADE', need: 'NEPO', redirect: '/plans', go: 'See plans' }, 403);
+    if (!env.MEDIA) return json({ error: 'Picture uploads are not switched on yet (the admin needs to enable storage). Use a YouTube video for now.' }, 503);
+    if (!await allow(env, 'upload:' + user.id, 30, 3600)) return json({ error: 'Too many uploads. Wait small.' }, 429);
     const origin = req.headers.get('origin');
     if (origin && new URL(origin).host !== new URL(req.url).host) return json({ error: 'Request blocked.' }, 403);
     const form = await req.formData().catch(() => null);
@@ -62,7 +64,8 @@ export async function handleSponsorApi(req, env, path, user) {
     else { const m = YT.exec(String(data.video_url || '')); if (!m) return json({ error: 'Paste a YouTube link, like https://youtu.be/abc123XYZ00', field: 'video_url' }, 400); video = m[1]; }
     const target = data.target_url ? safeUrl(data.target_url) : null;
     if (data.target_url && !target) return json({ error: 'Enter a full link, like https://yourbrand.com', field: 'target_url' }, 400);
-    const placement = ['PRE', 'POST', 'LOBBY', 'ALL'].includes(data.placement) ? data.placement : 'ALL';
+    const placement = 'ALL';   // ads show before the game, in the lobby and before results
+    if (!await allow(env, 'promo:' + user.id, 30, 3600)) return json({ error: 'Too many ads in one hour. Wait small.' }, 429);
     let poolId = data.pool_id || null;
     if (poolId) {
       const p = await env.DB.prepare('SELECT created_by FROM pools WHERE id=?').bind(poolId).first();
@@ -70,14 +73,31 @@ export async function handleSponsorApi(req, env, path, user) {
     }
     await env.DB.prepare('INSERT INTO promos(id,title,owner_id,kind,image_url,video_id,target_url,placement,pool_id,approved) VALUES(?,?,?,?,?,?,?,?,?,?)')
       .bind(uid(), title, user.id, kind, image, video, target, placement, poolId, user.role === 'ADMIN' ? 1 : 0).run();
+    if (user.role !== 'ADMIN') { const admins = (await env.DB.prepare("SELECT id FROM users WHERE role='ADMIN'").all()).results; for (const a of admins) await notify(env, a.id, `New ad “${title}” waiting for approval.`, '/admin/ads'); }
     return json({ message: user.role === 'ADMIN' ? 'Ad is live' : 'Ad saved. It goes live once Tap Am approves it.', reload: true });
+  }
+  // ── sponsors ask for the home page slideshow; the admin approves it ──
+  const hm = path.match(/^\/api\/promos\/([^/]+)\/home$/);
+  if (hm && req.method === 'POST') {
+    const deny = requireRole(user, ['SPONSOR']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    const ad = await env.DB.prepare('SELECT * FROM promos WHERE id=? AND owner_id=?').bind(hm[1], user.id).first();
+    if (!ad) return json({ error: 'Ad not found.' }, 404);
+    if (!ad.approved) return json({ error: 'Your ad must be approved before it can go on the home page.' }, 409);
+    if (await env.DB.prepare("SELECT 1 FROM slides WHERE promo_id=? AND status IN ('REQUESTED','LIVE')").bind(ad.id).first()) return json({ error: 'You already asked for this ad. We go reply soon.' }, 409);
+    const sub = String(data.subtitle || '').trim().slice(0, 120);
+    await env.DB.prepare("INSERT INTO slides(id,title,subtitle,image_url,link,color,promo_id,sponsor_id,status,created_by) VALUES(?,?,?,?,?,?,?,?,'REQUESTED',?)")
+      .bind(uid(), ad.title, sub, ad.image_url, ad.target_url ? `/go/${ad.id}` : null, '#FF8A2A', ad.id, user.id, user.id).run();
+    const admins = (await env.DB.prepare("SELECT id FROM users WHERE role='ADMIN'").all()).results;
+    for (const a of admins) await notify(env, a.id, `A sponsor asked for a home page slot: “${ad.title}”.`, '/admin/slides');
+    return json({ message: 'Request sent. The Tap Am team go check am.', reload: true });
   }
   const pm = path.match(/^\/api\/promos\/([^/]+)\/(toggle|delete)$/);
   if (pm && req.method === 'POST') {
     const deny = requireRole(user, ['SPONSOR', 'ADMIN']); if (deny) return deny;
     const p = await env.DB.prepare('SELECT owner_id,active FROM promos WHERE id=?').bind(pm[1]).first();
     if (!p || (user.role !== 'ADMIN' && p.owner_id !== user.id)) return json({ error: 'Ad not found.' }, 404);
-    if (pm[2] === 'delete') await env.DB.prepare('DELETE FROM promos WHERE id=?').bind(pm[1]).run();
+    if (pm[2] === 'delete') await env.DB.batch([env.DB.prepare('DELETE FROM promos WHERE id=?').bind(pm[1]), env.DB.prepare('UPDATE pools SET promo_id=NULL WHERE promo_id=?').bind(pm[1]), env.DB.prepare("UPDATE slides SET status='REJECTED' WHERE promo_id=?").bind(pm[1])]);
     else await env.DB.prepare('UPDATE promos SET active=? WHERE id=?').bind(p.active ? 0 : 1, pm[1]).run();
     return json({ message: 'Done', reload: true });
   }

@@ -16,7 +16,12 @@
     "db:upgrade:3": "wrangler d1 execute nak-am --remote --file=migrations/0003_landing.sql",
     "db:upgrade:3:local": "wrangler d1 execute nak-am --local --file=migrations/0003_landing.sql",
     "db:upgrade:4": "wrangler d1 execute nak-am --remote --file=migrations/0004_full_game.sql",
-    "db:upgrade:4:local": "wrangler d1 execute nak-am --local --file=migrations/0004_full_game.sql"
+    "db:upgrade:4:local": "wrangler d1 execute nak-am --local --file=migrations/0004_full_game.sql",
+    "db:upgrade:5": "wrangler d1 execute nak-am --remote --file=migrations/0005_tiers_sponsors_stats.sql",
+    "db:upgrade:5:local": "wrangler d1 execute nak-am --local --file=migrations/0005_tiers_sponsors_stats.sql",
+    "preview:db:upgrade:5": "wrangler d1 execute tap-am-ui-preview --remote -c wrangler.preview.jsonc --file=migrations/0005_tiers_sponsors_stats.sql",
+    "brand": "node scripts/brand.mjs",
+    "build:share": "node scripts/build-share.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.68.0"

@@ -1,7 +1,7 @@
 # Tap Am build roadmap
 
 Source: the product brief of 8 Oct 2026 (Lapo babies, Nepo babies, sponsors, super admin).
-Decisions so far: build on this GitHub codebase; payments via **Paystack**; Nepo = **₦13,000/month or ₦120,000/year**;
+Decisions so far: build on this GitHub codebase; payments via **Paystack**; tiers Lapo (free) / Mapo **₦3,500/month** / Nepo **₦50,000/month** (Oct 2026; was ₦13,000);
 ties are set **per pool** (first to reach the score wins, or tied players split).
 
 ## Phase 1 — look, landing, app shell ✅ (this release)
@@ -40,3 +40,20 @@ ties are set **per pool** (first to reach the score wins, or tied players split)
 ## Phase 5 — live voice and sponsor ads
 - Voice in games (Cloudflare Realtime): Nepo, rank ≥ Para para boy, top 5 in that pool; one room at a time.
 - Sponsor ads: image or YouTube video, link, shown before/after games and in the lobby; always closable.
+
+## Phase 6 — tiers, redesign, sponsors v2, operations ✅ built (9 Oct 2026)
+- New "sticker pop" look (Rubik, bitmoji avatars, badges), full logo suite with the hand app icon, brand guide (`docs/BRAND.md`).
+- Instant page switching (prefetch + swap, ring loader). No text selection anywhere; no zoom on game screens.
+- Three tiers: Lapo / Mapo / Nepo — fingers 1/3/unlimited, pools at once 1/3/10, server tap-rate cap per tier.
+- Home rebuilt (slideshow, winnings, join by code, create, sponsored → live → coming-up, invite + QR share card).
+- Create form: info tips, comma money inputs, up to 100 winners, VS per-side pots, paid-only / VS-only fields.
+- Store sections and quantities, more boosters, many boosters per game (queued). Wallet CSV, one withdrawal a day.
+- Me: settings (archive account), top tappers by period, ranks, plan comparison, suggest a pool.
+- Sponsors: pool with/without ad, ad preview, home-slot requests, lead capture (per-sponsor switch + consent), pool colours.
+- Admin: bulk gifting, health page + email alerts, automatic payouts (optional) + CSV, slides, backgrounds, tap limits switch.
+- Legal pages rewritten for the above; open questions in `docs/LEGAL_REVIEW.md`.
+
+## Next
+- Switch on real keys: Paystack live + Transfers, email sender, R2, Realtime.
+- Lawyer review of `docs/LEGAL_REVIEW.md` before real-money paid pools go live.
+- Copy the `TAP_METER` binding to `wrangler.jsonc` and run `npm run db:upgrade:5` before shipping this to the live `nak-am` Worker.

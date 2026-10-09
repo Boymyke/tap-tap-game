@@ -1,9 +1,7 @@
 // Login + Sign up screen (one page) built from the Tap Am Figma reference.
 // Views: login, signup, verify (email code), forgot (ask for reset code), reset (new password).
 import { themeShell, logoBlock, poweredBy } from './theme.js';
-import { COMMON_PASSWORDS, RESERVED_NICKNAMES, MIN_AGE, MAX_AGE, PASSWORD_MIN, PASSWORD_MAX, EMAIL_MAX } from '../auth-rules.js';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+import { COMMON_PASSWORDS, RESERVED_NICKNAMES, PASSWORD_MIN, PASSWORD_MAX, EMAIL_MAX, GENDERS, COUNTRIES } from '../auth-rules.js';
 
 const eyeButton = (target) => `<button type="button" class="ta-eye" data-toggle="${target}" aria-label="Show password" aria-pressed="false">
 <svg class="ta-eye-closed" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.6 2.6A7.3 7.3 0 0 1 8 2.5c3.6 0 6 3.1 6.8 4.5a11 11 0 0 1-1.9 2.5M4.1 3.9A11.4 11.4 0 0 0 1.2 7c.8 1.4 3.2 4.5 6.8 4.5a6.9 6.9 0 0 0 3.4-.9"/><path d="M6.6 5.7a2 2 0 0 0 2.7 2.8"/><path d="M1.5 1l13 12"/></svg>
@@ -13,16 +11,11 @@ const eyeButton = (target) => `<button type="button" class="ta-eye" data-toggle=
 const err = id => `<p class="ta-error" id="${id}" aria-live="polite"></p>`;
 const back = (label, to) => `<button type="button" class="ta-back" data-go="${to}"><span aria-hidden="true">←</span> ${label}</button>`;
 
-function dobSelects() {
-  const thisYear = new Date().getUTCFullYear();
-  const days = Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, '0')}">${i + 1}</option>`).join('');
-  const months = MONTHS.map((m, i) => `<option value="${String(i + 1).padStart(2, '0')}">${m}</option>`).join('');
-  const years = Array.from({ length: MAX_AGE - MIN_AGE + 1 }, (_, i) => thisYear - MIN_AGE - i).map(y => `<option value="${y}">${y}</option>`).join('');
-  return `<div class="ta-dob">
-<select class="ta-input" id="su-day" name="dob_day" aria-label="Day" aria-describedby="e-su-dob" required><option value="" disabled selected>Day</option>${days}</select>
-<select class="ta-input" id="su-month" name="dob_month" aria-label="Month" aria-describedby="e-su-dob" required><option value="" disabled selected>Month</option>${months}</select>
-<select class="ta-input" id="su-year" name="dob_year" aria-label="Year" aria-describedby="e-su-dob" required><option value="" disabled selected>Year</option>${years}</select>
-</div>`;
+function genderChoice() {
+  return `<div class="seg-choice" role="radiogroup" aria-labelledby="su-gender-label" id="su-gender">${GENDERS.map(([v, l]) => `<label><input type="radio" name="gender" value="${v}"><span>${l}</span></label>`).join('')}</div>`;
+}
+function countrySelect() {
+  return `<select class="ta-input" id="su-country" name="country" required aria-describedby="e-su-country">${COUNTRIES.map(([v, l]) => `<option value="${v}" ${v === 'NG' ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
 }
 
 export function authPage(mode = 'login', { ref = '', sponsor = false } = {}) {
@@ -74,13 +67,18 @@ ${logoBlock()}
       <div class="ta-pw"><input class="ta-input" id="su-pw" name="password" type="password" autocomplete="new-password" minlength="${PASSWORD_MIN}" maxlength="${PASSWORD_MAX}" placeholder="make am strong o" required aria-describedby="e-su-pw">${eyeButton('su-pw')}</div>
       ${err('e-su-pw')}
     </div>
+    ${sponsor ? '' : `<div class="ta-field">
+      <span class="ta-label" id="su-gender-label">You be</span>
+      ${genderChoice()}
+      ${err('e-su-gender')}
+    </div>`}
     <div class="ta-field">
-      <span class="ta-label" id="su-dob-label">Wen them born you</span>
-      <div role="group" aria-labelledby="su-dob-label">${dobSelects()}</div>
-      ${err('e-su-dob')}
+      <label class="ta-label" for="su-country">Country</label>
+      ${countrySelect()}
+      ${err('e-su-country')}
     </div>
     <label class="ta-check"><input type="checkbox" id="su-agree" name="agree" required aria-describedby="e-su-agree">
-      <span>I'm ${MIN_AGE}+ and I agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a>, <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/disclaimer" target="_blank" rel="noopener">Disclaimer</a>.</span>
+      <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a>, <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/rules" target="_blank" rel="noopener">Game Rules</a>. Tap Am stores my nickname, email, gender and country and game activity to run my account. If I’m under 18, a parent or guardian agrees.</span>
     </label>
     ${err('e-su-agree')}
     <div class="ta-msg" role="alert"></div>
@@ -143,7 +141,7 @@ ${poweredBy()}
   const script = `
 (function(){
 'use strict';
-var COMMON=${JSON.stringify(COMMON_PASSWORDS)},RESERVED=${JSON.stringify(RESERVED_NICKNAMES)},MIN_AGE=${MIN_AGE},MAX_AGE=${MAX_AGE},PMIN=${PASSWORD_MIN},PMAX=${PASSWORD_MAX},EMAX=${EMAIL_MAX};
+var COMMON=${JSON.stringify(COMMON_PASSWORDS)},RESERVED=${JSON.stringify(RESERVED_NICKNAMES)},PMIN=${PASSWORD_MIN},PMAX=${PASSWORD_MAX},EMAX=${EMAIL_MAX};
 var EMAIL_RE=/^[^\\s@<>()[\\]\\\\,;:"]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.[A-Za-z]{2,}$/;
 var $=function(id){return document.getElementById(id)};
 var views={login:$('v-login'),signup:$('v-signup'),verify:$('v-verify'),forgot:$('v-forgot'),reset:$('v-reset')};
@@ -188,23 +186,19 @@ function pwProblem(p,nick){
   if(miss.length)return'Password still need '+miss.join(', ')+'.';
   var low=p.toLowerCase();if(COMMON.indexOf(low)>-1||/^(.)\\1+$/.test(p))return'That password too common. Make am stronger.';
   if(nick&&nick.length>=3&&low.indexOf(nick.toLowerCase())>-1)return'No put your nickname inside your password.';return'';}
-function dobProblem(d,m,y){
-  if(!d||!m||!y)return'Pick your day, month and year.';
-  var dt=new Date(y,m-1,d);if(dt.getFullYear()!==y||dt.getMonth()!==m-1||dt.getDate()!==d)return'That date no exist. Check the day and month.';
-  var t=new Date(),a=t.getFullYear()-y;if(t.getMonth()<m-1||(t.getMonth()===m-1&&t.getDate()<d))a--;
-  if(a<MIN_AGE)return'Sorry, Tap Am na for '+MIN_AGE+'+ only.';if(a>MAX_AGE)return'Pick a real date.';return'';}
-
 // ── sign up ──
-var su=views.signup,suDob=[$('su-day'),$('su-month'),$('su-year')];
+var su=views.signup;
+function genderVal(){var c=su.querySelector('input[name=gender]:checked');return c?c.value:'';}
 var suChecks={
   nickname:function(){return setErr($('su-name'),'e-su-name',nickProblem($('su-name').value))},
   email:function(){return setErr($('su-email'),'e-su-email',emailProblem($('su-email').value))},
   password:function(){return setErr($('su-pw'),'e-su-pw',pwProblem($('su-pw').value,$('su-name').value.trim()))},
-  dob:function(){return setErr(suDob,'e-su-dob',dobProblem(+suDob[0].value,+suDob[1].value,+suDob[2].value))},
+  gender:function(){if(!$('su-gender'))return true;return setErr(su.querySelectorAll('input[name=gender]'),'e-su-gender',genderVal()?'':'Pick one.')},
+  country:function(){return setErr($('su-country'),'e-su-country',$('su-country').value?'':'Pick your country.')},
   agree:function(){return setErr($('su-agree'),'e-su-agree',$('su-agree').checked?'':'Tick the box to agree before you continue.')},
   company:function(){var c=$('su-company');if(!c)return true;var v=c.value.trim();return setErr(c,'e-su-company',v.length<2?'Enter your company or brand name.':'')}
 };
-var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),dob:suDob[0],agree:$('su-agree'),company:$('su-company')};
+var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),gender:su.querySelector('input[name=gender]'),country:$('su-country'),agree:$('su-agree'),company:$('su-company')};
 var touched={};
 $('su-name').addEventListener('blur',function(){if(this.value)touched.nickname=1;if(touched.nickname)suChecks.nickname()});
 $('su-email').addEventListener('blur',function(){if(this.value)touched.email=1;if(touched.email)suChecks.email()});
@@ -212,19 +206,19 @@ $('su-pw').addEventListener('blur',function(){if(this.value)touched.password=1;i
 $('su-name').addEventListener('input',function(){if(touched.nickname)suChecks.nickname();if(touched.password)suChecks.password()});
 $('su-email').addEventListener('input',function(){if(touched.email)suChecks.email()});
 $('su-pw').addEventListener('input',function(){if(touched.password)suChecks.password()});
-suDob.forEach(function(s){s.addEventListener('change',function(){if(suDob.every(function(x){return x.value}))touched.dob=1;if(touched.dob)suChecks.dob()})});
+su.querySelectorAll('input[name=gender]').forEach(function(r){r.addEventListener('change',function(){suChecks.gender()})});
 $('su-agree').addEventListener('change',function(){suChecks.agree()});
 
 su.addEventListener('submit',function(e){e.preventDefault();msg(su);
-  var order=($('su-company')?['company']:[]).concat(['nickname','email','password','dob','agree']),firstBad=null;
+  var order=($('su-company')?['company']:[]).concat(['nickname','email','password','gender','country','agree']),firstBad=null;
   order.forEach(function(k){touched[k]=1;if(!suChecks[k]()&&!firstBad)firstBad=k});
   if(firstBad){suFieldEl[firstBad].focus();return;}
   var email=$('su-email').value.trim().toLowerCase();
   post(su,'/api/signup/start',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,
-    dob:suDob[2].value+'-'+suDob[1].value+'-'+suDob[0].value,agree:true,accountType:su.getAttribute('data-type'),company:$('su-company')?$('su-company').value.trim():'',ref:su.getAttribute('data-ref')},function(j){
+    gender:genderVal(),country:$('su-country').value,agree:true,accountType:su.getAttribute('data-type'),company:$('su-company')?$('su-company').value.trim():'',ref:su.getAttribute('data-ref')},function(j){
       state.email=email;state.purpose='signup';openCodeView('verify',j);
-    },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',dob:'e-su-dob',agree:'e-su-agree',company:'e-su-company'};
-      if(j.field&&ids[j.field]){setErr(j.field==='dob'?suDob:suFieldEl[j.field],ids[j.field],j.error);suFieldEl[j.field].focus();return true;}});
+    },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',gender:'e-su-gender',country:'e-su-country',agree:'e-su-agree',company:'e-su-company'};
+      if(j.field&&ids[j.field]&&suFieldEl[j.field]){setErr(j.field==='gender'?su.querySelectorAll('input[name=gender]'):suFieldEl[j.field],ids[j.field],j.error);suFieldEl[j.field].focus();return true;}});
 });
 
 // ── email code views ──
@@ -280,7 +274,7 @@ views.login.addEventListener('submit',function(e){e.preventDefault();var v=views
   var ok1=setErr(id,'e-login-id',id.value.trim()?'':'Enter your nickname or email.');
   var ok2=setErr(pw,'e-login-pw',pw.value?'':'Enter your password.');
   if(!ok1){id.focus();return}if(!ok2){pw.focus();return}
-  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok','Correct! Taking you in…');setTimeout(function(){var n=new URLSearchParams(location.search).get('next');location.href=(n&&n.charAt(0)==='/'&&/^[a-z]/.test(n.charAt(1))&&n.indexOf('//')<0)?n:(j.redirect||(j.role==='ADMIN'?'/admin':'/dashboard'))},300)},
+  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok',j.restored?'Welcome back! Your account is active again.':'Correct! Taking you in…');setTimeout(function(){var n=new URLSearchParams(location.search).get('next');location.href=(n&&n.charAt(0)==='/'&&/^[a-z]/.test(n.charAt(1))&&n.indexOf('//')<0)?n:(j.redirect||(j.role==='ADMIN'?'/admin':'/dashboard'))},300)},
     function(j){if(j.field==='identifier'){setErr(id,'e-login-id',j.error);return true;}if(j.field==='password'){setErr(pw,'e-login-pw',j.error);return true;}});
 });
 [$('login-id'),$('login-pw')].forEach(function(i){i.addEventListener('input',function(){setErr(i,i.getAttribute('aria-describedby'),'')})});

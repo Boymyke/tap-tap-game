@@ -4,52 +4,53 @@ Tap Am (formerly NAK AM) is a mobile-first competitive tapping game powered by F
 
 ## Live architecture
 
-- Cloudflare Workers: website + API
-- Cloudflare Durable Objects: one live `GameRoom` per game for active scores, boosters and leaderboards
-- Cloudflare D1: users, sessions, game definitions, settled scores, store, wallets, suggestions and long-term records
-- Batched tap submission: physical taps are grouped before reaching the server
-- Durable Object alarm settlement: final live scores are persisted to D1 when a game closes
-
-This keeps rapid live tapping out of the main relational database and gives the game a straightforward path beyond the first 1,000 users.
+- Cloudflare Workers (Smart Placement): server-rendered pages + JSON API, strict CSP with a per-request nonce
+- Durable Objects: one `GameRoom` per pool (live scores, booster queue, anti-cheat, settlement by alarm) and one `TapMeter` per player (daily/monthly tap limits, only used when the admin turns limits on)
+- D1: users, sessions, pools, settled scores, wallets, store, ads, stats; reads are batched (`env.DB.batch`) so a page is usually one round trip
+- Taps are counted on the phone and sent in small signed batches; the server caps the rate per tier and is the only source of truth for scores, money and rankings
+- Cron every 5 minutes: settle missed pools, tier expiry reminders, automatic payouts (if on), tapper-of-the-period badges, health checks every 15 minutes
 
 ## Current features
 
-**Accounts and tiers**
-- Lapo babies (free), Nepo babies (₦13,000/month or ₦120,000/year — prices set by the admin), Sponsors (sign up at `/signup?type=sponsor`) and one Super admin
-- Sign-up with emailed 6-digit code, 18+ check, strong passwords; login by nickname or email; 30-day sliding sessions
-- 100 ranks (20 named tiers × 5) unlocked by lifetime taps, games and wins; admin can rename, re-threshold and add ranks
-- Referral links: every 10 sign-ups (setting) gives the referrer a free booster; starter boosters for new players, bonus boosters on Nepo upgrade
+**Membership tiers** (`src/tiers.js`, prices editable in admin)
 
-**Game**
-- One `GameRoom` Durable Object per pool: live scores, anti-cheat token bucket (25 taps/sec), boosters (one per pool), leaderboard, settlement by alarm (plus a 5-minute cron sweep)
-- Game screen: big animated tap card, +1/+2 bursts, combos with vibration, score and position milestones, boosters, mute, live board, VS team bar, landscape/desktop layout with the tap area on the right, end screen
-- Nepo babies play up to 10 pools at once (one tap counts in all), create pools, gift boosters (Nepo boosters only to Nepo babies), use the booster calculator, change tap colours/shapes/skins
-- Pools: free, paid (entry fees form the prize) or sponsored; winner-takes-all or top 3/5/10 split; tie rule chosen by the creator; Lapo-only / Nepo-only / everybody; private pools with a generated password; VS pools with two sides
-- Pools can't be deleted by their creator; the admin can cancel (refunds every entry fee)
+| | Lapo (free) | Mapo | Nepo |
+| --- | --- | --- | --- |
+| Price | free | ₦3,500/month · ₦35,000/year | ₦50,000/month · ₦500,000/year |
+| Fingers at once | 1 | 3 | unlimited |
+| Pools at once | 1 | 3 | 10 |
+| Max taps/sec (server cap) | 15 | 25 | 40 |
+| Create pools, booster calculator, tap sounds by level | – | ✓ | ✓ |
+| 10 app themes, Nepo backgrounds, pool colours, gifting | – | – | ✓ |
 
-**Money** (Paystack, test mode on the preview)
-- Wallet (money added — spend only, never withdrawable, with a clear notice) and Winnings (withdrawable)
-- Withdrawals from ₦10,000 (Lapo) / ₦5,000 (Nepo); one pending request at a time; admin pays via Paystack transfer or marks paid / rejects with refund
+Payments are one-off (no auto-renew); members get reminders before their time ends. Upgrading Mapo → Nepo converts unused Mapo days.
 
-**Sponsors and ads**
-- Sponsor dashboard: players reached, ad views and clicks, sponsored pools, brand profile
-- Ads (picture or YouTube) shown as closable pop-ups before games, in the lobby and after games; sponsor ads need admin approval
+**Accounts**: sign-up with nickname, gender, country, email code; no date of birth. A one-time 18+ confirmation is asked the first time someone pays, enters a paid pool or withdraws. Archive account in Settings (log in within 30 days to restore). 100 ranks with Nigerian slang names; Top tappers for day/week/month/year/all time with badges.
 
-**Super admin** (`/admin`)
-- Overview numbers and all settings; users (search, tier, suspend, gift boosters/skins, adjust money, see taps and games, delete); pools (create any type, pay out, cancel); store (skins/shapes/boosters with Lapo/Nepo availability and rank); ranks; ads; payouts; suggestions
+**Home**: ad slideshow, welcome card with winnings, join by code, create a pool, sponsored → live → coming-up pools, invite link with QR/share card. Pages swap instantly (prefetch on touch, ring loader).
 
-**Site**
-- One-screen landing page with the 10-second tap challenge, rotating pools, people online and total visits; installable app, offline banner/page; How to play, Rules, Merch, FAQ, About, Terms, Privacy, Disclaimer, 404/500 pages
+**Game**: live board above the tap area, booster button bottom-left, booster calculator tips, many boosters per game (queued; a stronger one jumps the queue), connection state on the card, sponsor ad pop-ups (game open, lobby, before results; closable after 5s), no zoom or text selection while tapping, mute.
+
+**Pools**: free, paid or sponsored; up to 100 winners with a top-heavy or equal split; VS pools where each side's winners split that side's pot; max players optional; private pools; sponsor pools with or without an approved ad and custom background/tap colour.
+
+**Store and wallet**: all / Mapo / Nepo / rank sections, quantity with live total, more boosters (2×–10×, some once per game); wallet history paginated and downloadable (CSV); one withdrawal a day.
+
+**Sponsors**: ads (picture or YouTube) with preview, admin approval, home-slot requests, optional lead capture (admin switches it on per sponsor; players must tick a consent box), leads CSV.
+
+**Super admin**: overview, health page with email alerts, users, bulk gifting, pools, store, ranks, ads, slides, backgrounds, withdrawals (CSV, optional automatic payouts), suggestions, all settings, audit log.
+
+**Legal**: Game Rules, Fair Play, Prizes & Withdrawals, Account Rules, Terms, Privacy, Disclaimer, Consent notices — with items for a lawyer flagged in `docs/LEGAL_REVIEW.md`. Brand rules are in `docs/BRAND.md`.
 
 ## Secrets and switches
 
 | Name | What it does |
 | --- | --- |
 | `PAYSTACK_SECRET_KEY` (secret) | Real card payments, bank lookup and transfers. Without it the preview simulates payments (`PAYMENTS_TEST_MODE=1`). |
-| `RESEND_API_KEY` or Cloudflare Email | Real sign-up emails. Without it the preview shows the code on screen (`OTP_DEV_MODE=1`). |
+| `RESEND_API_KEY` + `EMAIL_FROM`, or Cloudflare Email (`EMAIL`) | Sign-up codes and health alert emails (alert addresses are set in admin → Settings). Without it the preview shows codes on screen (`OTP_DEV_MODE=1`) and alerts are only logged. |
 | `CALLS_APP_ID`, `CALLS_APP_TOKEN` (secrets) | Live voice in games (Cloudflare Realtime). The mic button only shows once these are set. |
 | `ADMIN_SETUP_KEY` (secret) | Lets you create the first super admin at `/admin/setup`. |
-| R2 bucket `MEDIA` | Picture uploads for ads, skins and logos. Turn on R2 in the dashboard, create the bucket and uncomment it in `wrangler.preview.jsonc`. |
+| R2 bucket `MEDIA` | Picture uploads for ads, slides, skins and backgrounds. Turn on R2, create the bucket and uncomment it in the wrangler config. |
+| `TAP_METER` Durable Object | Needed only if tap limits are switched on. Already in `wrangler.preview.jsonc`; copy the binding and the `v2` migration into `wrangler.jsonc` before using limits on the live Worker. |
 
 ## Local development
 
@@ -61,7 +62,14 @@ npm run dev
 
 ## UI assets
 
-The Tap Am logo and backgrounds live in `public/assets` and are served as Workers static assets. The shared theme (colours from the Figma reference) is in `src/ui/theme.js`.
+Logos and app icons are generated by `npm run brand` into `public/assets/brand` and `public/assets/icons`. The QR/share-card script is built with `npm run build:share`. The design system is in `src/ui/theme.js` and `src/ui/kit.js`.
+
+## Tests
+
+```bash
+npm run dev   # in one terminal
+BASE=http://127.0.0.1:8787 node tests/e2e.mjs
+```
 
 ## Preview link for testing the UI
 
@@ -97,6 +105,8 @@ npm run db:upgrade:3        # visitors, merch waitlist; clears old sessions
 npm run db:upgrade:3:local
 npm run db:upgrade:4        # full game: tiers, ranks, pools v2, money, store, ads, voice
 npm run db:upgrade:4:local
+npm run db:upgrade:5        # Mapo tier, gender/country, VS pots, slides, leads, stats, badges, health (run once)
+npm run db:upgrade:5:local
 ```
 
 ## Deploy

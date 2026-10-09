@@ -1,9 +1,19 @@
 // Validation rules shared by the auth API (server) and the sign-up page (client).
 // Keep the client copy in src/ui/auth.js in sync with these messages.
 
-export const MIN_AGE = 18;
+export const MIN_AGE = 18;          // only checked when money is used (wallet, paid pools, withdrawals)
 export const MAX_AGE = 100;
-export const TERMS_VERSION = '2026-10-08';
+export const TERMS_VERSION = '2026-10-09';
+
+export const GENDERS = [['MALE', 'Male'], ['FEMALE', 'Female'], ['NA', 'Prefer not to say']];
+// Nigeria first, then Africa, then where many Nigerians live abroad.
+export const COUNTRIES = [['NG', 'Nigeria'], ['GH', 'Ghana'], ['KE', 'Kenya'], ['ZA', 'South Africa'], ['CM', 'Cameroon'], ['BJ', 'Benin'], ['TG', 'Togo'], ['CI', 'Côte d’Ivoire'],
+  ['SN', 'Senegal'], ['LR', 'Liberia'], ['SL', 'Sierra Leone'], ['GM', 'Gambia'], ['NE', 'Niger'], ['TD', 'Chad'], ['UG', 'Uganda'], ['TZ', 'Tanzania'], ['RW', 'Rwanda'], ['ET', 'Ethiopia'],
+  ['EG', 'Egypt'], ['MA', 'Morocco'], ['ZM', 'Zambia'], ['ZW', 'Zimbabwe'], ['BW', 'Botswana'], ['NA', 'Namibia'], ['AO', 'Angola'], ['CD', 'DR Congo'], ['GB', 'United Kingdom'],
+  ['IE', 'Ireland'], ['US', 'United States'], ['CA', 'Canada'], ['DE', 'Germany'], ['FR', 'France'], ['IT', 'Italy'], ['ES', 'Spain'], ['NL', 'Netherlands'], ['BE', 'Belgium'],
+  ['AE', 'United Arab Emirates'], ['SA', 'Saudi Arabia'], ['QA', 'Qatar'], ['CN', 'China'], ['IN', 'India'], ['MY', 'Malaysia'], ['AU', 'Australia'], ['BR', 'Brazil'], ['OTHER', 'Other country']];
+export const genderProblem = g => (GENDERS.some(x => x[0] === g) ? null : 'Pick one.');
+export const countryProblem = c => (COUNTRIES.some(x => x[0] === c) ? null : 'Pick your country.');
 
 export const NICKNAME_RE = /^[A-Za-z0-9_]{3,24}$/;
 export const USERNAME_RE = NICKNAME_RE; // kept for older call sites

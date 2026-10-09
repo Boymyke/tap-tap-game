@@ -3,7 +3,7 @@ import {
   json, uid, nowIso, hashPassword, sha256Hex, safeEqual, createSession, sessionCookie,
   clientIp, readJson, allow, clearLimit, PBKDF2_ITERATIONS, LEGACY_PBKDF2_ITERATIONS
 } from './lib.js';
-import { nicknameProblem, emailProblem, passwordProblem, dobProblem, TERMS_VERSION } from './auth-rules.js';
+import { nicknameProblem, emailProblem, passwordProblem, genderProblem, countryProblem, TERMS_VERSION } from './auth-rules.js';
 import { sendCodeEmail, maskEmail, testMode } from './email.js';
 import { randomCode, giveItem, notify, settings, num } from './core.js';
 
@@ -106,12 +106,15 @@ export async function handleAuthApi(req, env, path) {
     const { data, response } = await readJson(req); if (response) return response;
     if (!await allow(env, 'signup-ip:' + ip, 20, 3600)) return tooMany('Too many sign-up tries from this network. Try again later.');
     const nickname = String(data.nickname ?? data.username ?? '').trim();
-    const email = normEmail(data.email), password = String(data.password ?? ''), dob = String(data.dob ?? '').trim();
+    const email = normEmail(data.email), password = String(data.password ?? '');
+    const sponsorType = data.accountType === 'SPONSOR';
+    const gender = sponsorType ? 'NA' : String(data.gender ?? ''), country = String(data.country ?? '').toUpperCase();
     let p;
     if ((p = nicknameProblem(nickname))) return fieldError('nickname', p);
     if ((p = emailProblem(email))) return fieldError('email', p);
     if ((p = passwordProblem(password, nickname))) return fieldError('password', p);
-    if ((p = dobProblem(dob))) return fieldError('dob', p);
+    if ((p = genderProblem(gender))) return fieldError('gender', p);
+    if ((p = countryProblem(country))) return fieldError('country', p);
     if (data.agree !== true) return fieldError('agree', 'Tick the box to agree before you continue.');
     const sponsor = data.accountType === 'SPONSOR';
     const company = sponsor ? String(data.company || '').trim() : '';
@@ -122,7 +125,7 @@ export async function handleAuthApi(req, env, path) {
     if (await env.DB.prepare('SELECT 1 FROM users WHERE email=?').bind(email).first()) return fieldError('email', 'That email don already get account. Try Login instead.', 409);
     await cleanup(env);
     const hp = await hashPassword(password);
-    const issued = await issueCode(env, 'signup', email, JSON.stringify({ nickname, hash: hp.hash, salt: hp.salt, iterations: hp.iterations, dob, role: sponsor ? 'SPONSOR' : 'USER', company, ref: sponsor ? null : refOk }));
+    const issued = await issueCode(env, 'signup', email, JSON.stringify({ nickname, hash: hp.hash, salt: hp.salt, iterations: hp.iterations, gender, country, role: sponsor ? 'SPONSOR' : 'USER', company, ref: sponsor ? null : refOk }));
     if (issued.wait) return json({ error: `We just send code to this email. Wait ${issued.wait}s before you ask for another one.`, retryAfter: issued.wait, field: 'email' }, 429);
     if (issued.tooMany) return tooMany('Too many codes for this email. Try again in one hour.');
     const sent = await deliver(env, 'signup', email, issued.code);
@@ -150,8 +153,8 @@ export async function handleAuthApi(req, env, path) {
     for (let i = 0; i < 5 && role === 'USER'; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
     try {
       await env.DB.batch([
-        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,date_of_birth,terms_accepted_at,terms_version,email_verified_at,role,tier,referral_code,referred_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-          .bind(id, pending.nickname, email, pending.hash, pending.salt, pending.iterations, pending.dob, now, TERMS_VERSION, now, role, 'LAPO', myCode, referrer?.id || null),
+        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,gender,country,terms_accepted_at,terms_version,email_verified_at,role,tier,referral_code,referred_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+          .bind(id, pending.nickname, email, pending.hash, pending.salt, pending.iterations, pending.gender || null, pending.country || null, now, TERMS_VERSION, now, role, 'LAPO', myCode, referrer?.id || null),
         env.DB.prepare('INSERT INTO wallets(user_id,balance_kobo) VALUES(?,0)').bind(id),
         env.DB.prepare("DELETE FROM email_codes WHERE purpose='signup' AND email=?").bind(email),
         ...(role === 'SPONSOR' ? [env.DB.prepare('INSERT INTO sponsor_profiles(user_id,company) VALUES(?,?)').bind(id, pending.company)] : [])
@@ -205,14 +208,19 @@ export async function handleAuthApi(req, env, path) {
     if (!safeEqual(hp.hash, user.password_hash)) return wrong();
     if (adminLogin && user.role !== 'ADMIN') return wrong();   // don't reveal which accounts exist
     if (!adminLogin && user.role === 'ADMIN') return json({ error: 'This account uses the admin login page.' }, 403);
-    if (user.status && user.status !== 'ACTIVE') return json({ error: 'This account is suspended. Contact Tap Am through the Suggest page.' }, 403);
+    let restored = false;
+    if (user.status === 'ARCHIVED') {   // archived by its owner: logging in within 30 days brings it back
+      if (user.archived_at && Date.now() - Date.parse(user.archived_at) > 30 * 86400000) return json({ error: 'This account was archived more than 30 days ago. Contact Tap Am through the Suggest page to restore it.' }, 403);
+      await env.DB.prepare("UPDATE users SET status='ACTIVE', archived_at=NULL WHERE id=? AND status='ARCHIVED'").bind(user.id).run();
+      restored = true;
+    } else if (user.status && user.status !== 'ACTIVE') return json({ error: 'This account is suspended. Contact Tap Am through the Suggest page.' }, 403);
     await clearLimit(env, idKey);
     if (iterations < PBKDF2_ITERATIONS) {   // quietly upgrade old, weaker hashes
       const up = await hashPassword(password);
       await env.DB.prepare('UPDATE users SET password_hash=?,password_salt=?,password_iter=? WHERE id=?').bind(up.hash, up.salt, up.iterations, user.id).run();
     }
     const sid = await createSession(user.id, env);
-    return json({ message: 'Logged in', role: user.role, redirect: user.role === 'ADMIN' ? '/admin' : user.role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
+    return json({ message: restored ? 'Welcome back! Your account is active again.' : 'Logged in', restored, role: user.role, redirect: user.role === 'ADMIN' ? '/admin' : user.role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
   }
 
   // ── Forgot password, step 1: email a reset code ──────────────────────────

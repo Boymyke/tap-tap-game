@@ -35,7 +35,7 @@ export function html(body, status = 200, headers = {}) {
       `script-src 'nonce-${nonce}'`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: https:",
+      "img-src 'self' data: blob: https:",
       "connect-src 'self'",
       "worker-src 'self'",
       "manifest-src 'self'",
@@ -92,11 +92,16 @@ export function safeEqual(a, b) {
 const tokenOk = t => typeof t === 'string' && /^[0-9a-f]{64}$/.test(t);
 const DAY = 86400000;
 
+// One query gives the page shell everything it needs: the user, their wallet and unread count.
 export async function currentUser(req, env) {
   const token = getCookie(req, COOKIE);
   if (!tokenOk(token)) return null;
   const id = await sha256Hex(token);
-  const row = await env.DB.prepare('SELECT u.id,u.username,u.email,u.role,u.tier,u.nepo_until,u.status,u.lifetime_taps,u.games_played,u.wins,u.rank_level,u.referral_code,u.referral_count,u.equipped_skin,u.prefs,u.created_at,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=?').bind(id).first();
+  const row = await env.DB.prepare(`SELECT u.id,u.username,u.email,u.role,u.tier,u.tier_until,u.status,u.lifetime_taps,u.games_played,u.wins,u.rank_level,u.referral_code,u.referral_count,
+      u.equipped_skin,u.prefs,u.gender,u.country,u.adult_confirmed_at,u.created_at,s.expires_at,
+      COALESCE(w.balance_kobo,0) AS w_balance, COALESCE(w.winnings_kobo,0) AS w_winnings,
+      (SELECT COUNT(*) FROM notifications n WHERE n.user_id=u.id AND n.read=0) AS unread
+    FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN wallets w ON w.user_id=u.id WHERE s.id=?`).bind(id).first();
   if (!row) return null;
   if (row.status && row.status !== 'ACTIVE') return null;
   const exp = Date.parse(row.expires_at);
@@ -105,6 +110,7 @@ export async function currentUser(req, env) {
     await env.DB.prepare('UPDATE sessions SET expires_at=? WHERE id=?').bind(new Date(Date.now() + SESSION_DAYS * DAY).toISOString(), id).run();
     row._renewCookie = sessionCookie(token);
   }
+  row.wallet = { balance_kobo: row.w_balance, winnings_kobo: row.w_winnings };
   return row;
 }
 
