@@ -15,7 +15,8 @@ const BASE_HEADERS = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
   'x-frame-options': 'DENY',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  // microphone: live voice in games (Nepo). autoplay: sponsor YouTube ads start by themselves (muted).
+  'permissions-policy': 'camera=(), microphone=(self), geolocation=(), payment=(), autoplay=(self "https://www.youtube-nocookie.com")',
   'strict-transport-security': 'max-age=31536000; includeSubDomains'
 };
 

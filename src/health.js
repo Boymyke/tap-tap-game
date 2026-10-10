@@ -65,7 +65,7 @@ export async function healthSweep(env) {
   if (okKeys.length) await env.DB.prepare(`UPDATE alerts SET resolved_at=? WHERE resolved_at IS NULL AND key IN (${okKeys.map(() => '?').join(',')})`).bind(now, ...okKeys).run();
   if (toEmail.length && s.alert_email) {
     const crit = toEmail.some(c => c.level === 'crit');
-    const r = await sendAlertEmail(env, s.alert_email, `${crit ? '🔴' : '🟡'} Tap Am needs attention (${toEmail.length})`, toEmail.map(c => `• ${c.title}: ${c.detail}\n  What to do: ${c.action || 'Check the admin health page.'}`).join('\n\n'));
+    const r = await sendAlertEmail(env, s.alert_email, `${crit ? '[Urgent]' : '[Check]'} Tap Am needs attention (${toEmail.length})`, toEmail.map(c => `• ${c.title}: ${c.detail}\n  What to do: ${c.action || 'Check the admin health page.'}`).join('\n\n'));
     if (r.ok) await env.DB.prepare(`UPDATE alerts SET emailed_at=? WHERE key IN (${toEmail.map(() => '?').join(',')})`).bind(now, ...toEmail.map(c => c.key)).run();
   }
   return bad.length;
