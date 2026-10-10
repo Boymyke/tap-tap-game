@@ -71,11 +71,18 @@ export class GameRoom extends DurableObject {
         if (!this.meta) return j({ error: 'Room not ready' }, 409);
         let p = this.players.get(body.uid);
         if (!p) {
-          p = { uid: body.uid, n: body.name, tier: body.tier, side: body.side || null, score: 0, raw: 0, cur: { mult: 1, until: 0 }, queue: [], used: {}, boosts: 0, lastBoost: 0, reachedAt: 0, lastAt: 0, allowance: BURST, flagged: 0 };
+          p = { uid: body.uid, n: body.name, e: body.emoji || null, tier: body.tier, side: body.side || null, score: 0, raw: 0, cur: { mult: 1, until: 0 }, queue: [], used: {}, boosts: 0, lastBoost: 0, reachedAt: 0, lastAt: 0, allowance: BURST, flagged: 0 };
           this.players.set(p.uid, p); this.sorted = null;
           await this.ctx.storage.put('p:' + p.uid, p);
+        } else if (body.emoji !== undefined && (body.emoji || null) !== (p.e || null)) {
+          p.e = body.emoji || null; await this.ctx.storage.put('p:' + p.uid, p);
         }
         return j({ score: p.score });
+      }
+      case '/emoji': {   // the super admin changed a player's name emoji
+        const p = this.players.get(body.uid);
+        if (p) { p.e = body.emoji || null; await this.ctx.storage.put('p:' + p.uid, p); }
+        return j({ ok: true });
       }
       case '/tap': {
         const p = this.players.get(body.uid);
@@ -128,7 +135,7 @@ export class GameRoom extends DurableObject {
         const n = Math.max(3, Math.min(100, Number(url.searchParams.get('n')) || 10));
         const teams = {};
         if (this.meta?.sideA) for (const p of list) if (p.side) teams[p.side] = (teams[p.side] || 0) + p.score;
-        const row = (p, i) => ({ r: i + 1, n: p.n, s: p.score, t: p.tier, side: p.side, me: p.uid === uid });
+        const row = (p, i) => ({ r: i + 1, n: p.n, e: p.e || null, s: p.score, t: p.tier, side: p.side, me: p.uid === uid });
         const myRank = me ? list.indexOf(me) + 1 : 0;
         const near = me && myRank > n ? list.slice(Math.max(n, myRank - 3), myRank + 1).map(p => row(p, list.indexOf(p))) : [];
         return j({

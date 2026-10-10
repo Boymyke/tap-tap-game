@@ -1,10 +1,12 @@
 // Pool creation, joining and listing — shared by players (Mapo/Nepo), sponsors and the super admin.
 import { uid, nowIso, json } from '../lib.js';
+import { isPattern } from '../ui/patterns.js';
 import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError } from '../core.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 export const MAX_WINNERS = 100;
 export const NO_LIMIT = 100000;
+export const MIN_POOL_SECONDS = 60;
 
 // Prize shares in basis points (sum 10000). TOP = bigger shares for higher places, EQUAL = same for all.
 export function buildSplit(n, style = 'TOP') {
@@ -67,7 +69,7 @@ export async function createPool(env, user, d) {
   if (!start) return json({ error: 'Pick when the pool starts.', field: 'starts_at' }, 400);
   if (!end) return json({ error: 'Pick when the pool ends.', field: 'ends_at' }, 400);
   if (start < now - 60000) return json({ error: 'Start time don pass already.', field: 'starts_at' }, 400);
-  if (end - start < 30000) return json({ error: 'A pool must run at least 30 seconds.', field: 'ends_at' }, 400);
+  if (end - start < MIN_POOL_SECONDS * 1000) return json({ error: `A pool must run at least ${MIN_POOL_SECONDS} seconds.`, field: 'ends_at' }, 400);
   if (end - start > 7 * 86400000) return json({ error: 'A pool fit run 7 days max.', field: 'ends_at' }, 400);
   if (start - now > 60 * 86400000) return json({ error: 'Start within the next 60 days.', field: 'starts_at' }, 400);
   if (!admin && d.ack !== true) return json({ error: 'Tick the box to confirm you understand the pool can’t be deleted.', field: 'ack' }, 400);
@@ -93,7 +95,11 @@ export async function createPool(env, user, d) {
   if (gameType === 'MATCH' && (!sideB || sideA.toLowerCase() === sideB.toLowerCase())) return json({ error: 'Name side B (different from side A).', field: 'side_b' }, 400);
   // colours: sponsors, the admin and Nepo babies
   const canColour = admin || sponsor || isNepo(user);
-  const theme = canColour && HEX.test(d.theme_color || '') ? d.theme_color : null;
+  // Pool tap area (colour + pattern). Players use it unless the creator lets them use their own.
+  const custom = canColour && d.custom_pad !== false && (HEX.test(d.theme_color || '') || isPattern(d.pad_pattern));
+  const theme = custom && HEX.test(d.theme_color || '') ? d.theme_color : null;
+  const padPattern = custom && isPattern(d.pad_pattern) ? d.pad_pattern : null;
+  const allowOwnPad = custom ? (d.allow_own_pad === true ? 1 : 0) : 1;
   const bg = canColour && HEX.test(d.bg_color || '') ? d.bg_color : null;
   const maxRaw = String(d.max_players ?? '').replace(/[,\s]/g, '');
   const maxPlayers = maxRaw === '' ? NO_LIMIT : clampInt(maxRaw, 2, NO_LIMIT, NO_LIMIT);
@@ -124,7 +130,7 @@ export async function createPool(env, user, d) {
     id, name, description, starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString(), kind, audience,
     entry_fee_kobo: entryFee, prize_kobo: prize, winners_count: split.length, split: JSON.stringify(split), split_style: style, tie_rule: tie, house_cut_pct: cut,
     is_private: isPrivate ? 1 : 0, join_password: password, sponsor_user_id: sponsor ? user.id : null, sponsor_name: sponsorName,
-    theme_color: theme, bg_color: bg, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: d.boosters_allowed === false ? 0 : 1,
+    theme_color: theme, pad_pattern: padPattern, allow_own_pad: allowOwnPad, bg_color: bg, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: d.boosters_allowed === false ? 0 : 1,
     max_players: maxPlayers, hashtag: code, created_by: user.id, status: start > now ? 'SCHEDULED' : 'LIVE', min_tier: audience === 'ALL' ? 'LAPO' : audience, promo_id: promoId
   };
   const cols = Object.keys(pool);
@@ -200,7 +206,7 @@ export async function joinPool(env, user, pool, d) {
   }
   if (fee > 0) await env.DB.prepare('UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=?').bind(fee, pool.id).run();
   await initRoom(env, pool);
-  await roomCall(env, pool.id, '/join', { uid: user.id, name: user.username, tier: tierOf(user), side });
+  await roomCall(env, pool.id, '/join', { uid: user.id, name: user.username, tier: tierOf(user), side, emoji: user.emoji || null });
   return json({ message: fee ? `You don join! ${naira(fee)} entry paid.` : 'You don join!', redirect: `/pool/${pool.id}` });
 }
 
@@ -209,7 +215,7 @@ export function poolPublic(p) {
   return {
     id: p.id, name: p.name, description: p.description, code: p.hashtag, kind: p.kind, audience: p.audience, startsAt: p.starts_at, endsAt: p.ends_at,
     entryFee: p.entry_fee_kobo, prize: p.prize_kobo, split, splitStyle: p.split_style || 'TOP', tie: p.tie_rule, private: !!p.is_private, players: p.players,
-    sponsor: p.sponsor_name, theme: p.theme_color, bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
+    sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, skinUrl: p.skin_url || null, bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
     houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), promoId: p.promo_id || null, createdBy: p.created_by, creatorRole: p.creator_role || null,
     joined: !!p.joined, state: poolState(p)
   };
