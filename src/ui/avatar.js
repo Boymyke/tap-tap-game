@@ -116,13 +116,13 @@ export function badgeSvg(period, { size = 56 } = {}) {
 <path d="M50 4l10 8 13-2 5 12 12 5-2 13 8 10-8 10 2 13-12 5-5 12-13-2-10 8-10-8-13 2-5-12-12-5 2-13-8-10 8-10-2-13 12-5 5-12 13 2z" fill="#FFD23F" ${s(3)}/>
 <circle cx="50" cy="50" r="27" fill="${c}" ${s(3)}/>
 <path d="M50 30l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#fff" ${s(2.4)}/>
-<text x="50" y="76" text-anchor="middle" font-family="Rubik,Arial,sans-serif" font-weight="900" font-size="${label.length > 5 ? 9 : 11}" fill="#fff" stroke="${INK}" stroke-width="3" paint-order="stroke">${label}</text></svg>`;
+<text x="50" y="76" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,Arial,sans-serif" font-weight="900" font-size="${label.length > 5 ? 9 : 11}" fill="#fff" stroke="${INK}" stroke-width="3" paint-order="stroke">${label}</text></svg>`;
 }
 
 // Small decorative stickers used around the UI.
 export const STICKERS = {
   sparkle: (c = '#FFD23F') => `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 2l5 13 13 5-13 5-5 13-5-13-13-5 13-5z" fill="${c}" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/></svg>`,
-  coin: () => `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" fill="#FFD23F" stroke="${INK}" stroke-width="2.5"/><circle cx="20" cy="20" r="11" fill="none" stroke="#E0A800" stroke-width="2.5"/><text x="20" y="26" text-anchor="middle" font-family="Rubik,Arial,sans-serif" font-weight="900" font-size="16" fill="${INK}">₦</text></svg>`,
+  coin: () => `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" fill="#FFD23F" stroke="${INK}" stroke-width="2.5"/><circle cx="20" cy="20" r="11" fill="none" stroke="#E0A800" stroke-width="2.5"/><text x="20" y="26" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,Arial,sans-serif" font-weight="900" font-size="16" fill="${INK}">₦</text></svg>`,
   bolt: () => `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M24 2L8 24h10l-4 14 18-24H22z" fill="#00FF6E" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/></svg>`,
   fire: () => `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3c2 8 12 12 12 22a12 12 0 01-24 0c0-6 4-9 6-12 1 4 3 6 5 6-1-6 0-11 1-16z" fill="#FF8A2A" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/><path d="M20 22c3 3 5 5 5 8a5 5 0 01-10 0c0-3 3-5 5-8z" fill="#FFD23F"/></svg>`,
   lock: () => `<svg viewBox="0 0 40 40" aria-hidden="true"><rect x="8" y="17" width="24" height="19" rx="5" fill="#FFD23F" stroke="${INK}" stroke-width="2.5"/><path d="M13 17v-4a7 7 0 0114 0v4" fill="none" stroke="${INK}" stroke-width="3"/><circle cx="20" cy="26" r="3" fill="${INK}"/></svg>`
