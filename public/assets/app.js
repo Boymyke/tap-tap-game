@@ -483,6 +483,13 @@
     e.preventDefault(); e.stopImmediatePropagation(); goBack(b.getAttribute('href') || b.getAttribute('data-back') || '/');
   }, true);
 
+  /* ── GET forms that reload on change (year / month pickers) ── */
+  document.addEventListener('change', function (e) {
+    var f = e.target.form; if (!f || !f.hasAttribute('data-autosubmit')) return;
+    var q = new URLSearchParams(new FormData(f)).toString();
+    TA.go((f.getAttribute('action') || location.pathname) + (q ? '?' + q : ''));
+  });
+
   /* ── name emoji: only the owner sees a button; it shows what the emoji means ── */
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-emoji-meaning]'); if (!b) return;

@@ -5,6 +5,7 @@ import { clearRankCache, generateRanks, recalcRank } from '../game/ranks.js';
 import { roomCall, poolState } from '../game/pools.js';
 import { processWithdrawal, activateTier } from './money.js';
 import { sendAlertEmail } from '../email.js';
+import { isPattern } from '../ui/patterns.js';
 
 const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_kobo', 'nepo_monthly_kobo', 'nepo_yearly_kobo', 'min_withdraw_lapo_kobo', 'min_withdraw_mapo_kobo', 'min_withdraw_nepo_kobo',
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
@@ -12,6 +13,11 @@ const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_ko
 const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts'];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+// Exactly one emoji (one grapheme, and it must be a pictograph — no letters or numbers).
+function oneEmoji(s) {
+  if (s.length > 16 || !/\p{Extended_Pictographic}/u.test(s) || /[\p{L}\p{N}]/u.test(s.replace(/[\u{1F1E6}-\u{1F1FF}]/gu, ''))) return false;
+  try { return [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(s)].length === 1; } catch { return [...s].length <= 2; }
+}
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 export async function handleAdminApi(req, env, path, user) {
@@ -137,7 +143,7 @@ export async function handleAdminApi(req, env, path, user) {
     if (name.length < 2 || name.length > 40) return json({ error: 'Name must be 2–40 characters.', field: 'name' }, 400);
     const id = data.id ? String(data.id).slice(0, 60) : `${kind.toLowerCase()}-${slug(name)}-${uid().slice(0, 4)}`;
     const config = {};
-    if (kind === 'SKIN') { if (HEX.test(data.bg || '')) config.bg = data.bg; if (['boy', 'girl', 'star', 'bolt'].includes(data.art)) config.art = data.art; if (/^\/media\/[A-Za-z0-9/_.-]+$/.test(data.image || '')) config.image = data.image; if (data.kente === true) config.pattern = 'kente'; if (data.glow === true) config.glow = true; }
+    if (kind === 'SKIN') { if (HEX.test(data.bg || '')) config.bg = data.bg; if (isPattern(data.pattern)) config.pattern = data.pattern; if (/^\/media\/[A-Za-z0-9/_.-]+$/.test(data.image || '')) config.image = data.image; if (data.glow === true) config.glow = true; }
     if (kind === 'BOOSTER' && HEX.test(data.bg || '')) config.color = data.bg;
     const row = {
       id, name, description: String(data.description || '').slice(0, 140), kind,
@@ -185,14 +191,25 @@ export async function handleAdminApi(req, env, path, user) {
   }
 
   // ── ads, sponsors' lead capture, home slides ──
-  const am = path.match(/^\/api\/admin\/promos\/([^/]+)\/(approve|hide|delete)$/);
+  // Ads queue: approve, reject (with a reason the sponsor sees), hide, or delete.
+  const am = path.match(/^\/api\/admin\/promos\/([^/]+)\/(approve|reject|hide|delete)$/);
   if (am && req.method === 'POST') {
-    if (am[2] === 'delete') await env.DB.batch([env.DB.prepare('DELETE FROM promos WHERE id=?').bind(am[1]), env.DB.prepare('UPDATE pools SET promo_id=NULL WHERE promo_id=?').bind(am[1])]);
-    else await env.DB.prepare('UPDATE promos SET approved=? WHERE id=?').bind(am[2] === 'approve' ? 1 : 0, am[1]).run();
+    const { data } = await body();
     const ad = await env.DB.prepare('SELECT owner_id,title FROM promos WHERE id=?').bind(am[1]).first();
-    if (ad?.owner_id && am[2] === 'approve') await notify(env, ad.owner_id, `Your ad “${ad.title}” is approved and live.`, '/sponsor/ads');
-    await audit(env, user.id, 'promo.' + am[2], am[1]);
-    return json({ message: 'Done', reload: true });
+    if (!ad) return json({ error: 'Ad not found.' }, 404);
+    const reason = String(data?.reason || '').trim().slice(0, 200);
+    if (am[2] === 'reject' && reason.length < 3) return json({ error: 'Tell the sponsor why (at least 3 characters).', field: 'reason' }, 400);
+    if (am[2] === 'delete') await env.DB.batch([env.DB.prepare('DELETE FROM promos WHERE id=?').bind(am[1]), env.DB.prepare('UPDATE pools SET promo_id=NULL WHERE promo_id=?').bind(am[1]), env.DB.prepare("UPDATE slides SET status='REJECTED' WHERE promo_id=?").bind(am[1])]);
+    else if (am[2] === 'approve') await env.DB.prepare('UPDATE promos SET approved=1, reject_reason=NULL WHERE id=?').bind(am[1]).run();
+    else if (am[2] === 'reject') await env.DB.batch([env.DB.prepare('UPDATE promos SET approved=0, reject_reason=? WHERE id=?').bind(reason, am[1]), env.DB.prepare('UPDATE pools SET promo_id=NULL WHERE promo_id=?').bind(am[1])]);
+    else await env.DB.prepare('UPDATE promos SET approved=0 WHERE id=?').bind(am[1]).run();
+    if (ad.owner_id && ad.owner_id !== user.id) {
+      if (am[2] === 'approve') await notify(env, ad.owner_id, `Your ad “${ad.title}” is approved and live.`, '/sponsor/ads');
+      if (am[2] === 'reject') await notify(env, ad.owner_id, `Your ad “${ad.title}” was not approved: ${reason}`, '/sponsor/ads');
+      if (am[2] === 'delete') await notify(env, ad.owner_id, `Tap Am removed your ad “${ad.title}”.`, '/sponsor/ads');
+    }
+    await audit(env, user.id, 'promo.' + am[2], { id: am[1], reason: reason || undefined });
+    return json({ message: { approve: 'Ad approved', reject: 'Ad rejected', hide: 'Ad hidden', delete: 'Ad deleted' }[am[2]], reload: true });
   }
   const lm = path.match(/^\/api\/admin\/sponsors\/([^/]+)\/leads$/);
   if (lm && req.method === 'POST') {
@@ -208,8 +225,13 @@ export async function handleAdminApi(req, env, path, user) {
     if (title.length < 2) return json({ error: 'Give the slide a title.', field: 'title' }, 400);
     const link = String(data.link || '').trim();
     if (link && !/^\/[a-z0-9/_?=&.-]*$/i.test(link) && !/^https:\/\/[^\s"'<>]+$/i.test(link)) return json({ error: 'Use a page on Tap Am (like /pools) or a full https:// link.', field: 'link' }, 400);
-    const row = { id: data.id ? String(data.id).slice(0, 40) : uid(), title, subtitle: String(data.subtitle || '').trim().slice(0, 120), link: link || null, color: HEX.test(data.color || '') ? data.color : '#2E8BFF',
-      image_url: /^\/media\/[A-Za-z0-9/_.-]+$/.test(data.image_url || '') ? data.image_url : null, status: data.status === 'PAUSED' ? 'PAUSED' : 'LIVE', sort: clampInt(data.sort, 0, 999, 0), created_by: user.id };
+    // Two kinds of slide: an uploaded picture (with a button on it), or a colour with words.
+    const mode = data.mode === 'IMAGE' ? 'IMAGE' : 'COLOR';
+    const image = /^\/media\/[A-Za-z0-9/_.-]+$/.test(data.image_url || '') ? data.image_url : null;
+    if (mode === 'IMAGE' && !image) return json({ error: 'Upload the slide picture.', field: 'image_url' }, 400);
+    const cta = String(data.cta || '').trim().slice(0, 24);
+    const row = { id: data.id ? String(data.id).slice(0, 40) : uid(), title, subtitle: mode === 'COLOR' ? String(data.subtitle || '').trim().slice(0, 120) : '', link: link || null, color: HEX.test(data.color || '') ? data.color : '#2E8BFF',
+      image_url: mode === 'IMAGE' ? image : null, cta: cta || null, status: data.status === 'PAUSED' ? 'PAUSED' : 'LIVE', sort: clampInt(data.sort, 0, 999, 0), created_by: user.id };
     const cols = Object.keys(row);
     await env.DB.prepare(`INSERT INTO slides(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')}) ON CONFLICT(id) DO UPDATE SET ${cols.filter(c => c !== 'id' && c !== 'created_by').map(c => `${c}=excluded.${c}`).join(',')}`).bind(...cols.map(c => row[c])).run();
     await audit(env, user.id, 'slide.save', row.id);
@@ -251,10 +273,92 @@ export async function handleAdminApi(req, env, path, user) {
   const wm = path.match(/^\/api\/admin\/withdrawals\/([^/]+)\/(transfer|paid|reject)$/);
   if (wm && req.method === 'POST') {
     const { data, response } = await body(); if (response) return response;
-    const r = await processWithdrawal(env, user, wm[1], wm[2], String(data.note || '').slice(0, 200));
+    const note = String(data.note || '').trim().slice(0, 200);
+    if (wm[2] === 'reject' && note.length < 3) return json({ error: 'Write the reason. The player will see it.', field: 'note' }, 400);
+    const r = await processWithdrawal(env, user, wm[1], wm[2], note);
     await audit(env, user.id, 'withdrawal.' + wm[2], wm[1]);
     if (r.ok) { const j = await r.json(); return json({ ...j, reload: true }); }
     return r;
+  }
+
+  // ── merch (shown on /merch) ──
+  if (path === '/api/admin/merch' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const name = String(data.name || '').trim().slice(0, 60);
+    if (name.length < 2) return json({ error: 'Name the item.', field: 'name' }, 400);
+    const link = String(data.link || '').trim();
+    if (link && !/^https:\/\/[^\s"'<>]+$/i.test(link)) return json({ error: 'Use a full https:// link (or leave it empty).', field: 'link' }, 400);
+    const row = { id: data.id ? String(data.id).slice(0, 40) : 'm-' + slug(name) + '-' + uid().slice(0, 4), name, description: String(data.description || '').trim().slice(0, 200),
+      price_kobo: clampInt(toKobo(data.price), 0, 100000000, 0), image_url: /^\/media\/[A-Za-z0-9/_.-]+$/.test(data.image_url || '') ? data.image_url : null,
+      color: HEX.test(data.color || '') ? data.color : '#2E8BFF', link: link || null, status: ['SOON', 'BUY', 'SOLD_OUT'].includes(data.status) ? data.status : 'SOON',
+      active: data.active === false ? 0 : 1, sort: clampInt(data.sort, 0, 999, 0) };
+    const cols = Object.keys(row);
+    await env.DB.prepare(`INSERT INTO merch(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')}) ON CONFLICT(id) DO UPDATE SET ${cols.filter(c => c !== 'id').map(c => `${c}=excluded.${c}`).join(',')}`).bind(...cols.map(c => row[c])).run();
+    await audit(env, user.id, 'merch.save', row.id);
+    return json({ message: `${name} saved`, redirect: '/admin/merch' });
+  }
+  const mm = path.match(/^\/api\/admin\/merch\/([^/]+)\/(delete|toggle)$/);
+  if (mm && req.method === 'POST') {
+    if (mm[2] === 'delete') await env.DB.prepare('DELETE FROM merch WHERE id=?').bind(mm[1]).run();
+    else await env.DB.prepare('UPDATE merch SET active=1-active WHERE id=?').bind(mm[1]).run();
+    await audit(env, user.id, 'merch.' + mm[2], mm[1]);
+    return json({ message: 'Done', reload: true });
+  }
+
+  // ── special badges: the super admin makes them and gives them to players ──
+  if (path === '/api/admin/badges' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const name = String(data.name || '').trim().slice(0, 40);
+    if (name.length < 2) return json({ error: 'Name the badge.', field: 'name' }, 400);
+    const label = String(data.label || '').trim().slice(0, 3) || name.slice(0, 2).toUpperCase();
+    const row = { id: data.id ? String(data.id).slice(0, 40) : slug(name) + '-' + uid().slice(0, 4), name, meaning: String(data.meaning || '').trim().slice(0, 140), color: HEX.test(data.color || '') ? data.color : '#9161FF', label, active: 1 };
+    const cols = Object.keys(row);
+    await env.DB.prepare(`INSERT INTO special_badges(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')}) ON CONFLICT(id) DO UPDATE SET ${cols.filter(c => c !== 'id').map(c => `${c}=excluded.${c}`).join(',')}`).bind(...cols.map(c => row[c])).run();
+    await audit(env, user.id, 'badge.save', row.id);
+    return json({ message: `Badge “${name}” saved`, reload: true });
+  }
+  const bgm = path.match(/^\/api\/admin\/badges\/([^/]+)\/(give|take|delete)$/);
+  if (bgm && req.method === 'POST') {
+    const { data } = await body();
+    const badge = await env.DB.prepare('SELECT * FROM special_badges WHERE id=?').bind(bgm[1]).first();
+    if (!badge) return json({ error: 'Badge not found.' }, 404);
+    const kind = 'X:' + badge.id;
+    if (bgm[2] === 'delete') {
+      await env.DB.batch([env.DB.prepare('DELETE FROM badges WHERE kind=?').bind(kind), env.DB.prepare('DELETE FROM special_badges WHERE id=?').bind(badge.id)]);
+      await audit(env, user.id, 'badge.delete', badge.id);
+      return json({ message: 'Badge deleted', reload: true });
+    }
+    const target = await env.DB.prepare("SELECT id,username FROM users WHERE username=? AND role='USER'").bind(String(data?.username || '').trim()).first();
+    if (!target) return json({ error: 'No player with that nickname.', field: 'username' }, 404);
+    if (bgm[2] === 'give') {
+      const r = await env.DB.prepare('INSERT OR IGNORE INTO badges(id,user_id,kind,period,taps) VALUES(?,?,?,?,0)').bind(uid(), target.id, kind, target.id).run();
+      if (!r.meta.changes) return json({ error: `${target.username} already has this badge.` }, 409);
+      await notify(env, target.id, `Tap Am gave you the “${badge.name}” badge!${badge.meaning ? ' ' + badge.meaning : ''}`, '/me');
+    } else await env.DB.prepare('DELETE FROM badges WHERE kind=? AND user_id=?').bind(kind, target.id).run();
+    await audit(env, user.id, 'badge.' + bgm[2], { badge: badge.id, user: target.id });
+    return json({ message: bgm[2] === 'give' ? `Given to ${target.username}` : `Taken from ${target.username}`, reload: true });
+  }
+
+  // ── name emoji: one emoji + what it means. Only the owner sees the meaning. ──
+  const em = path.match(/^\/api\/admin\/users\/([^/]+)\/emoji$/);
+  if (em && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const target = await env.DB.prepare('SELECT id,username,role FROM users WHERE id=?').bind(em[1]).first();
+    if (!target || target.role !== 'USER') return json({ error: 'Player not found.' }, 404);
+    const emoji = String(data.emoji || '').trim(), meaning = String(data.meaning || '').trim().slice(0, 140);
+    if (!emoji) {
+      await env.DB.prepare('UPDATE users SET emoji=NULL, emoji_meaning=NULL WHERE id=?').bind(target.id).run();
+    } else {
+      if (!oneEmoji(emoji)) return json({ error: 'Use exactly one emoji.', field: 'emoji' }, 400);
+      if (meaning.length < 2) return json({ error: 'Write what the emoji means. Only the player sees it.', field: 'meaning' }, 400);
+      await env.DB.prepare('UPDATE users SET emoji=?, emoji_meaning=? WHERE id=?').bind(emoji, meaning, target.id).run();
+      await notify(env, target.id, 'Tap Am gave you a name emoji. Tap it on your profile to see what it means.', '/me');
+    }
+    // update the player's name in pools that are still running
+    const live = (await env.DB.prepare('SELECT p.id FROM pool_entries e JOIN pools p ON p.id=e.pool_id WHERE e.user_id=? AND p.settled_at IS NULL AND p.ends_at>? LIMIT 20').bind(target.id, nowIso()).all()).results;
+    await Promise.all(live.map(p => roomCall(env, p.id, '/emoji', { uid: target.id, emoji: emoji || null }).catch(() => {})));
+    await audit(env, user.id, 'user.emoji', { id: target.id, emoji: emoji || null });
+    return json({ message: emoji ? `${target.username} now has ${emoji}` : 'Emoji removed', reload: true });
   }
 
   // ── suggestions ──

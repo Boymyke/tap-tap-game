@@ -64,6 +64,8 @@ export async function handleSponsorApi(req, env, path, user) {
     else { const m = YT.exec(String(data.video_url || '')); if (!m) return json({ error: 'Paste a YouTube link, like https://youtu.be/abc123XYZ00', field: 'video_url' }, 400); video = m[1]; }
     const target = data.target_url ? safeUrl(data.target_url) : null;
     if (data.target_url && !target) return json({ error: 'Enter a full link, like https://yourbrand.com', field: 'target_url' }, 400);
+    const duration = Number(data.duration_seconds);
+    if (![5, 10, 30].includes(duration)) return json({ error: 'Pick how long the ad shows: 5, 10 or 30 seconds.', field: 'duration_seconds' }, 400);
     const placement = 'ALL';   // ads show before the game, in the lobby and before results
     if (!await allow(env, 'promo:' + user.id, 30, 3600)) return json({ error: 'Too many ads in one hour. Wait small.' }, 429);
     let poolId = data.pool_id || null;
@@ -71,8 +73,8 @@ export async function handleSponsorApi(req, env, path, user) {
       const p = await env.DB.prepare('SELECT created_by FROM pools WHERE id=?').bind(poolId).first();
       if (!p || (user.role !== 'ADMIN' && p.created_by !== user.id)) return json({ error: 'You can only attach ads to your own pools.', field: 'pool_id' }, 403);
     }
-    await env.DB.prepare('INSERT INTO promos(id,title,owner_id,kind,image_url,video_id,target_url,placement,pool_id,approved) VALUES(?,?,?,?,?,?,?,?,?,?)')
-      .bind(uid(), title, user.id, kind, image, video, target, placement, poolId, user.role === 'ADMIN' ? 1 : 0).run();
+    await env.DB.prepare('INSERT INTO promos(id,title,owner_id,kind,image_url,video_id,target_url,placement,pool_id,approved,duration_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(uid(), title, user.id, kind, image, video, target, placement, poolId, user.role === 'ADMIN' ? 1 : 0, duration).run();
     if (user.role !== 'ADMIN') { const admins = (await env.DB.prepare("SELECT id FROM users WHERE role='ADMIN'").all()).results; for (const a of admins) await notify(env, a.id, `New ad “${title}” waiting for approval.`, '/admin/ads'); }
     return json({ message: user.role === 'ADMIN' ? 'Ad is live' : 'Ad saved. It goes live once Tap Am approves it.', reload: true });
   }

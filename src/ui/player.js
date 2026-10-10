@@ -1,7 +1,8 @@
 // Player pages: home, pools list, pool detail (lobby / instructions / results), create pool.
-import { appPage, esc, naira, nairaShort, short, lagos, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, backLink, upgradeAttrs, icon } from './kit.js';
+import { appPage, esc, naira, nairaShort, short, lagos, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag } from './kit.js';
 import { ICONS } from './theme.js';
-import { rankAvatar, avatarSvg, avatarFor, STICKERS, HAND_MARK } from './avatar.js';
+import { rankAvatar, avatarSvg, avatarFor } from './avatar.js';
+import { PATTERNS, patternBg } from './patterns.js';
 import { splitText } from '../game/pools.js';
 
 const pct = n => Math.round(Math.max(0, Math.min(1, n)) * 100);
@@ -14,7 +15,9 @@ export const HOME_CSS = `
 .slide{scroll-snap-align:start;position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;min-height:156px;padding:18px 16px 18px 20px;border-radius:var(--r);text-decoration:none;overflow:hidden;border:3px solid rgba(255,255,255,.92);box-shadow:0 6px 0 rgba(0,0,0,.25)}
 .slide h3{margin:6px 0 4px;font:900 clamp(22px,6vw,30px)/1.02 var(--display);text-shadow:var(--ts-big)}
 .slide p{margin:0 0 10px;font:600 14px/1.4 var(--body)}
-.slide .art{width:min(120px,30vw)}
+.slide.img-only{display:block;min-height:0;aspect-ratio:16/7;padding:0}
+.slide.img-only img.full{position:static;display:block;width:100%;height:100%}
+.slide.img-only .cta{position:absolute;left:14px;bottom:12px;z-index:2}
 .slide img.full{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .slide.has-img::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.55),rgba(0,0,0,0) 70%)}
 .slide.has-img>div{position:relative;z-index:2}
@@ -35,31 +38,29 @@ export const HOME_CSS = `
 .codebox .ta-input::placeholder{text-transform:none;letter-spacing:0}
 .bigcreate{width:100%;margin-top:12px;min-height:58px;font-size:20px}
 .invite{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:18px}
-.invite .art{position:absolute;right:-6px;top:-24px;width:84px}
 `;
 
 // ── Home ────────────────────────────────────────────────────────────────────
 export function dashboardPage(ctx) {
   const { user, tier, rank, wallet, slides, sponsored, live, upcoming, mine, perk, origin, theme, bgCss } = ctx;
   const refUrl = `${origin}/signup?ref=${user.referral_code || ''}`;
-  const slideHtml = (slides.length ? slides : defaultSlides(perk)).map((s, i) => {
-    const colorStyle = `background:${esc(s.color || '#2E8BFF')}`;
-    const href = s.id && !s.demo ? `/s/${esc(s.id)}` : esc(s.link || '/pools');
-    return `<a class="slide ${s.image_url ? 'has-img' : ''}" href="${href}" style="${colorStyle}" ${/^https?:/.test(s.link || '') || s.id ? 'data-no-swap' : ''} aria-label="${esc(s.title)}">
-      ${s.image_url ? `<img class="full" src="${esc(s.image_url)}" alt="" loading="${i ? 'lazy' : 'eager'}">` : ''}
-      <div><span class="tag">${s.sponsor ? 'Sponsored · ' + esc(s.sponsor) : esc(s.tag || 'Tap Am')}</span><h3>${esc(s.title)}</h3>${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}<span class="btn btn--white btn--sm">${esc(s.cta || 'Check am')} →</span></div>
-      ${s.image_url ? '' : `<div class="art">${s.art || STICKERS.sparkle()}</div>`}</a>`;
+  // Slides made by the super admin: either a picture (with just the button on it) or a colour with words.
+  const slideHtml = slides.map((s, i) => {
+    const href = `/s/${esc(s.id)}`, cta = esc(s.cta || 'Check am');
+    if (s.image_url) return `<a class="slide img-only" href="${href}" data-no-swap aria-label="${esc(s.title)}"><img class="full" src="${esc(s.image_url)}" alt="${esc(s.title)}" loading="${i ? 'lazy' : 'eager'}"><span class="btn btn--white btn--sm cta">${cta}</span></a>`;
+    return `<a class="slide" href="${href}" style="background:${esc(/^#[0-9a-fA-F]{6}$/.test(s.color || '') ? s.color : '#2E8BFF')}" data-no-swap aria-label="${esc(s.title)}">
+      <div><span class="tag">${s.sponsor ? 'Sponsored · ' + esc(s.sponsor) : 'Tap Am'}</span><h3>${esc(s.title)}</h3>${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}<span class="btn btn--white btn--sm">${cta}</span></div></a>`;
   }).join('');
-  const count = slides.length || defaultSlides(perk).length;
+  const count = slides.length;
   const section = (title, list, href, empty) => `<h2 class="h2">${title}${href ? ` <a href="${href}">See all</a>` : ''}</h2>${list.length ? `<div class="hscroll">${list.map(poolCard).join('')}</div>` : `<div class="empty">${empty}</div>`}`;
   const body = `
-<section class="slides" data-slides aria-roledescription="carousel" aria-label="Featured">
+${count ? `<section class="slides" data-slides aria-roledescription="carousel" aria-label="Featured">
   <div class="slides-track">${slideHtml}</div>
   ${count > 1 ? `<div class="slides-dots">${Array.from({ length: count }, (_, i) => `<button type="button" aria-label="Slide ${i + 1}" aria-current="${i === 0}"></button>`).join('')}</div>` : ''}
-</section>
+</section>` : ''}
 <section class="tcard welcome ${tier === 'Nepo baby' ? 'c-pink' : tier === 'Mapo baby' ? 'c-teal' : 'c-purple'}" data-rank-level="${rank.current.level}" data-rank-name="${esc(rank.current.name)}">
   <a href="/ranks" aria-label="Your rank character">${rankAvatar(rank.current.level, { size: 78, title: rank.current.name })}</a>
-  <div style="min-width:0"><div class="hi">Welcome back 👋</div><div class="nm">${esc(user.username)}</div>${tierBadge(tier)}</div>
+  <div style="min-width:0"><div class="hi">Welcome back</div><div class="nm">${nameTag(user.username, user.emoji, user.emoji_meaning)}</div>${tierBadge(tier)}</div>
   <div style="grid-column:1/-1"><div class="rk"><span>${esc(rank.current.name)}</span><span>Rank ${rank.current.level}/100</span></div>
   <div class="bar-progress" role="progressbar" aria-valuenow="${pct(rank.progress)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progress to next rank"><i style="width:${pct(rank.progress)}%"></i></div>
   <p class="small" style="margin:6px 0 0;font-weight:600">${rank.next ? `${pct(rank.progress)}% to <b>${esc(rank.next.name)}</b>` : 'You don reach the top. Legend!'}</p></div>
@@ -73,29 +74,19 @@ export function dashboardPage(ctx) {
 </form>
 ${perk.create ? '<a class="btn btn--white btn--shine bigcreate" href="/pools/new">+ Create a pool</a>' : `<button type="button" class="btn btn--white bigcreate" ${upgradeAttrs('MAPO', 'Creating your own pool')}>${ICONS.lock} Create a pool</button>`}
 
-${section('<span class="emoji">⭐</span> Sponsored pools', sponsored, '/pools?scope=sponsored', 'No sponsored pool right now. Brands dey come!')}
-${section('<span class="emoji">🔥</span> Live pools', live, '/pools?scope=live', sponsored.length ? 'No other pool dey live now. The sponsored ones above dey run.' : 'No pool dey live now. Check the ones coming up.')}
-${section('<span class="emoji">⏰</span> Coming up from Nepo babies', upcoming, '/pools?scope=players-soon', perk.create ? 'Nothing coming up. <a href="/pools/new">Create the first one</a>.' : 'Nothing coming up yet.')}
-${mine.length ? section('<span class="emoji">✅</span> You don join', mine, '/pools?scope=mine', '') : ''}
+${section('Sponsored pools', sponsored, '/pools?scope=sponsored', 'No sponsored pool right now. Brands dey come!')}
+${section('Live pools', live, '/pools?scope=live', sponsored.length ? 'No other pool dey live now. The sponsored ones above dey run.' : 'No pool dey live now. Check the ones coming up.')}
+${section('Coming up from Nepo babies', upcoming, '/pools?scope=players-soon', perk.create ? 'Nothing coming up. <a href="/pools/new">Create the first one</a>.' : 'Nothing coming up yet.')}
+${mine.length ? section('You don join', mine, '/pools?scope=mine', '') : ''}
 ${mine.filter(p => p.state === 'live').length > 1 ? `<div class="actions">${perk.pools > 1 ? `<a class="btn btn--green btn--shine btn--block" href="/play?pools=${mine.filter(p => p.state === 'live').map(p => p.id).slice(0, perk.pools).join(',')}" data-no-swap>Tap in ${Math.min(perk.pools, mine.filter(p => p.state === 'live').length)} live pools at once</a>` : `<button type="button" class="btn btn--white btn--block" ${upgradeAttrs('MAPO', 'Tapping in many pools at once')}>${ICONS.lock} Tap in all your live pools at once</button>`}</div>` : ''}
 
-<h2 class="h2"><span class="emoji">💌</span> Invite your personal person</h2>
-<section class="tcard invite c-sky"><div class="art">${STICKERS.coin()}</div>
+<h2 class="h2">Invite your personal person <a href="/invite">See who joined</a></h2>
+<section class="tcard invite c-sky">
   <p style="margin:0;font-weight:600">Every ${ctx.referralBatch} people wey join with your link = 1 free booster for you. You don bring <b>${user.referral_count || 0}</b>.</p>
   ${copyRow(refUrl, 'Copy')}
-  <div class="row" style="gap:8px"><button type="button" class="btn btn--white btn--sm" style="flex:1" data-share-url="${esc(refUrl)}" data-share-text="Come play Tap Am with me! Use my link:">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" style="flex:1" ${shareCardAttr({ url: refUrl, title: `${user.username} dey call you!`, line: 'Join Tap Am, tap fast and win sponsored pools.', kind: 'invite', color: '#2E8BFF' })}>${ICONS.qr} QR card</button></div>
+  <div class="row" style="gap:8px"><button type="button" class="btn btn--white btn--sm" style="flex:1" data-share-url="${esc(refUrl)}" data-share-text="Come play Tap Am with me! Use my link:">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" style="flex:1" ${shareCardAttr({ url: refUrl, title: `${user.username} dey call you!`, line: 'Join Tap Am, tap fast and win prizes.', kind: 'invite', color: '#2E8BFF', display: 'www.tapammm.live' })}>${ICONS.qr} QR card</button></div>
 </section>`;
   return appPage({ user, title: 'Home', active: '/dashboard', body, wallet, css: HOME_CSS, theme, bgCss });
-}
-
-function defaultSlides(perk) {
-  return [
-    { demo: true, title: 'Tap fast, chop prize', subtitle: 'Join a live pool and tap pass everybody.', link: '/pools', color: '#FF8A2A', cta: 'See pools', tag: 'Tap Am', art: HAND_MARK },
-    perk.tier === 'NEPO'
-      ? { demo: true, title: 'Play 10 pools at once', subtitle: 'One tap counts in every pool you joined.', link: '/pools?scope=mine', color: '#FF4FA3', cta: 'My pools', tag: 'Nepo perk', art: STICKERS.fire() }
-      : { demo: true, title: 'Go Mapo or Nepo', subtitle: 'More fingers, more pools, create your own.', link: '/plans', color: '#FF4FA3', cta: 'Compare plans', tag: 'Upgrade', art: STICKERS.bolt() },
-    { demo: true, title: 'Who be tapper of the day?', subtitle: 'Top tappers get badges every day, week, month and year.', link: '/top', color: '#21D4C8', cta: 'See the board', tag: 'Leaderboard', art: STICKERS.sparkle('#FFD23F') }
-  ];
 }
 
 // ── Pools list ──────────────────────────────────────────────────────────────
@@ -116,9 +107,8 @@ const POOL_CSS = `
 .phead{padding:18px 18px 16px;overflow:hidden}
 .phead h1{margin:10px 0 4px;font:900 clamp(28px,7.5vw,42px)/1 var(--display)}
 .phead .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.phead .stats>div{padding:10px 12px;border-radius:16px;background:rgba(0,0,0,.24);text-shadow:none}
+.phead .stats>div{padding:10px 12px;border-radius:var(--r-sm);background:rgba(0,0,0,.24);text-shadow:none}
 .phead .stats .k{font:700 12px var(--body);opacity:.9}.phead .stats .v{font:900 24px/1.05 var(--display)}
-.phead .art{position:absolute;right:-20px;bottom:-24px;width:120px;opacity:.95;pointer-events:none}
 .instr h2{margin:0 0 10px;font:900 22px/1.1 var(--display);color:var(--ink)}
 .instr ul{margin:0 0 12px;padding:0;list-style:none;display:grid;gap:8px}
 .instr li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
@@ -136,12 +126,12 @@ export function poolPage(ctx) {
   const url = `${origin}/pool/${p.id}`;
   const vs = p.gameType === 'MATCH' && p.sideA;
   const head = `<section class="tcard phead ${color}" style="${p.theme ? `--c:${esc(p.theme)};--cd:color-mix(in srgb,${esc(p.theme)} 65%,#000)` : ''}">
-  <div class="row wrap" style="justify-content:flex-start;gap:6px">${stateBadge(p.state)}${p.kind === 'SPONSORED' ? `<span class="badge sponsor">★ Sponsored</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid pool</span>' : '<span class="badge">Free pool</span>'}${p.private ? '<span class="badge">🔒 Private</span>' : ''}${p.joined ? '<span class="badge live">✓ Joined</span>' : ''}</div>
+  <div class="row wrap" style="justify-content:flex-start;gap:6px">${stateBadge(p.state)}${p.kind === 'SPONSORED' ? `<span class="badge sponsor">Sponsored</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid pool</span>' : '<span class="badge">Free pool</span>'}${p.private ? `<span class="badge">${ICONS.lock.replace('<svg', '<svg width="12" height="12"')}Private</span>` : ''}${p.joined ? '<span class="badge live">Joined</span>' : ''}</div>
   ${vs ? `<div class="vsrow" style="margin-top:12px"><span class="code">${esc(p.sideA)}</span><span class="vs">VS</span><span class="code">${esc(p.sideB)}</span></div>` : ''}
   <h1>${esc(p.name)}</h1>
   ${p.sponsor ? `<p style="margin:0 0 6px;font-weight:700">Sponsored by ${esc(p.sponsor)}</p>` : ''}
   ${p.description ? `<p style="margin:0 0 6px">${esc(p.description)}</p>` : ''}
-  <div class="stats"><div><div class="k">Prize</div><div class="v">${p.prize ? esc(nairaShort(p.prize)) : 'Glory'}</div></div><div><div class="k">Entry</div><div class="v">${p.entryFee ? esc(naira(p.entryFee)) : 'Free'}</div></div>
+  <div class="stats"><div><div class="k">Prize pool</div><div class="v">${p.prize ? esc(nairaShort(p.prize)) : 'Akara'}</div></div><div><div class="k">Entry</div><div class="v">${p.entryFee ? esc(naira(p.entryFee)) : 'Free'}</div></div>
   <div><div class="k">Players</div><div class="v">${short(p.players || 0)}${p.maxPlayers < 100000 ? `<small style="font-size:14px"> / ${short(p.maxPlayers)}</small>` : ''}</div></div><div><div class="k">${p.state === 'soon' ? 'Starts' : p.state === 'live' ? 'Ends' : 'Ended'}</div><div class="v" style="font-size:16px;line-height:1.3">${esc(lagos(p.state === 'soon' ? p.startsAt : p.endsAt))}</div></div></div>
   <div style="margin-top:12px">${whenPill(p).replace('data-when', 'data-reload-at-zero data-when')}</div>
 </section>`;
@@ -176,7 +166,7 @@ export function poolPage(ctx) {
   </ul>
   <div class="code-line"><span>Code:</span><b>${esc(p.code)}</b>${copyBtn(p.code, 'Copy')}</div>
   ${isCreator && p.private ? `<div class="code-line" style="margin-top:8px"><span>Password:</span><b>${esc(p.password)}</b>${copyBtn(p.password, 'Copy')}</div>` : ''}
-  <div class="actions"><button type="button" class="btn btn--soft btn--sm" data-share-url="${esc(url)}" data-share-text="Join my Tap Am pool “${esc(p.name)}” — code ${esc(p.code)}">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" ${shareCardAttr({ url, title: p.name, line: (p.prize ? 'Prize ' + nairaShort(p.prize) + ' · ' : '') + (p.entryFee ? naira(p.entryFee) + ' entry' : 'Free entry'), code: p.code, color: p.theme || (p.kind === 'SPONSORED' ? '#FF8A2A' : p.kind === 'PAID' ? '#FF4FA3' : '#2E8BFF') })}>${ICONS.qr} QR share card</button></div>
+  <div class="actions"><button type="button" class="btn btn--soft btn--sm" data-share-url="${esc(url)}" data-share-text="Join my Tap Am pool “${esc(p.name)}” — code ${esc(p.code)}">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" ${shareCardAttr({ url, title: p.name, line: (p.prize ? 'Prize pool ' + nairaShort(p.prize) + ' · ' : '') + (p.entryFee ? naira(p.entryFee) + ' entry' : 'Free entry'), code: p.code, display: 'www.tapammm.live', color: p.theme || (p.kind === 'SPONSORED' ? '#FF8A2A' : p.kind === 'PAID' ? '#FF4FA3' : '#2E8BFF') })}>${ICONS.qr} QR share card</button></div>
 </section>`;
 
   const creator = isCreator && entries ? `<h2 class="h2">Players who joined (${entries.length})</h2><div class="panel">
@@ -187,22 +177,35 @@ export function poolPage(ctx) {
   const rows = results || board?.top || [];
   const leader = rows.length ? `<h2 class="h2">${p.state === 'ended' ? 'Final board' : 'Leaderboard'}</h2>
     ${board?.teams && Object.keys(board.teams).length ? `<div class="grid g2" style="margin-bottom:12px">${Object.entries(board.teams).map(([k, v], i) => `<div class="tcard card ${i ? 'c-sky' : 'c-orange'}" style="padding:12px 14px"><div class="stat"><span class="k">Team ${esc(k)}</span><span class="v">${short(v)}</span></div></div>`).join('')}</div>` : ''}
-    <div class="list">${rows.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="mini-ava">${avatarSvg(avatarFor(r.n), { size: 36 })}</div><div class="grow"><div class="t" style="font-size:16px">${esc(r.n)}${r.t === 'NEPO' ? ' <span class="badge nepo" style="font-size:10px;padding:3px 7px">Nepo</span>' : r.t === 'MAPO' ? ' <span class="badge mapo" style="font-size:10px;padding:3px 7px">Mapo</span>' : ''}</div>${r.side ? `<div class="s">Team ${esc(r.side)}</div>` : ''}</div><div style="text-align:right"><div class="amt">${short(r.s)}</div>${r.prize ? `<div class="small pos" style="font-weight:800">${esc(naira(r.prize))}</div>` : ''}</div></div>`).join('')}
-    ${board?.near?.length ? `<div class="small" style="text-align:center;color:#fff;opacity:.8">· · ·</div>${board.near.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="grow"><div class="t" style="font-size:16px">${esc(r.n)}</div></div><div class="amt">${short(r.s)}</div></div>`).join('')}` : ''}</div>`
+    <div class="list">${rows.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="mini-ava">${avatarSvg(avatarFor(r.n), { size: 36 })}</div><div class="grow"><div class="t" style="font-size:16px">${nameTag(r.n, r.e)}${r.t === 'NEPO' ? ' <span class="badge nepo" style="font-size:10px;padding:3px 7px">Nepo</span>' : r.t === 'MAPO' ? ' <span class="badge mapo" style="font-size:10px;padding:3px 7px">Mapo</span>' : ''}</div>${r.side ? `<div class="s">Team ${esc(r.side)}</div>` : ''}</div><div style="text-align:right"><div class="amt">${short(r.s)}</div>${r.prize ? `<div class="small pos" style="font-weight:800">${esc(naira(r.prize))}</div>` : ''}</div></div>`).join('')}
+    ${board?.near?.length ? `<div class="small" style="text-align:center;color:#fff;opacity:.8">· · ·</div>${board.near.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="grow"><div class="t" style="font-size:16px">${nameTag(r.n, r.e)}</div></div><div class="amt">${short(r.s)}</div></div>`).join('')}` : ''}</div>`
     : (p.state === 'ended' ? '<div class="empty" style="margin-top:14px">Nobody tap for this pool.</div>' : '');
 
-  const body = backLink(user?.role === 'SPONSOR' ? '/sponsor/pools' : user?.role === 'ADMIN' ? '/admin/pools' : '/pools', 'Back') + head + action + instr + creator + leader;
-  return appPage({ user, title: p.name, active: user?.role === 'SPONSOR' ? '/sponsor/pools' : user?.role === 'ADMIN' ? '/admin/pools' : '/pools', body, wallet, css: POOL_CSS, theme, bgCss });
+  const listHref = user?.role === 'SPONSOR' ? '/sponsor/pools' : user?.role === 'ADMIN' ? '/admin/pools' : '/pools';
+  const body = head + action + instr + creator + leader;
+  return appPage({ user, title: p.name, active: listHref, back: listHref, body, wallet, css: POOL_CSS, theme, bgCss });
 }
 
 // ── Create pool ─────────────────────────────────────────────────────────────
 const CREATE_CSS = `
 .cp h2{margin:4px 0 2px;font:900 18px var(--display);color:var(--ink)}
-.cp .group{display:grid;gap:15px;padding:14px;border-radius:20px;background:var(--cloud)}
+.cp .group{display:grid;gap:15px;min-width:0;padding:14px;border-radius:var(--r-sm);background:var(--cloud)}
 .cp .group .ta-input{background:#fff}
-.cp .preview{padding:10px 12px;border-radius:14px;background:#fff;font:600 14px/1.45 var(--body);color:var(--ink)}
-.cp .lockrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:16px;background:#fff;color:var(--ink-soft);font-weight:700}
-@media (max-width:420px){.cp .two{grid-template-columns:1fr}}
+.cp .preview{padding:10px 12px;border-radius:var(--r-in);background:#fff;font:600 14px/1.45 var(--body);color:var(--ink)}
+.cp .lockrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:var(--r-in);background:#fff;color:var(--ink-soft);font-weight:700}
+/* phones: one column, nothing wider than the screen */
+.cp form,.cp .ta-field{min-width:0}
+.cp .two>*{min-width:0}
+.cp input[type=datetime-local]{min-width:0;width:100%;max-width:100%;-webkit-appearance:none;appearance:none;font-size:15px;padding-right:8px}
+.cp .seg-choice{grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr))}
+.cp .seg-choice label{min-height:42px;font-size:14px}
+.pats{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px}
+.pat{position:relative;display:grid;place-items:end center;height:64px;padding:4px;border-radius:var(--r-in);border:3px solid #fff;box-shadow:0 0 0 2px var(--line);cursor:pointer;color:#fff;font:800 10.5px/1.1 var(--body);text-shadow:var(--ts);text-align:center;overflow:hidden}
+.pat input{position:absolute;opacity:0;pointer-events:none}
+.pat:has(input:checked){box-shadow:0 0 0 3px var(--ink)}
+.pat:has(input:focus-visible){outline:3px solid var(--purple)}
+.padprev{display:grid;place-items:center;height:110px;border-radius:var(--r);border:3px solid #fff;box-shadow:0 5px 0 rgba(0,0,0,.2);font:900 italic 34px var(--display);color:#fff;text-shadow:var(--ts-big)}
+@media (max-width:560px){.cp .two{grid-template-columns:1fr}.cp .group{padding:12px}}
 `;
 export function createPoolPage(ctx) {
   const { user, wallet, role, tierKey, ads, theme, bgCss } = ctx;
@@ -212,7 +215,7 @@ export function createPoolPage(ctx) {
   const local = d => new Date(d.getTime() + 60 * 60000).toISOString().slice(0, 16);   // shown in Lagos time (UTC+1); the browser converts back
   const kinds = admin ? [['FREE', 'Free'], ['PAID', 'Paid'], ['SPONSORED', 'Sponsored']] : [['FREE', 'Free'], ['PAID', 'Paid']];
   const approved = (ads || []).filter(a => a.approved && a.active);
-  const body = `${backLink(sponsor ? '/sponsor/pools' : admin ? '/admin/pools' : '/pools', 'Back')}<h1 class="h1">Create a pool</h1><p class="sub">${sponsor ? 'You fund the prize from your wallet; players join free.' : admin ? 'As super admin you can create any type of pool.' : 'A free pool for fun, or a paid pool where every entry fee joins the prize.'}</p>
+  const body = `<h1 class="h1">Create a pool</h1><p class="sub">${sponsor ? 'You fund the prize from your wallet; players join free.' : admin ? 'As super admin you can create any type of pool.' : 'A free pool for fun, or a paid pool where every entry fee joins the prize.'}</p>
 <div class="panel cp">${form('/api/pools', `
   ${field({ label: 'Pool name', name: 'name', placeholder: 'Friday Night Tap', attrs: 'maxlength="60" required autocomplete="off"' })}
   <div class="ta-field"><label class="ta-label" for="f-description">Description <small>(optional)</small></label><textarea class="ta-input" id="f-description" name="description" maxlength="300" placeholder="Anything players should know"></textarea><p class="ta-error" data-err="description"></p></div>
@@ -223,6 +226,7 @@ export function createPoolPage(ctx) {
   </div>
   ${sponsor || admin ? `<div class="group" data-show="kind=SPONSORED">${moneyField({ label: 'Prize (₦)', name: 'prize', id: 'f-prize-sp', placeholder: '50,000', tip: admin ? 'Funded by Tap Am. Players join free.' : 'The prize you fund from your wallet. Players join free.' })}</div>` : ''}
   <div class="two">${field({ label: 'Starts', name: 'starts_at', type: 'datetime-local', value: local(now), attrs: 'required' })}${field({ label: 'Ends', name: 'ends_at', type: 'datetime-local', value: local(later), attrs: 'required' })}</div>
+  <p class="ta-hint" style="margin-top:-8px">A pool runs at least 60 seconds.</p>
   ${choice({ label: 'Who fit join', name: 'audience', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo only'], ['MAPO', 'Mapo + Nepo'], ['NEPO', 'Nepo only']], value: 'ALL', cls: 'wrap4' })}
   ${choice({ label: 'Game type', name: 'game_type', options: [['STANDARD', 'Normal'], ['MATCH', 'VS (two sides)']], value: 'STANDARD', tip: 'VS: players pick a side. Each side has its own pot and the top tappers on each side share it.' })}
   <div class="group" data-show="game_type=MATCH">
@@ -233,10 +237,21 @@ export function createPoolPage(ctx) {
   <div class="preview" data-split-preview>Winner takes all.</div>
   ${choice({ label: 'If players tie', name: 'tie_rule', options: [['FIRST', 'First to reach wins'], ['SPLIT', 'Split the prize']], value: 'FIRST' })}
   ${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.' })}
-  ${canColour ? `<div class="two"><div class="ta-field"><label class="ta-label" for="tc">Tap area colour</label><input class="color-in" id="tc" type="color" name="theme_color" value="#2E8BFF"></div><div class="ta-field"><label class="ta-label" for="bgc">Pool background</label><input class="color-in" id="bgc" type="color" name="bg_color" value="#4B1FD8"></div></div>`
-    : `<button type="button" class="lockrow" ${upgradeAttrs('NEPO', 'Custom tap area and background colours')}><span>Tap area colour + background</span>${ICONS.lock}</button>`}
+  ${canColour ? `${check({ name: 'custom_pad', label: `Set the tap area for this pool${sponsor ? ' (your brand colours)' : ''}` })}
+  <div class="group" data-show="custom_pad=true">
+    <div class="padprev tcard" data-padprev style="background:${patternBg('waves', '#2E8BFF')}">TAP AM</div>
+    <div class="ta-field"><label class="ta-label" for="tc">Tap area colour</label><input class="color-in" id="tc" type="color" name="theme_color" value="#2E8BFF"></div>
+    <div class="ta-field"><span class="ta-label">Pattern</span><div class="pats" role="radiogroup" aria-label="Pattern">
+      <label class="pat" style="background:#2E8BFF" data-pat="none"><input type="radio" name="pad_pattern" value="none">Plain</label>
+      ${Object.entries(PATTERNS).map(([k, p]) => `<label class="pat" style="background:${patternBg(k, '#2E8BFF')}" data-pat="${k}"><input type="radio" name="pad_pattern" value="${k}" ${k === 'waves' ? 'checked' : ''}>${esc(p.name)}</label>`).join('')}
+    </div></div>
+    ${check({ name: 'allow_own_pad', label: 'Let players use their own tap area instead' })}
+    <p class="ta-hint" style="margin:-8px 0 0">If you leave this off, everybody taps on your tap area in this pool.</p>
+  </div>
+  <div class="ta-field"><label class="ta-label" for="bgc">Pool background</label><input class="color-in" id="bgc" type="color" name="bg_color" value="#4B1FD8"></div>`
+    : `<button type="button" class="lockrow" ${upgradeAttrs('NEPO', 'Custom tap area and background colours')}><span>Tap area + background</span>${ICONS.lock}</button>`}
   ${sponsor || admin ? `${choice({ label: 'Show your ad in this pool?', name: 'with_ad', options: [['NO', 'Without ad'], ['YES', 'With ad']], value: 'NO', tip: 'With ad: your ad pops up when players open the game, in the lobby and before results.' })}
-  <div class="group" data-show="with_ad=YES">${approved.length ? select({ label: 'Pick your ad', name: 'promo_id', options: approved.map(a => [a.id, a.title]) }) : `<div class="note" style="margin:0">You don’t have an approved ad yet. <a href="${sponsor ? '/sponsor/ads' : '/admin/ads'}"><b>Create an ad first →</b></a></div>`}</div>` : ''}
+  <div class="group" data-show="with_ad=YES">${approved.length ? select({ label: 'Pick your ad', name: 'promo_id', options: approved.map(a => [a.id, a.title]) }) : `<div class="note" style="margin:0">You don’t have an approved ad yet. <a href="${sponsor ? '/sponsor/ads' : '/admin/ads'}"><b>Create an ad first</b></a></div>`}</div>` : ''}
   ${check({ name: 'is_private', label: 'Private pool — Tap Am makes a password you share' })}
   ${check({ name: 'boosters_allowed', label: 'Allow boosters', checked: true })}
   ${admin ? '' : `<div class="note">Once you create a pool, <b>you can’t delete it</b> until it ends. Prize money you put in is locked into the pool.</div>${check({ name: 'ack', label: 'I understand the pool can’t be deleted until it ends.' })}`}
@@ -248,6 +263,10 @@ function split(n,style){n=Math.max(1,Math.min(100,n|0||1));var P={1:[100],2:[65,
  var s=w.reduce(function(a,b){return a+b},0);return w.map(function(x){return Math.round(x/s*1000)/10});}
 function paint(){var n=+f.winners.value||1,st=f.split_style.value,vs=(f.querySelector('input[name=game_type]:checked')||{}).value==='MATCH',sp=split(n,st);
  pv.textContent=n===1?(vs?'Top tapper on each side takes that side’s pot.':'Winner takes all.'):(st==='EQUAL'?('Top '+n+(vs?' on each side':'')+' share equally: '+sp[0]+'% each.'):('Top '+n+(vs?' on each side':'')+' share: '+sp.slice(0,6).join('% / ')+'%'+(n>6?' / …':'')+'.'));}
-f.addEventListener('input',paint);f.addEventListener('change',paint);paint();`;
+f.addEventListener('input',paint);f.addEventListener('change',paint);paint();
+var pp=f.querySelector('[data-padprev]'),PB=${JSON.stringify(Object.fromEntries(Object.entries(PATTERNS).map(([k, p]) => [k, p.img + ' ' + p.pos + '/' + p.size + ' ' + p.rep])))};
+function pad(){if(!pp)return;var c=(f.theme_color||{}).value||'#2E8BFF',k=(f.querySelector('input[name=pad_pattern]:checked')||{}).value;pp.style.background=(PB[k]?PB[k]+',':'')+c;
+ f.querySelectorAll('[data-pat]').forEach(function(l){var kk=l.getAttribute('data-pat');l.style.background=(PB[kk]?PB[kk]+',':'')+c;});}
+f.addEventListener('input',pad);f.addEventListener('change',pad);pad();`;
   return appPage({ user, title: 'Create a pool', active: role === 'SPONSOR' ? '/sponsor/pools' : role === 'ADMIN' ? '/admin/pools' : '/pools', body, wallet, narrow: true, css: CREATE_CSS, script, theme, bgCss });
 }

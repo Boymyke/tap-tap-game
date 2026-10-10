@@ -17,7 +17,7 @@ async function welcomePlayer(env, id, referrer) {
     await env.DB.prepare('UPDATE users SET referral_count=referral_count+1 WHERE id=?').bind(referrer.id).run();
     const r = await env.DB.prepare('SELECT referral_count FROM users WHERE id=?').bind(referrer.id).first();
     const batch = num(s, 'referral_batch', 10);
-    if (batch > 0 && r.referral_count % batch === 0) {
+    if (batch > 0 && referrer.role === 'USER' && r.referral_count % batch === 0) {   // sponsors' invites are counted, not rewarded
       await giveItem(env, referrer.id, 'booster-2x', 1, { gift: true, from: null, note: `${batch} friends joined` });
       await notify(env, referrer.id, `${batch} more people joined with your link! You get a free Turbo 2× booster.`, '/bag');
     }
@@ -148,9 +148,9 @@ export async function handleAuthApi(req, env, path) {
     }
     const id = uid(), now = nowIso();
     const role = pending.role === 'SPONSOR' ? 'SPONSOR' : 'USER';
-    const referrer = role === 'USER' && pending.ref ? await env.DB.prepare("SELECT id,username FROM users WHERE referral_code=? AND role='USER'").bind(pending.ref).first() : null;
+    const referrer = role === 'USER' && pending.ref ? await env.DB.prepare("SELECT id,username,role FROM users WHERE referral_code=? AND role IN ('USER','SPONSOR') AND status='ACTIVE'").bind(pending.ref).first() : null;
     let myCode = null;
-    for (let i = 0; i < 5 && role === 'USER'; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
+    for (let i = 0; i < 5; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
     try {
       await env.DB.batch([
         env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,gender,country,terms_accepted_at,terms_version,email_verified_at,role,tier,referral_code,referred_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
