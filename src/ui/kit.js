@@ -33,7 +33,8 @@ export const KIT_CSS = `
 html,body{min-height:100%}
 .app{min-height:100vh;min-height:100dvh;padding-bottom:calc(env(safe-area-inset-bottom) + 96px)}
 .app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(env(safe-area-inset-top) + 8px) 14px 8px;background:color-mix(in srgb,var(--bg-deep) 82%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-.app-bar .ta-logo{width:88px}
+.app-bar .ta-logo{width:96px}
+.app-bar-left{display:flex;align-items:center;gap:8px;min-width:0}
 .app-bar-right{display:flex;align-items:center;gap:8px}
 .chip{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 13px 0 9px;border-radius:999px;background:var(--green);color:var(--ink);font:800 15px var(--display);text-decoration:none;white-space:nowrap;box-shadow:0 3px 0 var(--green-d)}
 .chip svg{width:19px;height:19px}
@@ -60,10 +61,9 @@ html,body{min-height:100%}
 .headrow{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 2px 14px}
 .headrow .h1{margin:0}
 .h2{margin:24px 2px 12px;font:900 23px/1.1 var(--display);color:#fff;text-shadow:var(--ts);display:flex;justify-content:flex-start;align-items:center;gap:8px}
-.h2 a{margin-left:auto;flex:none;font:700 14px var(--body);color:var(--ink);background:#fff;padding:7px 12px;border-radius:999px;text-decoration:none;text-shadow:none;white-space:nowrap}
-.h2 .emoji{font-size:22px}
+.h2 a{margin-left:auto;flex:none;font:700 14px var(--body);color:var(--ink);background:#fff;padding:7px 12px;border-radius:var(--r-btn);text-decoration:none;text-shadow:none;white-space:nowrap}
 .sub{margin:-6px 2px 14px;color:var(--muted);font-size:15px;line-height:1.5}
-.back{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:8px 14px 8px 10px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:700 15px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.22)}
+.back{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:8px 14px 8px 10px;border-radius:var(--r-btn);background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:700 15px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.22)}
 .back svg{width:18px;height:18px}
 .grid{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
 .g2{grid-template-columns:1fr 1fr}
@@ -75,7 +75,7 @@ html,body{min-height:100%}
 .stat{display:flex;flex-direction:column;gap:4px}
 .stat .k{font:700 13px var(--body);opacity:.9}
 .stat .v{font:900 28px/1 var(--display)}
-.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;font:800 12px/1 var(--body);letter-spacing:.2px;background:rgba(0,0,0,.32);color:#fff;white-space:nowrap;text-shadow:none}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:var(--r-tag);font:800 12px/1 var(--body);letter-spacing:.2px;background:rgba(0,0,0,.32);color:#fff;white-space:nowrap;text-shadow:none}
 .badge.lapo{background:#fff;color:var(--ink)}
 .badge.mapo{background:var(--teal);color:var(--ink)}
 .badge.nepo{background:var(--sunny);color:var(--ink)}
@@ -95,7 +95,7 @@ html,body{min-height:100%}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .row.wrap{flex-wrap:wrap}
 .list{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
-.item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 4px 0 rgba(21,11,51,.22)}
+.item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r-sm);background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 4px 0 rgba(21,11,51,.22)}
 .item .grow{flex:1;min-width:0}
 .item .t{font:800 17px/1.15 var(--display);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item .s{font-size:13px;color:var(--ink-soft);margin-top:3px}
@@ -130,16 +130,16 @@ html,body{min-height:100%}
 .form .note{padding:12px 14px;border-radius:16px;background:#FFF6D6;color:#4A3800;font-size:14px;line-height:1.5}
 .form .note b{color:var(--ink)}
 .upl{display:flex;align-items:center;gap:12px}
-.upl img{width:64px;height:64px;object-fit:cover;border-radius:14px;background:var(--cloud)}
-.color-in{width:100%;height:50px;padding:5px;border-radius:16px;border:2px solid var(--line);background:var(--cloud);cursor:pointer}
+.upl img{width:64px;height:64px;object-fit:cover;border-radius:var(--r-in);background:var(--cloud)}
+.color-in{width:100%;height:50px;padding:5px;border-radius:var(--r-in);border:2px solid var(--line);background:var(--cloud);cursor:pointer}
 .swatches{display:flex;flex-wrap:wrap;gap:10px}
 .swatch{position:relative;width:46px;height:46px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px var(--line);cursor:pointer;padding:0}
 .swatch input{position:absolute;opacity:0;inset:0;cursor:pointer}
 .swatch:has(input:checked){box-shadow:0 0 0 3px var(--ink)}
-.swatch:has(input:checked)::after{content:"✓";position:absolute;inset:0;display:grid;place-items:center;color:#fff;font:900 18px var(--display);text-shadow:var(--ts)}
+.swatch:has(input:checked)::after{content:"";position:absolute;left:50%;top:45%;width:14px;height:8px;border:3.5px solid #fff;border-top:0;border-right:0;transform:translate(-50%,-50%) rotate(-45deg);filter:drop-shadow(0 1px 0 rgba(0,0,0,.6))}
 .swatch.locked{opacity:.45}
 .stepper{display:flex;align-items:center;gap:6px}
-.stepper button{flex:none;width:44px;height:44px;border:0;border-radius:14px;background:var(--cloud);color:var(--ink);font:900 22px/1 var(--display);cursor:pointer}
+.stepper button{flex:none;width:44px;height:44px;border:0;border-radius:var(--r-in);background:var(--cloud);color:var(--ink);font:900 22px/1 var(--display);cursor:pointer}
 .stepper input{width:70px;text-align:center;padding:0 6px}
 /* tables (admin) */
 .tbl-wrap{overflow-x:auto;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:var(--sh)}
@@ -150,22 +150,28 @@ html,body{min-height:100%}
 .tbl a{color:var(--purple-d);font-weight:700}
 .tabs{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 14px;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-.tabs a{flex:none;padding:10px 15px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:700 15px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.2)}
+.tabs a{flex:none;padding:10px 15px;border-radius:var(--r-btn);background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:700 15px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.2)}
 .tabs a[aria-current="page"]{background:#fff;color:var(--ink);box-shadow:0 3px 0 rgba(0,0,0,.25)}
 .pager{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px}
 .pager span{font:700 14px var(--body);color:#fff}
 /* copy row */
-.copyrow{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:999px;background:#fff;color:var(--ink)}
+.copyrow{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:var(--r-btn);background:#fff;color:var(--ink)}
 .copyrow code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 16px var(--display);letter-spacing:.5px}
-.copybtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 13px;border:0;border-radius:999px;background:var(--ink);color:#fff;font:800 13px var(--body);cursor:pointer}
+.copybtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 13px;border:0;border-radius:var(--r-in);background:var(--ink);color:#fff;font:800 13px var(--body);cursor:pointer}
 .copybtn svg{width:16px;height:16px}
 .copybtn.done{background:var(--green);color:var(--ink)}
 .locked-overlay{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border-radius:inherit;background:rgba(21,11,51,.55);color:#fff;font:800 14px var(--body);text-align:center;padding:10px}
 .locked-overlay svg{width:30px;height:30px}
 .is-locked{filter:grayscale(.55)}
+/* name emoji (given by the super admin) */
+.nemoji{display:inline-grid;place-items:center;min-width:1.4em;height:1.4em;margin-left:2px;padding:0;border:0;border-radius:var(--r-tag);background:transparent;font-size:.95em;line-height:1;vertical-align:-.15em;cursor:default}
+button.nemoji{cursor:pointer;background:rgba(255,255,255,.18);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35)}
+.panel button.nemoji,.item button.nemoji{background:var(--cloud);box-shadow:inset 0 0 0 1.5px var(--line)}
 `;
 
-export function appPage({ user, title, active = '', body, script = '', css = '', narrow = false, unread, wallet, bodyClass = '', scripts = [], theme = 'grape', bgCss = '' }) {
+// Every signed-in page has a back button (except the role's home page). It goes to the previous
+// page in the app; when there isn't one (opened from a link), it goes to `back` or the home page.
+export function appPage({ user, title, active = '', body, script = '', css = '', narrow = false, unread, wallet, bodyClass = '', scripts = [], theme = 'grape', bgCss = '', back = '' }) {
   const nav = NAVS[user?.role] || NAVS.USER;
   const links = nav.map(([href, label, ic]) => `<a href="${href}" ${href === active ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span></a>`).join('');
   const desk = nav.map(([href, label]) => `<a href="${href}" ${href === active ? 'aria-current="page"' : ''}>${label}</a>`).join('');
@@ -173,9 +179,11 @@ export function appPage({ user, title, active = '', body, script = '', css = '',
   const n = unread ?? user?.unread ?? 0;
   const winChip = user?.role === 'USER' && w ? `<a class="chip" href="/wallet" aria-label="Winnings ${esc(naira(w.winnings_kobo))}" data-winnings>${icon('trophy')}${esc(nairaShort(w.winnings_kobo))}</a>`
     : user?.role === 'SPONSOR' && w ? `<a class="chip" href="/wallet" aria-label="Wallet">${icon('wallet')}${esc(nairaShort(w.balance_kobo))}</a>` : '';
+  const home = user?.role === 'ADMIN' ? '/admin' : user?.role === 'SPONSOR' ? '/sponsor' : '/dashboard';
+  const backBtn = active === home && !back ? '' : `<a class="iconbtn" href="${esc(back || home)}" data-back aria-label="Back">${ICONS.back}</a>`;
   const page = `<div class="app">
 <header class="app-bar">
-  <a class="ta-logo" href="${user?.role === 'ADMIN' ? '/admin' : user?.role === 'SPONSOR' ? '/sponsor' : '/dashboard'}" aria-label="Tap Am home">${LOGO_IMG()}</a>
+  <div class="app-bar-left">${backBtn}<a class="ta-logo" href="${home}" aria-label="Tap Am home">${LOGO_IMG()}</a></div>
   <nav class="app-desk-nav" aria-label="Main">${desk}</nav>
   <div class="app-bar-right">${winChip}<a class="iconbtn bell" href="/notifications" aria-label="Notifications${n ? ', ' + n + ' new' : ''}">${icon('bell')}${n ? `<span class="dot">${n > 9 ? '9+' : n}</span>` : ''}</a><button type="button" class="iconbtn" data-menu-open aria-label="Open menu" aria-controls="menu">${ICONS.menu}</button></div>
 </header>
@@ -186,7 +194,12 @@ export function appPage({ user, title, active = '', body, script = '', css = '',
 }
 
 export const tierBadge = label => `<span class="badge ${{ 'Nepo baby': 'nepo', 'Mapo baby': 'mapo', 'Lapo baby': 'lapo', Sponsor: 'sponsor', 'Super admin': 'red' }[label] || 'lapo'}">${esc(label)}</span>`;
-export const stateBadge = s => `<span class="badge ${s}">${{ live: '● Live now', soon: 'Coming up', ended: 'Ended', cancelled: 'Cancelled' }[s] || s}</span>`;
+export const stateBadge = s => `<span class="badge ${s}">${{ live: 'Live now', soon: 'Coming up', ended: 'Ended', cancelled: 'Cancelled' }[s] || s}</span>`;
+// A player's name plus the emoji the super admin gave them. Only the owner gets a button that shows
+// the meaning (pass `meaning` only for the signed-in user's own name); everyone else just sees the emoji.
+export const nameTag = (name, emoji, meaning = null) => `${esc(name)}${emoji ? (meaning
+  ? ` <button type="button" class="nemoji" data-emoji-meaning="${esc(meaning)}" data-emoji="${esc(emoji)}" aria-label="What your emoji means">${esc(emoji)}</button>`
+  : ` <span class="nemoji" aria-hidden="true">${esc(emoji)}</span>`) : ''}`;
 // Live countdown pill: "Starts in 2h 03m 10s" / "Ends in 14m 09s" (updated by app.js).
 export const whenPill = p => p.state === 'ended' || p.state === 'cancelled'
   ? `<span class="when ended">${p.state === 'cancelled' ? 'Cancelled' : 'Ended ' + esc(lagos(p.endsAt))}</span>`
@@ -194,19 +207,20 @@ export const whenPill = p => p.state === 'ended' || p.state === 'cancelled'
 
 const PEOPLE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6v1h-13z"/><circle cx="17" cy="9" r="2.8"/><path d="M15.6 13.3c3.4-.5 6.2 1.7 6.2 5v1.7h-4.6v-1c0-2.3-.6-4.2-1.6-5.7z"/></svg>';
 const COLORS = ['c-sky', 'c-purple', 'c-teal', 'c-pink'];
+const LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="3"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>';
 export function poolCard(p, i = 0) {
   const color = p.kind === 'SPONSORED' ? 'c-orange' : p.kind === 'PAID' ? 'c-pink' : COLORS[i % COLORS.length];
   const head = p.gameType === 'MATCH' && p.sideA
     ? `<div class="vsrow"><span class="code">${esc(p.sideA.slice(0, 3))}</span><span class="vs">VS</span><span class="code">${esc(p.sideB.slice(0, 3))}</span></div><div class="t" style="font-size:17px">${esc(p.name)}</div>`
     : `<div class="t">${esc(p.name)}</div>`;
-  const tags = [p.kind === 'SPONSORED' ? `<span class="badge sponsor">★ ${esc(p.sponsor || 'Sponsored')}</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid</span>' : '<span class="badge">Free</span>',
+  const tags = [p.kind === 'SPONSORED' ? `<span class="badge sponsor">${esc(p.sponsor || 'Sponsored')}</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid</span>' : '<span class="badge">Free</span>',
     p.audience !== 'ALL' ? `<span class="badge ${p.audience === 'NEPO' ? 'nepo' : p.audience === 'MAPO' ? 'mapo' : 'lapo'}">${{ NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo only' }[p.audience]}</span>` : '',
-    p.private ? '<span class="badge">🔒 Private</span>' : '', p.joined ? '<span class="badge live">✓ Joined</span>' : ''].join('');
+    p.private ? `<span class="badge">${LOCK}Private</span>` : '', p.joined ? '<span class="badge live">Joined</span>' : ''].join('');
   return `<a class="tcard pc ${color}" href="/pool/${esc(p.id)}" style="${p.theme ? `--c:${esc(p.theme)};--cd:color-mix(in srgb,${esc(p.theme)} 65%,#000)` : ''}">
   <div class="tags">${tags}</div>
   ${head}
   <div class="meta"><span>${PEOPLE}${short(p.players || 0)} ${Number(p.players) === 1 ? 'player' : 'players'}</span><span>${p.entryFee ? esc(naira(p.entryFee)) + ' entry' : 'Free entry'}</span></div>
-  <div class="foot"><span class="prize"><small>Prize</small>${p.prize ? esc(nairaShort(p.prize)) : 'For glory'}</span>${whenPill(p)}</div>
+  <div class="foot"><span class="prize"><small>Prize pool</small>${p.prize ? esc(nairaShort(p.prize)) : 'Akara'}</span>${whenPill(p)}</div>
 </a>`;
 }
 
@@ -233,11 +247,11 @@ export const copyBtn = (value, label = 'Copy') => `<button type="button" class="
 export const upgradeAttrs = (need, feature) => `data-upgrade="${need}" data-feature="${esc(feature)}"`;
 export const lockedOverlay = text => `<div class="locked-overlay">${ICONS.lock}<span>${esc(text)}</span></div>`;
 export const backLink = (href, label = 'Back') => `<a class="back" href="${esc(href)}" data-back>${ICONS.back}<span>${esc(label)}</span></a>`;
-export const pager = (base, page, hasNext) => (page > 1 || hasNext) ? `<nav class="pager" aria-label="Pages">${page > 1 ? `<a class="btn btn--white btn--sm" href="${base}${base.includes('?') ? '&' : '?'}page=${page - 1}">← Newer</a>` : ''}<span>Page ${page}</span>${hasNext ? `<a class="btn btn--white btn--sm" href="${base}${base.includes('?') ? '&' : '?'}page=${page + 1}">Older →</a>` : ''}</nav>` : '';
+export const pager = (base, page, hasNext) => (page > 1 || hasNext) ? `<nav class="pager" aria-label="Pages">${page > 1 ? `<a class="btn btn--white btn--sm" href="${base}${base.includes('?') ? '&' : '?'}page=${page - 1}">Newer</a>` : ''}<span>Page ${page}</span>${hasNext ? `<a class="btn btn--white btn--sm" href="${base}${base.includes('?') ? '&' : '?'}page=${page + 1}">Older</a>` : ''}</nav>` : '';
 
 // A page anyone can open (plans, ranks, top tappers): app shell when logged in, simple shell otherwise.
 export function anyPage({ user, title, body, css = '', script = '', active = '', theme = 'grape', bgCss = '', description }) {
   if (user) return appPage({ user, title, active, body, css, script, theme, bgCss });
-  const top = `<header class="bar"><div style="display:flex;align-items:center;gap:8px"><a class="iconbtn" href="/" aria-label="Back">${ICONS.back}</a><a class="ta-logo" style="width:92px" href="/" aria-label="Tap Am home">${LOGO_IMG()}</a></div><div class="bar-right"><a class="btn btn--green btn--sm" href="/signup">Sign up</a><button type="button" class="iconbtn" data-menu-open aria-label="Open menu" aria-controls="menu">${ICONS.menu}</button></div></header>`;
+  const top = `<header class="bar"><div style="display:flex;align-items:center;gap:8px"><a class="iconbtn" href="/" data-back aria-label="Back">${ICONS.back}</a><a class="ta-logo" style="width:96px" href="/" aria-label="Tap Am home">${LOGO_IMG()}</a></div><div class="bar-right"><a class="btn btn--green btn--sm" href="/signup">Sign up</a><button type="button" class="iconbtn" data-menu-open aria-label="Open menu" aria-controls="menu">${ICONS.menu}</button></div></header>`;
   return themeShell({ title, description, body: `${top}<main class="app-main" id="main" style="padding-bottom:40px">${body}</main>${menuSheet(null)}`, css: KIT_CSS + css, script });
 }

@@ -87,7 +87,7 @@
     if (!bar) { bar = document.createElement('div'); bar.className = 'netbar'; bar.setAttribute('role', 'status'); bar.setAttribute('aria-live', 'polite'); bar.innerHTML = '<span class="netbar-dot"></span><span class="netbar-text"></span>'; }
     if (!bar.isConnected) document.body.appendChild(bar);
     clearTimeout(hideTimer); bar.hidden = false; bar.classList.toggle('ok', online);
-    bar.querySelector('.netbar-text').textContent = online ? 'You don come back online ✓' : 'Your internet don cut. Check your data or Wi-Fi.';
+    bar.querySelector('.netbar-text').textContent = online ? 'You don come back online' : 'Your internet don cut. Check your data or Wi-Fi.';
     if (online) hideTimer = setTimeout(function () { bar.hidden = true; }, 2800);
     document.documentElement.classList.toggle('is-offline', !online);
   }
@@ -118,10 +118,10 @@
   TA.toast = function (text, kind, link, linkLabel) {
     if (toastEl) toastEl.remove();
     toastEl = document.createElement('div'); toastEl.className = 'toast' + (kind === 'err' ? ' err' : ''); toastEl.setAttribute('role', kind === 'err' ? 'alert' : 'status');
-    var ico = document.createElement('span'); ico.className = 'ico'; ico.textContent = kind === 'err' ? '!' : '✓';
+    var ico = document.createElement('span'); ico.className = 'ico'; if (kind === 'err') ico.textContent = '!'; else ico.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
     var m = document.createElement('span'); m.className = 'msg'; m.textContent = text;
     toastEl.appendChild(ico); toastEl.appendChild(m);
-    if (link && /^\/(?!\/)/.test(link)) { var a = document.createElement('a'); a.className = 'go'; a.href = link; a.textContent = (linkLabel || 'Go') + ' →'; toastEl.appendChild(a); }
+    if (link && /^\/(?!\/)/.test(link)) { var a = document.createElement('a'); a.className = 'go'; a.href = link; a.textContent = linkLabel || 'Go'; toastEl.appendChild(a); }
     document.body.appendChild(toastEl); clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { if (toastEl) { toastEl.remove(); toastEl = null; } }, link ? 6500 : 4200);
   };
@@ -271,7 +271,7 @@
   // QR code + share card live in a separate file, loaded only when needed.
   function shareCard(b) {
     b.classList.add('is-loading');
-    loadScript('/assets/share.js?v=6').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
+    loadScript('/assets/share.js?v=7').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
       .catch(function () { b.classList.remove('is-loading'); TA.toast('Could not load the share card. Check your connection.', 'err'); });
   }
   function loadScript(src) {
@@ -458,7 +458,46 @@
       TA.toast(TA.isOnline() ? 'That page no load. Try again.' : 'Your internet don cut. Check your connection.', 'err');
     }).then(function () { if (seq === navSeq) { document.documentElement.classList.remove('is-nav'); progress(false); } });
   };
-  window.addEventListener('popstate', function () { if (document.body.classList.contains('app-body')) TA.go(location.pathname + location.search, { pop: true }); });
+  window.addEventListener('popstate', function () { depth(-1); if (document.body.classList.contains('app-body')) TA.go(location.pathname + location.search, { pop: true }); });
+
+  /* ── back button ─────────────────────────────────────────────────── */
+  // [data-back] goes to the previous page when it was a page of this site in this tab,
+  // otherwise to the link's own href (the role's home page).
+  function depth(delta) {
+    var d = 0; try { d = Number(sessionStorage.getItem('ta-depth') || 0); } catch (e) {}
+    if (delta) { d = Math.max(0, d + delta); try { sessionStorage.setItem('ta-depth', String(d)); } catch (e) {} }
+    return d;
+  }
+  (function () {
+    var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0], type = nav ? nav.type : 'navigate';
+    var sameSite = false; try { sameSite = !!document.referrer && new URL(document.referrer).origin === location.origin; } catch (e) {}
+    if (type === 'navigate') { if (sameSite) depth(1); else try { sessionStorage.setItem('ta-depth', '0'); } catch (e) {} }
+    else if (type === 'back_forward') depth(-1);
+  })();
+  var pushState = history.pushState;
+  history.pushState = function () { depth(1); return pushState.apply(history, arguments); };
+  function goBack(fallback) { if (depth() > 0 && history.length > 1) history.back(); else TA.go(fallback || '/'); }
+  TA.back = goBack;
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('a[data-back],button[data-back]'); if (!b || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault(); e.stopImmediatePropagation(); goBack(b.getAttribute('href') || b.getAttribute('data-back') || '/');
+  }, true);
+
+  /* ── GET forms that reload on change (year / month pickers) ── */
+  document.addEventListener('change', function (e) {
+    var f = e.target.form; if (!f || !f.hasAttribute('data-autosubmit')) return;
+    var q = new URLSearchParams(new FormData(f)).toString();
+    TA.go((f.getAttribute('action') || location.pathname) + (q ? '?' + q : ''));
+  });
+
+  /* ── name emoji: only the owner sees a button; it shows what the emoji means ── */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-emoji-meaning]'); if (!b) return;
+    e.preventDefault();
+    var d = dialog('<div class="dlg-art" style="font-size:64px;line-height:96px"></div><h3>Your emoji</h3><p></p><div class="actions"><button type="button" class="btn btn--green" data-yes>Correct</button></div>', function (ev, close) { if (ev && ev.target.closest('[data-yes]')) close(); });
+    d.querySelector('.dlg-art').textContent = b.getAttribute('data-emoji') || '';
+    d.querySelector('p').textContent = b.getAttribute('data-emoji-meaning') || '';
+  });
   if (history.state === null && history.replaceState) { try { history.replaceState({ ta: 1 }, ''); } catch (e) {} }
 
   /* ── start ───────────────────────────────────────────────────────── */

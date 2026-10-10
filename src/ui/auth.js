@@ -9,7 +9,7 @@ const eyeButton = (target) => `<button type="button" class="ta-eye" data-toggle=
 </button>`;
 
 const err = id => `<p class="ta-error" id="${id}" aria-live="polite"></p>`;
-const back = (label, to) => `<button type="button" class="ta-back" data-go="${to}"><span aria-hidden="true">←</span> ${label}</button>`;
+const back = (label, to) => `<button type="button" class="ta-back" data-go="${to}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg> ${label}</button>`;
 
 function genderChoice() {
   return `<div class="seg-choice" role="radiogroup" aria-labelledby="su-gender-label" id="su-gender">${GENDERS.map(([v, l]) => `<label><input type="radio" name="gender" value="${v}"><span>${l}</span></label>`).join('')}</div>`;
@@ -293,5 +293,5 @@ async function post(form,url,payload,onOk,onErr,button){
 }
 })();`;
 
-  return themeShell({ title: signup ? 'Sign up' : 'Login', body, script });
+  return themeShell({ title: signup ? 'Sign up' : 'Login', body, script, bodyClass: 'bg-anim' });
 }

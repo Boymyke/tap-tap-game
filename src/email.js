@@ -21,7 +21,7 @@ function codeEmail({ code, purpose }) {
     : 'Use this code to finish creating your Tap Am account.';
   const subject = purpose === 'reset' ? 'Your Tap Am password reset code' : 'Your Tap Am sign-up code';
   const text = `${intro}\n\nYour code: ${code}\n\nIt expires in 10 minutes. If you didn't ask for this, ignore this email — nobody can use your email without this code.\n\nTap Am · Powered by Ferrn Agency`;
-  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#2A0F8F;font-family:Rubik,Arial,sans-serif;color:#150B33">
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#2A0F8F;font-family:Barlow,Arial,sans-serif;color:#150B33">
 <table role="presentation" width="100%" style="max-width:440px;margin:0 auto;background:#ffffff;border-radius:24px;padding:28px">
 <tr><td style="font-size:28px;font-weight:900;font-style:italic;color:#150B33">tap <span style="color:#00A84D">am</span></td></tr>
 <tr><td style="padding:16px 0 8px;font-size:15px;line-height:1.6;color:#2B2250">${esc(intro)}</td></tr>

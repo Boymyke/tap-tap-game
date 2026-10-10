@@ -1,17 +1,18 @@
-// Tap Am design system — "sticker pop".
-// Rich grape background with soft blobs and sparkles, white content panels, bright sticker cards
-// with white borders and hard shadows, chunky Rubik type, black pill buttons, neon-green accents.
-// The wordmark logo stays as-is; the app icon is the tap hand (see scripts/brand.mjs).
+// Tap Am design system.
+// Plain gradient background (Mapo/Nepo can change it), white content panels, bright patterned
+// cards with white borders and hard shadows, Barlow / Barlow Condensed type, neon-green accents.
+// Logo files come from public/assets/brand/src (see scripts/brand.mjs).
 import { THEMES } from '../tiers.js';
 
 export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export const BRAND = 'Tap Am';
-export const TAGLINE = 'tap ammm jor, make you chop ammm';
+export const TAGLINE = 'tap ammm make you chop moneyyyy';
 export const FERRN_URL = 'https://www.ferrnagency.com';
-export const ASSET_VERSION = '6';
+export const ASSET_VERSION = '7';
 
-const SPARKS = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'%3E%3Cg fill='%23fff'%3E%3Cpath d='M40 30l3 8 8 3-8 3-3 8-3-8-8-3 8-3z' fill-opacity='.35'/%3E%3Cpath d='M190 80l2 5 5 2-5 2-2 5-2-5-5-2 5-2z' fill-opacity='.28'/%3E%3Ccircle cx='120' cy='170' r='2' fill-opacity='.3'/%3E%3Ccircle cx='230' cy='210' r='1.6' fill-opacity='.35'/%3E%3Ccircle cx='70' cy='230' r='1.4' fill-opacity='.3'/%3E%3Cpath d='M150 20l1.6 4 4 1.6-4 1.6-1.6 4-1.6-4-4-1.6 4-1.6z' fill-opacity='.4'/%3E%3C/g%3E%3C/svg%3E\")";
+// Tone-on-tone diamond texture for cards (like printed match cards).
+const PATTERN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Cpath d='M0 0l14 14L0 28zM28 0l14 14-14 14zM14 28l14 14-14 14zM42 28l14 14-14 14z'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='.09'%3E%3Cpath d='M28 0L14 14l14 14zM56 0L42 14l14 14zM28 28L14 42l14 14zM56 28L42 42l14 14z'/%3E%3C/g%3E%3C/svg%3E\")";
 
 const CSS = `
 :root{
@@ -22,9 +23,9 @@ const CSS = `
   --green:#00FF6E;--green-d:#00B852;--sunny:#FFD23F;--sunny-d:#D9A400;--pink:#FF4FA3;--pink-d:#C42A78;--sky:#2E8BFF;--sky-d:#1A5FC2;
   --orange:#FF8A2A;--orange-d:#C95F10;--teal:#21D4C8;--teal-d:#0F9A91;--purple:#9161FF;--purple-d:#5E30D6;--danger:#FF4D5E;--danger-d:#C21F33;
   --ts:0 1.5px 0 rgba(0,0,0,.6);--ts-big:0 3px 0 rgba(0,0,0,.45);
-  --r:22px;--r-sm:14px;
+  --r:18px;--r-sm:12px;--r-btn:12px;--r-in:10px;--r-tag:6px;--pattern:${PATTERN};
   --sh:0 6px 0 rgba(21,11,51,.28);--sh-lg:0 8px 0 rgba(21,11,51,.3),0 18px 40px rgba(10,0,40,.35);
-  --display:"Rubik",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;--body:"Rubik",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;--body:"Barlow",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
   --seg-on:#5dff4a;--seg-off:rgba(93,255,74,.12);
 }
 *{box-sizing:border-box}
@@ -33,7 +34,10 @@ html{-webkit-text-size-adjust:100%;height:100%;background:var(--bg-deep)}
 body{margin:0;min-height:100%;color:var(--text);font:400 16px/1.45 var(--body);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none;
   background:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:${SPARKS} 0 0/260px 260px,radial-gradient(60% 40% at 100% 0%,rgba(255,79,163,.35),transparent 70%),radial-gradient(55% 45% at 0% 100%,rgba(46,139,255,.35),transparent 70%),var(--bg-custom,linear-gradient(165deg,var(--bg-a) 0%,var(--bg-b) 58%,var(--bg-deep) 100%))}
+  background:var(--bg-custom,linear-gradient(165deg,var(--bg-a) 0%,var(--bg-b) 58%,var(--bg-deep) 100%))}
+/* Login / sign-up: slowly moving gradient. */
+body.bg-anim::before{background:linear-gradient(120deg,var(--bg-a),var(--pink),var(--bg-b),var(--sky),var(--bg-deep),var(--bg-a));background-size:400% 400%;animation:bgmove 18s ease-in-out infinite}
+@keyframes bgmove{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
 input,textarea,select,[contenteditable]{-webkit-user-select:text;user-select:text}
 a{color:inherit}
 img,svg{max-width:100%}
@@ -44,7 +48,7 @@ button{font-family:inherit}
 .ts{text-shadow:var(--ts)}
 
 /* ── sticker cards ───────────────────────────── */
-.tcard,.card{--c:var(--sky);--cd:var(--sky-d);position:relative;border-radius:var(--r);background:var(--c);color:#fff;border:3px solid rgba(255,255,255,.92);box-shadow:0 6px 0 var(--cd),0 14px 30px rgba(10,0,40,.25);text-shadow:var(--ts)}
+.tcard,.card{--c:var(--sky);--cd:var(--sky-d);position:relative;border-radius:var(--r);background:var(--pattern) 0 0/56px 56px,var(--c);color:#fff;border:3px solid rgba(255,255,255,.92);box-shadow:0 6px 0 var(--cd),0 14px 30px rgba(10,0,40,.25);text-shadow:var(--ts)}
 .tcard h1,.tcard h2,.tcard h3,.card h1,.card h2,.card h3{text-shadow:var(--ts-big)}
 .tcard--flat{box-shadow:0 5px 0 var(--cd)}
 .c-sky{--c:var(--sky);--cd:var(--sky-d)}.c-pink,.tcard--pink{--c:var(--pink);--cd:var(--pink-d)}.c-orange,.tcard--orange{--c:var(--orange);--cd:var(--orange-d)}
@@ -54,9 +58,9 @@ button{font-family:inherit}
 .c-green{--c:var(--green);--cd:var(--green-d);color:var(--ink);text-shadow:none}
 .c-sunny h1,.c-sunny h2,.c-sunny h3,.tcard--gold h1,.tcard--gold h2,.tcard--gold h3,.c-green h1,.c-green h2,.c-green h3{text-shadow:none}
 .c-sunny a:not(.btn),.c-green a:not(.btn),.tcard--gold a:not(.btn){color:var(--ink)}
-.vs{display:inline-grid;place-items:center;min-width:48px;height:38px;padding:0 10px;border-radius:12px;background:var(--ink);color:var(--sunny);font:900 italic 20px/1 var(--display);border:3px solid #fff;box-shadow:0 4px 0 rgba(0,0,0,.35);transform:rotate(-6deg);text-shadow:none}
+.vs{display:inline-grid;place-items:center;min-width:48px;height:38px;padding:0 10px;border-radius:var(--r-btn);background:var(--ink);color:var(--sunny);font:900 italic 20px/1 var(--display);border:3px solid #fff;box-shadow:0 4px 0 rgba(0,0,0,.35);transform:rotate(-6deg);text-shadow:none}
 .code{font:900 clamp(26px,7.5vw,40px)/.95 var(--display);letter-spacing:.3px;text-transform:uppercase;color:#fff;text-shadow:var(--ts-big)}
-.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.3);font:700 12px/1.3 var(--body);color:#fff;text-shadow:none}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:var(--r-tag);background:rgba(0,0,0,.3);font:700 12px/1.3 var(--body);color:#fff;text-shadow:none}
 
 /* ── white panels (forms, lists) ─────────────── */
 .panel{position:relative;padding:16px;border-radius:var(--r);background:var(--paper);color:var(--ink);box-shadow:var(--sh)}
@@ -75,7 +79,7 @@ button{font-family:inherit}
 .seglabel{font:700 11px/1.1 var(--body);color:#C9BDF5;text-transform:uppercase;letter-spacing:.4px;text-shadow:none}
 
 /* ── buttons ─────────────────────────────────── */
-.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 22px;border:0;border-radius:999px;background:var(--ink);color:#fff;font:800 18px/1 var(--display);letter-spacing:.1px;text-decoration:none;cursor:pointer;text-shadow:none;white-space:nowrap;
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 22px;border:0;border-radius:var(--r-btn);background:var(--ink);color:#fff;font:800 19px/1 var(--display);letter-spacing:.3px;text-decoration:none;cursor:pointer;text-shadow:none;white-space:nowrap;
   box-shadow:0 5px 0 #000,0 10px 20px rgba(10,0,40,.25);transition:transform .08s,box-shadow .08s,filter .15s,background .15s}
 .btn:hover{filter:brightness(1.1)}
 .btn:active{transform:translateY(4px);box-shadow:0 1px 0 #000}
@@ -99,7 +103,7 @@ button{font-family:inherit}
 .btn--shine{overflow:hidden;isolation:isolate}
 .btn--shine::before{content:"";position:absolute;top:-30%;bottom:-30%;left:-70%;width:40%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.75),transparent);transform:skewX(-22deg);animation:shine 2.8s ease-in-out infinite;pointer-events:none;z-index:-1}
 @keyframes shine{0%{left:-70%}55%,100%{left:135%}}
-.iconbtn{position:relative;display:inline-grid;place-items:center;width:42px;height:42px;border:0;border-radius:14px;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;text-decoration:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25)}
+.iconbtn{position:relative;display:inline-grid;place-items:center;width:42px;height:42px;border:0;border-radius:var(--r-btn);background:rgba(255,255,255,.14);color:#fff;cursor:pointer;text-decoration:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25)}
 .iconbtn svg{width:22px;height:22px}
 .iconbtn:active{transform:scale(.94)}
 
@@ -145,7 +149,7 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 @media (min-width:900px){.toast{bottom:28px}}
 .dlg{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:16px;background:rgba(10,0,40,.62);animation:fade .15s}
 @keyframes fade{from{opacity:0}}
-.dlg-in{width:100%;max-width:420px;padding:22px 20px 18px;border-radius:26px;background:#fff;color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:pop .22s cubic-bezier(.2,1.4,.4,1)}
+.dlg-in{width:100%;max-width:420px;padding:22px 20px 18px;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:pop .22s cubic-bezier(.2,1.4,.4,1)}
 @keyframes pop{from{transform:scale(.9);opacity:0}}
 .dlg h3{margin:0 0 8px;font:900 24px/1.05 var(--display)}
 .dlg p{margin:0 0 14px;line-height:1.5;color:var(--ink-soft)}
@@ -156,12 +160,12 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 .cele-rays{position:absolute;left:50%;top:50%;width:220vmax;height:220vmax;margin:-110vmax 0 0 -110vmax;background:repeating-conic-gradient(from 0deg,rgba(255,236,140,.16) 0 8deg,transparent 8deg 22deg);animation:spin 14s linear infinite}
 .cele-in{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;text-align:center;animation:cele-pop .6s cubic-bezier(.2,1.6,.4,1)}
 @keyframes cele-pop{0%{transform:scale(.2) rotate(-14deg);opacity:0}100%{transform:none;opacity:1}}
-.cele-k{padding:8px 22px;border-radius:18px;background:var(--sunny);border:4px solid #fff;box-shadow:0 6px 0 var(--sunny-d),0 18px 40px rgba(0,0,0,.5);font:900 italic clamp(40px,12vw,90px)/1 var(--display);color:var(--ink)}
+.cele-k{padding:8px 22px;border-radius:var(--r);background:var(--sunny);border:4px solid #fff;box-shadow:0 6px 0 var(--sunny-d),0 18px 40px rgba(0,0,0,.5);font:900 italic clamp(40px,12vw,90px)/1 var(--display);color:var(--ink)}
 .cele-t{font:900 clamp(26px,7vw,52px)/1.05 var(--display);color:#fff;text-shadow:var(--ts-big)}
 .cele-bit{position:absolute;left:0;top:0;width:12px;height:16px;border-radius:3px;pointer-events:none;opacity:0}
 
 /* ── logo, footer line ───────────────────────── */
-.ta-logo{display:block;width:179px;line-height:0}
+.ta-logo{display:block;width:150px;line-height:0}
 .ta-logo img{width:100%;height:auto}
 .ta-tagline{margin:10px 0 0;max-width:260px;text-align:center;font:700 italic 16px/1.2 var(--body);color:#fff;text-shadow:var(--ts)}
 .ta-powered{margin:34px 0 0;font-size:14px;color:#fff;text-align:center;text-shadow:var(--ts)}
@@ -170,16 +174,15 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 
 /* ── forms (white panels / auth card) ────────── */
 .ta-page{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:max(36px,calc(env(safe-area-inset-top) + 18px)) 16px max(28px,env(safe-area-inset-bottom))}
-.ta-card{position:relative;width:100%;max-width:400px;margin-top:22px;padding:20px 20px 24px;border-radius:28px;background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}
-.ta-card::before{content:"";position:absolute;right:-12px;top:-16px;width:44px;height:44px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M20 2l5 13 13 5-13 5-5 13-5-13-13-5 13-5z' fill='%23FFD23F' stroke='%23150B33' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
-.ta-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border-radius:999px;background:var(--cloud)}
-.ta-tab{display:flex;align-items:center;justify-content:center;height:46px;border:0;border-radius:999px;background:transparent;color:var(--ink-soft);font:800 18px/1 var(--display);text-decoration:none;cursor:pointer}
+.ta-card{position:relative;width:100%;max-width:400px;margin-top:22px;padding:20px 20px 24px;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}
+.ta-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border-radius:var(--r-btn);background:var(--cloud)}
+.ta-tab{display:flex;align-items:center;justify-content:center;height:46px;border:0;border-radius:var(--r-in);background:transparent;color:var(--ink-soft);font:800 18px/1 var(--display);text-decoration:none;cursor:pointer}
 .ta-tab[aria-selected="true"]{background:var(--ink);color:#fff;box-shadow:0 3px 0 #000}
 .ta-form{margin-top:18px}
 .ta-field{margin:0 0 15px}
 .ta-label{display:flex;align-items:center;gap:6px;margin:0 0 7px;font:700 15px/1.2 var(--body);color:var(--ink)}
 .ta-label small{font-weight:500;color:var(--ink-soft)}
-.ta-input{display:block;width:100%;height:50px;margin:0;padding:0 15px;border:2px solid var(--line);border-radius:16px;background:var(--cloud);color:var(--ink);font:600 16px var(--body);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+.ta-input{display:block;width:100%;height:50px;margin:0;padding:0 15px;border:2px solid var(--line);border-radius:var(--r-in);background:var(--cloud);color:var(--ink);font:600 16px var(--body);outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
 .ta-input::placeholder{color:#9A8FC2;font-weight:500;opacity:1}
 .ta-input:focus{border-color:var(--purple);background:#fff;box-shadow:0 0 0 4px rgba(145,97,255,.2)}
 .ta-input.is-invalid{border-color:var(--danger);background:#FFF2F4}
@@ -206,12 +209,12 @@ select.ta-input:invalid{color:#9A8FC2}
 .ta-check input:checked::after{content:"";width:11px;height:6px;margin-top:-3px;border:3px solid var(--ink);border-top:0;border-right:0;transform:rotate(-45deg)}
 .ta-check input.is-invalid{border-color:var(--danger)}
 .ta-check a{color:var(--purple-d);font-weight:800;text-underline-offset:2px}
-.ta-btn{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:56px;margin:18px 0 0;border:0;border-radius:999px;background:var(--ink);color:#fff;font:800 20px/1 var(--display);cursor:pointer;box-shadow:0 5px 0 #000;transition:transform .06s,box-shadow .06s}
+.ta-btn{position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:56px;margin:18px 0 0;border:0;border-radius:var(--r-btn);background:var(--ink);color:#fff;font:800 20px/1 var(--display);cursor:pointer;box-shadow:0 5px 0 #000;transition:transform .06s,box-shadow .06s}
 .ta-btn:active{transform:translateY(4px);box-shadow:0 1px 0 #000}
 .ta-btn[disabled]{cursor:progress;opacity:.85}
 .ta-btn--shine{overflow:hidden;isolation:isolate}
 .ta-btn--shine::before{content:"";position:absolute;top:-30%;bottom:-30%;left:-70%;width:40%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-22deg);animation:shine 2.8s ease-in-out infinite;pointer-events:none;z-index:-1}
-.ta-btn-ghost{display:block;width:100%;margin:12px 0 0;padding:12px;border:0;border-radius:999px;background:var(--cloud);color:var(--ink);font:700 15px var(--body);cursor:pointer}
+.ta-btn-ghost{display:block;width:100%;margin:12px 0 0;padding:12px;border:0;border-radius:var(--r-btn);background:var(--cloud);color:var(--ink);font:700 15px var(--body);cursor:pointer}
 .ta-btn-ghost[disabled]{opacity:.6;cursor:not-allowed}
 .ta-step h2{margin:4px 0 6px;font:900 26px/1.05 var(--display);color:var(--ink)}
 .ta-form.ta-step{margin-top:2px}
@@ -229,8 +232,8 @@ select.ta-input:invalid{color:#9A8FC2}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:359px){.ta-page{padding-left:10px;padding-right:10px}.ta-card{padding:18px 14px 22px}.two{grid-template-columns:1fr}}
 
-.seg-choice{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:5px;padding:5px;border-radius:18px;background:var(--cloud)}
-.seg-choice label{position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;padding:6px 8px;border-radius:14px;color:var(--ink-soft);font:800 15px/1.1 var(--display);text-align:center;cursor:pointer}
+.seg-choice{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:5px;padding:5px;border-radius:var(--r-btn);background:var(--cloud)}
+.seg-choice label{position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;padding:6px 8px;border-radius:var(--r-in);color:var(--ink-soft);font:800 15px/1.1 var(--display);text-align:center;cursor:pointer}
 .seg-choice input{position:absolute;opacity:0;pointer-events:none}
 .seg-choice label:has(input:checked){background:var(--ink);color:#fff;box-shadow:0 3px 0 #000}
 .seg-choice label:has(input:focus-visible){outline:3px solid var(--purple)}
@@ -247,7 +250,7 @@ select.ta-input:invalid{color:#9A8FC2}
 .doc-head p{margin:12px 0 0;max-width:60ch;font-size:17px;line-height:1.55;color:var(--muted)}
 .doc-tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 4px 14px;scrollbar-width:none}
 .doc-tabs::-webkit-scrollbar{display:none}
-.doc-tabs a{flex:none;padding:10px 15px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:700 15px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.22)}
+.doc-tabs a{flex:none;padding:10px 15px;border-radius:var(--r-btn);background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:700 15px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.22)}
 .doc-tabs a[aria-current="page"]{background:#fff;color:var(--ink);box-shadow:0 3px 0 rgba(0,0,0,.25)}
 .doc-card{margin:0 0 18px;padding:24px 22px 22px;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:var(--sh)}
 .doc-card h2{margin:0 0 10px;font:900 26px/1.05 var(--display);color:var(--ink)}
@@ -260,7 +263,7 @@ select.ta-input:invalid{color:#9A8FC2}
 .doc-card strong{color:var(--ink)}
 .doc-card code{font-size:14px;padding:1px 6px;border-radius:6px;background:var(--cloud)}
 .doc-card .flag{display:block;margin:10px 0;padding:10px 12px;border-radius:12px;background:#FFF6D6;border:2px dashed var(--sunny-d);font-size:14px;color:#5A4300}
-.doc-card .flag::before{content:"⚠ Needs legal review: ";font-weight:800}
+.doc-card .flag::before{content:"Needs legal review: ";font-weight:800}
 .doc-updated{display:inline-block;margin:0 0 14px;padding:5px 12px;border-radius:999px;background:var(--cloud);font:700 13px var(--body);color:var(--ink)}
 .doc-lede{margin:0 0 14px;padding:14px 16px;border-radius:16px;background:var(--sunny);font-size:16px;line-height:1.55;color:var(--ink);font-weight:500}
 .doc-foot{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:24px 0 0}
@@ -270,7 +273,8 @@ select.ta-input:invalid{color:#9A8FC2}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
 `;
 
-export const LOGO_IMG = (w = 179) => `<img src="/assets/logo-tapam.svg" width="${w}" height="${Math.round(w * 38 / 141)}" alt="tap am">`;
+// Main logo: "TAP" + green "AM" box. On dark backgrounds the white-TAP version is used.
+export const LOGO_IMG = (w = 150, light = false) => `<img src="/assets/brand/${light ? 'logo' : 'logo-white'}.svg" width="${w}" height="${Math.round(w * 24.53 / 119.79)}" alt="tap am">`;
 export function logoBlock({ tagline = true } = {}) {
   return `<a class="ta-logo" href="/" aria-label="${BRAND} home">${LOGO_IMG()}</a>${tagline ? `<p class="ta-tagline">${esc(TAGLINE)}</p>` : ''}`;
 }
@@ -300,6 +304,7 @@ export function menuSheet(user) {
   <div class="sheet-head"><a class="ta-logo" style="width:100px" href="/" aria-label="${BRAND} home">${LOGO_IMG()}</a><button type="button" class="iconbtn" data-menu-close aria-label="Close menu">${ICONS.close}</button></div>
   <nav class="sheet-grid" aria-label="Main">
     ${account}
+    ${user && (user.role === 'USER' || user.role === 'SPONSOR') ? `<a class="tcard tcard--flat c-pink" href="/invite">Invite people<small>Share your link</small></a>` : ''}
     <a class="tcard tcard--flat c-orange" href="/how-to-play">How to play<small>Rules of the tap</small></a>
     <a class="tcard tcard--flat c-sunny" href="/plans">Lapo, Mapo, Nepo<small>Compare the tiers</small></a>
     <a class="tcard tcard--flat c-pink" href="/ranks">Ranks<small>What every rank unlocks</small></a>
@@ -315,7 +320,7 @@ export function menuSheet(user) {
 
 export function topBar(user, { back = false, extra = '' } = {}) {
   return `<header class="bar">
-  <div style="display:flex;align-items:center;gap:8px">${back ? `<a class="iconbtn" href="${user ? '/dashboard' : '/'}" aria-label="Back">${ICONS.back}</a>` : ''}<a class="ta-logo" href="/" aria-label="${BRAND} home">${LOGO_IMG()}</a></div>
+  <div style="display:flex;align-items:center;gap:8px">${back ? `<a class="iconbtn" href="${user ? '/dashboard' : '/'}" data-back aria-label="Back">${ICONS.back}</a>` : ''}<a class="ta-logo" href="/" aria-label="${BRAND} home">${LOGO_IMG()}</a></div>
   <div class="bar-right">${extra}<button type="button" class="iconbtn" data-menu-open aria-label="Open menu" aria-controls="menu">${ICONS.menu}</button></div>
 </header>`;
 }
@@ -326,7 +331,7 @@ export function themeVars(key = 'grape', extra = '') {
   return `--bg-a:${t.a};--bg-b:${t.b};--bg-deep:${t.deep};--accent:${t.accent};${extra}`;
 }
 
-export function themeShell({ title, description = 'Tap ammm jor, make you chop ammm. Live tapping games for the people.', body, script = '', css = '', bodyClass = '', scripts = [], theme = 'grape', bgCss = '', noZoom = false, head = '' }) {
+export function themeShell({ title, description = 'Tap amm make you chop big moneyyy. Live tapping games: tap and win big prizes, free to start.', body, script = '', css = '', bodyClass = '', scripts = [], theme = 'grape', bgCss = '', noZoom = false, head = '' }) {
   const vars = themeVars(theme, bgCss ? `--bg-custom:${bgCss};` : '');
   const t = THEMES[theme] || THEMES.grape;
   return `<!doctype html><html lang="en" style="${esc(vars)}"><head><meta charset="utf-8">
@@ -343,7 +348,7 @@ export function themeShell({ title, description = 'Tap ammm jor, make you chop a
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/assets/icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400..900;1,700..900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,800;1,900&family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>${CSS}${css}</style>${head}
 <script nonce="__NONCE__" src="/assets/app.js?v=${ASSET_VERSION}" defer></script>${scripts.map(src => `<script nonce="__NONCE__" src="${src}?v=${ASSET_VERSION}" defer></script>`).join('')}</head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}<div class="navload" aria-hidden="true"><span class="ring"></span>Small wait…</div>${script ? `<script nonce="__NONCE__" data-page>(window.TAQ=window.TAQ||[]).push(function(){${script}
 });</script>` : ''}</body></html>`;

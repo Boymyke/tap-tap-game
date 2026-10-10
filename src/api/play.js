@@ -1,4 +1,5 @@
 // Player API: pools, taps, boosters, store, inventory, gifts, settings, calculator, ads, leads, account.
+import { isPattern } from '../ui/patterns.js';
 import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie } from '../lib.js';
 import { tierOf, isNepo, isPaid, requireRole, debit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
 import { perks, THEMES, SOUNDS } from '../tiers.js';
@@ -149,8 +150,29 @@ export async function handlePlayApi(req, env, path, user) {
     }
     if (typeof data.vibrate === 'boolean') prefs.vibrate = data.vibrate;
     if (typeof data.muted === 'boolean') prefs.muted = data.muted;
+    // Your tap area (Mapo + Nepo): any colour, and a pattern from a skin you own. '' = back to your skin's look.
+    if (data.padColor !== undefined || data.padPattern !== undefined) {
+      const clearing = (data.padColor === undefined || data.padColor === '') && (data.padPattern === undefined || data.padPattern === '');
+      if (!clearing && !isPaid(me)) return upgradeError('Changing your tap area is for Mapo and Nepo babies.', 'MAPO');
+      if (data.padColor !== undefined) {
+        if (data.padColor === '') delete prefs.padColor;
+        else if (/^#[0-9a-fA-F]{6}$/.test(String(data.padColor))) prefs.padColor = String(data.padColor);
+        else return json({ error: 'Pick a colour.', field: 'padColor' }, 400);
+      }
+      if (data.padPattern !== undefined) {
+        const k = String(data.padPattern);
+        if (k === '') delete prefs.padPattern;
+        else if (k === 'none') prefs.padPattern = 'none';
+        else {
+          if (!isPattern(k)) return json({ error: 'Pick a pattern.', field: 'padPattern' }, 400);
+          const rows = (await env.DB.prepare("SELECT s.config FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.kind='SKIN' AND (i.quantity>0 OR (s.price_kobo=0 AND s.active=1))").bind(me.id).all()).results;
+          if (!rows.some(r => parseJson(r.config, {}).pattern === k)) return json({ error: 'Get a skin with that pattern from the store first.', field: 'padPattern', redirect: '/store?tab=SKIN', go: 'See skins' }, 403);
+          prefs.padPattern = k;
+        }
+      }
+    }
     await env.DB.prepare('UPDATE users SET prefs=? WHERE id=?').bind(JSON.stringify(prefs), user.id).run();
-    return json({ message: 'Saved', reload: data.theme !== undefined || data.bg !== undefined });
+    return json({ message: 'Saved', reload: data.theme !== undefined || data.bg !== undefined || data.padColor === '' });
   }
 
   // ── gifting (Nepo babies) ──
@@ -232,12 +254,12 @@ export async function handlePlayApi(req, env, path, user) {
     const preview = sp.get('preview');
     let p;
     if (preview) {   // sponsors preview their own ads (admin can preview any)
-      p = await env.DB.prepare('SELECT a.id,a.title,a.kind,a.image_url,a.video_id,a.target_url,a.owner_id,COALESCE(sp.company,u.username) AS company,COALESCE(sp.lead_capture,0) AS lead_capture FROM promos a LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id LEFT JOIN users u ON u.id=a.owner_id WHERE a.id=?').bind(preview).first();
+      p = await env.DB.prepare('SELECT a.id,a.title,a.kind,a.image_url,a.video_id,a.target_url,a.owner_id,a.duration_seconds,COALESCE(sp.company,u.username) AS company,COALESCE(sp.lead_capture,0) AS lead_capture FROM promos a LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id LEFT JOIN users u ON u.id=a.owner_id WHERE a.id=?').bind(preview).first();
       if (!p || (user.role !== 'ADMIN' && p.owner_id !== user.id)) return json({ promo: null });
       return json({ promo: { ...p, preview: true } });
     }
     const pinned = (pool ? (await env.DB.prepare('SELECT promo_id FROM pools WHERE id=?').bind(pool).first())?.promo_id : null) ?? null;
-    p = await env.DB.prepare(`SELECT a.id,a.title,a.kind,a.image_url,a.video_id,a.target_url,a.owner_id,COALESCE(sp.company,'Tap Am') AS company,COALESCE(sp.lead_capture,0) AS lead_capture
+    p = await env.DB.prepare(`SELECT a.id,a.title,a.kind,a.image_url,a.video_id,a.target_url,a.owner_id,a.duration_seconds,COALESCE(sp.company,'Tap Am') AS company,COALESCE(sp.lead_capture,0) AS lead_capture
       FROM promos a LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id WHERE a.active=1 AND a.approved=1 AND (a.id=? OR a.pool_id=? OR (? IS NULL AND a.pool_id IS NULL))
       ORDER BY CASE WHEN a.id=? THEN 0 WHEN a.pool_id=? THEN 1 ELSE 2 END, RANDOM() LIMIT 1`).bind(pinned || '', pool, pinned, pinned || '', pool).first();
     // count a view at most 3 times per player per ad every 10 minutes, so scripts can't inflate sponsor numbers

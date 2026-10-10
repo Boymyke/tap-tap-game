@@ -2,15 +2,15 @@
 // and runs health checks on a schedule.
 import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
-import { landingPage, demoPools } from './ui/landing.js';
+import { landingPage } from './ui/landing.js';
 import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
 import { dashboardPage, poolsPage, poolPage, createPoolPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
-import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage } from './ui/profile.js';
+import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage } from './ui/profile.js';
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
-import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, setupPage, suggestPage } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
 import { handlePlayApi } from './api/play.js';
@@ -19,6 +19,7 @@ import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
 import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin } from './lib.js';
+import { PATTERNS } from './ui/patterns.js';
 import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay } from './core.js';
 import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
@@ -66,9 +67,8 @@ async function siteStats(env) {
   const r = await env.DB.prepare('SELECT (SELECT COUNT(*) FROM visitors WHERE last_seen>?) AS online,(SELECT COUNT(*) FROM visitors) AS visits').bind(since).first();
   return { online: Math.max(1, Number(r?.online || 0)), visits: Number(r?.visits || 0) };
 }
+// Real pools only (no demo pools). Sponsored first.
 async function featuredPools(env, user) {
-  const s = await settings(env);
-  const href = user ? homeFor(user) : '/signup';
   const real = (await env.DB.prepare(`SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p
     WHERE p.ends_at>? AND p.status!='CANCELLED' AND p.is_private=0 ORDER BY CASE p.kind WHEN 'SPONSORED' THEN 0 WHEN 'PAID' THEN 1 ELSE 2 END, p.starts_at ASC LIMIT 6`).bind(nowIso()).all()).results;
   const colors = ['green', 'orange', 'gold', 'mustard'];
@@ -76,10 +76,9 @@ async function featuredPools(env, user) {
     name: p.name, sponsor: p.sponsor_name, players: p.players, endsAt: p.ends_at, prize: Math.round(p.prize_kobo / 100),
     vs: p.game_type === 'MATCH' && p.side_a ? [p.side_a.slice(0, 3).toUpperCase(), p.side_b.slice(0, 3).toUpperCase()] : null,
     tier: { NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo only' }[p.audience] || '', color: p.kind === 'SPONSORED' ? 'orange' : p.kind === 'PAID' ? 'gold' : colors[i % 4],
-    href: user ? `/pool/${p.id}` : '/signup'
+    kind: p.kind, href: user ? `/pool/${p.id}` : '/signup'
   }));
-  if (s.landing_demo_pools === '0') return mapped.length ? mapped : demoPools().map(p => ({ ...p, href }));
-  return [...mapped, ...demoPools().map(p => ({ ...p, href }))].slice(0, 6);
+  return mapped;
 }
 
 // ── site API: presence, merch, suggestions, logout, first admin ─────────────
@@ -208,7 +207,7 @@ async function route(req, env, url, path, user) {
       if (user) return go(req, homeFor(user));
       return html(authPage(path.slice(1), { ref: q.get('ref') || '', sponsor: q.get('type') === 'sponsor' }));
     case '/how-to-play': return html(howToPlayPage(user));
-    case '/merch': return html(merchPage(user));
+    case '/merch': return html(merchPage(user, (await env.DB.prepare('SELECT * FROM merch WHERE active=1 ORDER BY sort, created_at DESC LIMIT 60').all()).results));
     case '/faq': return html(faqPage(user));
     case '/about': return html(aboutPage(user));
     case '/offline': return html(offlinePage());
@@ -244,15 +243,16 @@ async function route(req, env, url, path, user) {
   if (resM) return go(req, `/pool/${resM[1]}`);
   if (LEGAL_PATHS.includes(path.slice(1))) return html(legalPage(path.slice(1), user));
 
-  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|me|settings|calc|notifications|suggest-pool|sponsor|admin)(\/|\.|$)/;
+  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|me|settings|calc|notifications|suggest-pool|invite|sponsor|admin)(\/|\.|$)/;
   if (!APP.test(path)) return html(errorPage(404, { user }), 404);
   if (!user) return path.startsWith('/admin') ? go(req, '/admin/login') : loginFirst(req, url);
 
   if (path.startsWith('/admin')) return isAdmin(user) ? adminRoute(req, env, url, path, user) : html(errorPage(404, { user }), 404);
   if (path.startsWith('/sponsor')) return user.role === 'SPONSOR' ? sponsorRoute(req, env, url, path, user) : go(req, homeFor(user));
 
+  if (path === '/invite') return inviteRoute(env, url, user);
   const b = await base(env, user);
-  const origin = url.origin;
+  const origin = env.PUBLIC_URL || url.origin;
   switch (path) {
     case '/dashboard': {
       if (user.role !== 'USER') return go(req, homeFor(user));
@@ -290,7 +290,9 @@ async function route(req, env, url, path, user) {
       const inv = (await env.DB.prepare(`SELECT s.id AS item_id, s.name, s.kind, s.multiplier, s.duration_seconds, s.audience, s.config, s.per_game_limit, COALESCE(i.quantity,0) AS quantity, s.price_kobo, s.min_rank
         FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE ((i.quantity>0) OR (s.kind='SKIN' AND s.price_kobo=0 AND s.active=1)) AND s.kind IN ('BOOSTER','SKIN') ORDER BY s.sort`).bind(user.id).all()).results
         .filter(i => i.quantity > 0 || !itemLock(i, user)).map(i => ({ ...i, equipped: i.kind === 'SKIN' && user.equipped_skin === i.item_id }));
-      return html(bagPage({ ...b, inv, nepo: b.tierKey === 'NEPO' }));
+      // Patterns this player owns (from any skin they have, free ones included) for "Your tap area".
+      const patterns = [...new Set(inv.filter(i => i.kind === 'SKIN').map(i => parseJson(i.config, {}).pattern).filter(k => PATTERNS[k]))];
+      return html(bagPage({ ...b, inv, nepo: b.tierKey === 'NEPO', paid: b.tierKey === 'MAPO' || b.tierKey === 'NEPO', prefs: parseJson(user.prefs, {}), patterns }));
     }
     case '/wallet': {
       const pg = pageNum(q);
@@ -307,8 +309,20 @@ async function route(req, env, url, path, user) {
     }
     case '/me': {
       if (user.role !== 'USER') return go(req, homeFor(user));
-      const badges = (await env.DB.prepare('SELECT kind,period,taps FROM badges WHERE user_id=? ORDER BY created_at DESC LIMIT 30').bind(user.id).all()).results;
-      return html(mePage({ ...b, rank: rankInfo(await allRanks(env), user), until: user.tier_until, badges }));
+      // Taps by day for the picked month, by month for the picked year (Lagos time).
+      const keys = periodKeys(), thisYear = keys.YEAR.slice(1);
+      const y = /^\d{4}$/.test(q.get('y') || '') ? q.get('y') : thisYear;
+      const m = /^(0[1-9]|1[0-2])$/.test(q.get('m') || '') ? q.get('m') : (y === thisYear ? keys.MONTH.slice(6) : '12');
+      const [badges, days, months, years, today, month] = await env.DB.batch([
+        env.DB.prepare('SELECT b.kind,b.period,b.taps,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind=\'X:\' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE \'X:%\' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40').bind(user.id),
+        env.DB.prepare('SELECT period,taps FROM tap_stats WHERE user_id=? AND period>=? AND period<=? ORDER BY period').bind(user.id, `D${y}-${m}-01`, `D${y}-${m}-31`),
+        env.DB.prepare('SELECT period,taps FROM tap_stats WHERE user_id=? AND period>=? AND period<=? ORDER BY period').bind(user.id, `M${y}-01`, `M${y}-12`),
+        env.DB.prepare("SELECT substr(period,2,4) AS y FROM tap_stats WHERE user_id=? AND period LIKE 'Y%' ORDER BY period DESC").bind(user.id),
+        env.DB.prepare('SELECT taps FROM tap_stats WHERE user_id=? AND period=?').bind(user.id, keys.DAY),
+        env.DB.prepare('SELECT taps FROM tap_stats WHERE user_id=? AND period=?').bind(user.id, keys.MONTH)]);
+      const yearList = [...new Set([thisYear, ...years.results.map(r => r.y)])].sort().reverse();
+      return html(mePage({ ...b, rank: rankInfo(await allRanks(env), user), until: user.tier_until, badges: badges.results,
+        taps: { y, m, years: yearList, days: days.results, months: months.results, today: Number(today.results[0]?.taps || 0), month: Number(month.results[0]?.taps || 0), lifetime: Number(user.lifetime_taps || 0) } }));
     }
     case '/settings': {
       if (user.role !== 'USER') return go(req, homeFor(user));
@@ -383,15 +397,25 @@ async function playRoute(req, env, url, user, b) {
   const found = (await Promise.all(ids.map(id => getPool(env, id, user)))).filter(Boolean);
   const joined = found.filter(p => p.joined).slice(0, pk.pools);
   if (!joined.length) return go(req, found[0] ? `/pool/${found[0].id}` : '/pools');
-  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, bg: x.bg }; });
+  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg }; });
   const prefs = parseJson(user.prefs, {});
   const [skinRow, items] = await env.DB.batch([
     env.DB.prepare("SELECT config FROM store_items WHERE id=? AND kind='SKIN'").bind(user.equipped_skin || 'skin-boy'),
     env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS quantity FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.kind='BOOSTER' AND s.active=1 ORDER BY s.sort").bind(user.id)]);
   const boosters = items.results.filter(x => x.quantity > 0 || itemLock(x, user)).map(x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, color: parseJson(x.config, {}).color || '#2E8BFF', lock: lock ? { why: lock.why, need: lock.need } : null }; });
   const voice = { enabled: !!(env.CALLS_APP_ID && env.CALLS_APP_TOKEN), topN: num(b.s, 'voice_top_n', 5), minRank: num(b.s, 'voice_min_rank', 56) };
-  const me = { name: user.username, tier: b.tierKey, fingers: pk.fingers, rate: pk.rate, sound: soundFor(user, prefs), muted: !!prefs.muted, vibrate: prefs.vibrate !== false, calc: !!pk.calc, rank: user.rank_level || 1 };
-  return html(playPage({ user, pools, boosters, skin: parseJson(skinRow.results[0]?.config, { bg: '#2E8BFF', art: 'boy' }), prefs, voice, serverNow: nowIso(), me, theme: b.theme, bgCss: b.bgCss }));
+  const me = { name: user.username, tier: b.tierKey, fingers: pk.fingers, rate: pk.rate, sound: soundFor(user, prefs), muted: !!prefs.muted, vibrate: prefs.vibrate !== false, calc: !!pk.calc, rank: user.rank_level || 1, emoji: user.emoji || null };
+  return html(playPage({ user, pools, boosters, skin: parseJson(skinRow.results[0]?.config, { bg: '#2E8BFF', pattern: 'waves' }), prefs, voice, serverNow: nowIso(), me, paid: b.tierKey !== 'LAPO', theme: b.theme, bgCss: b.bgCss }));
+}
+
+// ── invite page (players and sponsors) ─────────────────────────────────────
+async function inviteRoute(env, url, user) {
+  if (user.role !== 'USER' && user.role !== 'SPONSOR') return Response.redirect(new URL(homeFor(user), url).href, 302);
+  if (!user.referral_code) {   // older accounts and sponsors made before sponsors could invite
+    for (let i = 0; i < 5 && !user.referral_code; i++) { const c = randomCode(6); const r = await env.DB.prepare('UPDATE users SET referral_code=? WHERE id=? AND referral_code IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE referral_code=?)').bind(c, user.id, c).run(); if (r.meta.changes) user.referral_code = c; }
+  }
+  const [b, joined] = await Promise.all([base(env, user), env.DB.prepare("SELECT username, created_at FROM users WHERE referred_by=? AND status='ACTIVE' ORDER BY created_at DESC LIMIT 50").bind(user.id).all()]);
+  return html(invitePage({ ...b, origin: env.PUBLIC_URL || url.origin, joined: joined.results, referralBatch: num(b.s, 'referral_batch', 10) }));
 }
 
 // ── sponsor ─────────────────────────────────────────────────────────────────
@@ -444,7 +468,7 @@ async function adminRoute(req, env, url, path, user) {
       (SELECT COALESCE(SUM(balance_kobo),0) FROM wallets) wallets,
       (SELECT COALESCE(SUM(winnings_kobo),0) FROM wallets) winnings,
       (SELECT COUNT(*) FROM withdrawals WHERE status='PENDING') pendingW,
-      (SELECT COUNT(*) FROM promos WHERE approved=0) pendingAds,
+      (SELECT COUNT(*) FROM promos WHERE approved=0 AND reject_reason IS NULL) pendingAds,
       (SELECT COUNT(*) FROM slides WHERE status='REQUESTED') pendingSlides,
       (SELECT COUNT(*) FROM suggestions WHERE kind='POOL' AND status='NEW') poolIdeas,
       (SELECT COALESCE(SUM(n),0) FROM metrics WHERE key='taps' AND day=?) tapsToday`).bind(now, now, now, now, lagosDay()).first();
@@ -520,6 +544,16 @@ async function adminRoute(req, env, url, path, user) {
       rows.filter(w => q.get('all') === '1' || w.status === 'PENDING').map(w => [w.account_name, w.account_number, w.bank_code, w.bank_name, (w.amount_kobo / 100).toFixed(2), 'Tap Am winnings', w.status, w.username, w.created_at, w.id]));
     const s = await settings(env);
     return html(adminWithdrawals({ ...b, rows, paystack: paystackOn(env), auto: s.auto_payouts === '1' }));
+  }
+  if (path === '/admin/merch') {
+    const items = (await env.DB.prepare('SELECT m.*, (SELECT COUNT(*) FROM merch_interest i WHERE i.item=m.id) AS interested FROM merch m ORDER BY m.sort, m.created_at DESC LIMIT 200').all()).results;
+    return html(adminMerch({ ...b, items, edit: items.find(i => i.id === q.get('edit')) || null }));
+  }
+  if (path === '/admin/badges') {
+    const [list, given] = await env.DB.batch([
+      env.DB.prepare("SELECT sb.*, (SELECT COUNT(*) FROM badges b WHERE b.kind='X:' || sb.id) AS holders FROM special_badges sb ORDER BY sb.created_at DESC"),
+      env.DB.prepare("SELECT b.kind, b.created_at, u.username FROM badges b JOIN users u ON u.id=b.user_id WHERE b.kind LIKE 'X:%' ORDER BY b.created_at DESC LIMIT 60")]);
+    return html(adminBadges({ ...b, badges: list.results, given: given.results }));
   }
   if (path === '/admin/suggestions') {
     const rows = (await env.DB.prepare('SELECT * FROM suggestions ORDER BY CASE status WHEN \'NEW\' THEN 0 ELSE 1 END, created_at DESC LIMIT 200').all()).results;

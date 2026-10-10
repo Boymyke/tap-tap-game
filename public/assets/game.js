@@ -1,6 +1,6 @@
 /* Tap Am game client: taps (batched to the server), finger limits by tier, multi-pool, boosters
    (queued, with live tips), live board strip, combos and milestones, tap sounds, vibration,
-   connection state on the card, ads around the game (close after 5s) and the end screen.
+   connection state on the card, ads around the game (close after 5, 10 or 30s) and the end screen.
    The server is the source of truth: it caps tap speed per tier and keeps the official score. */
 (function () {
   'use strict';
@@ -47,7 +47,7 @@
     function banner(text, gold) { ban.textContent = text; ban.className = 'fx-banner' + (gold ? ' gold' : ''); ban.animate([{ transform: 'translate(-50%,-50%) scale(.3) rotate(-12deg)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.15) rotate(-4deg)', opacity: 1, offset: 0.25 }, { transform: 'translate(-50%,-50%) scale(1) rotate(-4deg)', opacity: 1, offset: 0.75 }, { transform: 'translate(-50%,-70%) scale(.9) rotate(-4deg)', opacity: 0 }], { duration: gold ? 1400 : 900, easing: 'linear' }); }
     function kick(cls) { pad.classList.remove(cls); void pad.offsetWidth; pad.classList.add(cls); }
     function centre() { var r = pad.getBoundingClientRect(); return [r.width / 2, r.height / 2.4]; }
-    function party(text) { var c = centre(); banner(text, true); kick('flash'); kick('shake'); buzz([40, 50, 40, 50, 80]); S.fanfare(); if (!reduce) { confetti(c[0], c[1], 40); for (var i = 0; i < 6; i++) shootPlus(c[0], c[1], ['🔥', '+1', '★', 'OYA!'][i % 4], true); } }
+    function party(text) { var c = centre(); banner(text, true); kick('flash'); kick('shake'); buzz([40, 50, 40, 50, 80]); S.fanfare(); if (!reduce) { confetti(c[0], c[1], 40); for (var i = 0; i < 6; i++) shootPlus(c[0], c[1], ['+1', 'OYA!', 'TAP!', '+1'][i % 4], true); } }
 
     /* ── state helpers ── */
     function stateOf(p) { var t = now(); return p.ended ? 'ended' : t < p.starts ? 'soon' : t < p.ends ? 'live' : 'ended'; }
@@ -60,7 +60,7 @@
       clearTimeout(netTimer);
       if (down) { netDown = true; netEl.hidden = false; netEl.classList.remove('ok'); netEl.querySelector('.ring').hidden = false; netT.textContent = text || 'Connection lost — taps paused'; pad.classList.add('offline'); return; }
       if (!netDown) return;
-      netDown = false; pad.classList.remove('offline'); netEl.classList.add('ok'); netEl.querySelector('.ring').hidden = true; netT.textContent = 'Back online ✓ Keep tapping!';
+      netDown = false; pad.classList.remove('offline'); netEl.classList.add('ok'); netEl.querySelector('.ring').hidden = true; netT.textContent = 'Back online. Keep tapping!';
       netTimer = setTimeout(function () { netEl.hidden = true; }, 1600);
     }
     window.addEventListener('offline', function () { setNet(true); });
@@ -148,23 +148,38 @@
     function paintChips() {
       document.querySelectorAll('[data-pool]').forEach(function (b) { var p = byId[b.getAttribute('data-pool')], st = stateOf(p); b.classList.toggle('ended', st === 'ended'); b.querySelector('[data-chip-rank]').textContent = st === 'soon' ? 'Starts in ' + TA.fmtFull(p.starts - now()) : st === 'ended' ? 'Ended' + (p.rank ? ' · #' + p.rank : '') : (p.rank ? '#' + p.rank + ' · ' + fmtN(p.score) : 'Live'); });
     }
-    // Live board strip: leader, the player just above you, and you.
-    var lastStripRank = 0;
+    // Live board: a scrollable list (5 rows in view) with the top players, then the ones around you.
+    // It scrolls back to the top by itself, unless you scrolled it in the last few seconds.
+    var lastStripRank = 0, listTouched = 0, stripList = $('lb-list');
+    ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(function (ev) { stripList.addEventListener(ev, function () { listTouched = Date.now(); }, { passive: true }); });
+    function nameCell(el, r) {
+      el.textContent = r.me ? 'You' : r.n;
+      if (r.e) { var em = document.createElement('span'); em.className = 'nemoji'; em.setAttribute('aria-hidden', 'true'); em.textContent = r.e; el.appendChild(em); }
+    }
+    function stripRows(p) {
+      var rows = (p.top || []).slice(), seen = {};
+      rows.forEach(function (r) { seen[r.r] = 1; });
+      var extra = (p.near || []).filter(function (r) { return !seen[r.r]; });
+      if (p.rank && !seen[p.rank] && !extra.some(function (r) { return r.me; })) extra.push({ r: p.rank, n: 'You', s: displayScore(), me: true });
+      extra.sort(function (a, b) { return a.r - b.r; });
+      if (extra.length && rows.length && extra[0].r > rows[rows.length - 1].r + 1) rows.push({ gap: true });
+      return rows.concat(extra);
+    }
     function paintStrip() {
-      var p = focus, list = $('lb-list'), meEl = $('lb-me');
+      var p = focus, list = stripList, meEl = $('lb-me');
       meEl.textContent = p.rank ? '#' + p.rank : '#—';
-      var rows = [], top = p.top || [];
-      if (!p.rank || p.rank <= 3) rows = top.slice(0, 3);
-      else { rows.push(top[0]); var above = top.filter(function (r) { return r.r === p.rank - 1; })[0] || (p.near || []).filter(function (r) { return r.r === p.rank - 1; })[0]; if (above) rows.push(above); rows.push({ r: p.rank, n: 'You', s: displayScore(), me: true }); }
-      rows = rows.filter(Boolean);
+      var rows = stripRows(p);
       list.textContent = '';
-      if (!rows.length) { var e = document.createElement('div'); e.className = 'lb-row'; e.innerHTML = '<span class="n">Nobody don tap yet — be the first!</span>'; list.appendChild(e); }
+      if (!rows.length) { var e = document.createElement('div'); e.className = 'lb-row'; e.innerHTML = '<span class="n" style="padding-left:6px">Nobody don tap yet. Be the first!</span>'; list.appendChild(e); }
       rows.forEach(function (r) {
-        var d = document.createElement('div'); d.className = 'lb-row' + (r.me ? ' me' : '') + (r.me && lastStripRank && p.rank < lastStripRank ? ' up' : '');
+        var d = document.createElement('div');
+        if (r.gap) { d.className = 'lb-row gap'; d.textContent = '• • •'; list.appendChild(d); return; }
+        d.className = 'lb-row' + (r.me ? ' me' : '') + (r.me && lastStripRank && p.rank < lastStripRank ? ' up' : '');
         d.innerHTML = '<span class="r"></span><span class="n"></span><span class="s"></span>';
-        d.children[0].textContent = '#' + r.r; d.children[1].textContent = r.me ? 'You' : r.n; d.children[2].textContent = fmtN(r.me ? displayScore() : r.s);
+        d.children[0].textContent = '#' + r.r; nameCell(d.children[1], r); d.children[2].textContent = fmtN(r.me ? displayScore() : r.s);
         list.appendChild(d);
       });
+      if (Date.now() - listTouched > 6000 && list.scrollTop) list.scrollTop = 0;
       if (p.rank) lastStripRank = p.rank;
     }
     var lastState = null;
@@ -197,12 +212,12 @@
       $('g-name').textContent = p.name; endEl.hidden = true; paintMeta(); paintScore(); tick(); loadBoard(); paintStrip();
     }
     $('chips').addEventListener('click', function (e) { var b = e.target.closest('[data-pool]'); if (b) setFocus(byId[b.getAttribute('data-pool')]); });
-    function paintMeta() { var p = focus; var t = (p.prize ? 'Prize ' + TA.naira(p.prize) : 'For glory') + (p.sponsor ? ' · by ' + p.sponsor : '') + (p.side ? ' · Team ' + p.side : ''); $('g-meta').textContent = t; $('bs-meta').textContent = p.name + ' · ' + t; }
+    function paintMeta() { var p = focus; var t = (p.prize ? 'Prize pool ' + TA.naira(p.prize) : 'Prize: Akara') + (p.sponsor ? ' · by ' + p.sponsor : '') + (p.side ? ' · Team ' + p.side : ''); $('g-meta').textContent = t; }
 
     /* ── leaderboard ── */
     function renderBoard(list, el) {
       el.textContent = '';
-      list.forEach(function (r) { var li = document.createElement('li'); if (r.me) li.className = 'me'; li.innerHTML = '<span class="r"></span><span class="n"></span><span class="s"></span>'; li.children[0].textContent = '#' + r.r; li.children[1].textContent = (r.me ? 'You' : r.n) + (r.side ? ' · ' + r.side : ''); li.children[2].textContent = fmtN(r.s); el.appendChild(li); });
+      list.forEach(function (r) { var li = document.createElement('li'); if (r.me) li.className = 'me'; li.innerHTML = '<span class="r"></span><span class="n"></span><span class="s"></span>'; li.children[0].textContent = '#' + r.r; nameCell(li.children[1], r); if (r.side) li.children[1].appendChild(document.createTextNode(' · ' + r.side)); li.children[2].textContent = fmtN(r.s); el.appendChild(li); });
       if (!list.length) { var li = document.createElement('li'); li.innerHTML = '<span class="n" style="font-weight:600">Nobody don tap yet. Be the first!</span>'; el.appendChild(li); }
     }
     var boardBusy = false;
@@ -215,7 +230,7 @@
         if (p !== focus) return;
         if (j.me) { if (!sending && !pending) p.score = j.me.score; p.rank = j.me.rank; p.mult = j.me.mult || 1; p.multUntil = j.me.multUntil || 0; p.queued = j.me.queued || 0; p.used = j.me.used || {}; }
         p.total = j.total; p.top = j.top || []; p.near = j.near || [];
-        renderBoard(p.top.concat(p.near || []), $('board-side')); renderBoard(p.top.concat(p.near || []), $('board-sheet-list'));
+        renderBoard(stripRows(p).filter(function (r) { return !r.gap; }), $('board-side'));
         var teams = $('teams');
         if (p.sideA && j.teams) { var a = j.teams[p.sideA] || 0, b = j.teams[p.sideB] || 0, sum = a + b || 1; teams.hidden = false; teams.children[0].style.flexGrow = Math.max(0.15, a / sum); teams.children[1].style.flexGrow = Math.max(0.15, b / sum); teams.children[0].textContent = p.sideA + ' ' + fmtN(a); teams.children[1].textContent = fmtN(b) + ' ' + p.sideB; }
         checkPosition(p); paintScore(); paintChips(); paintStrip();
@@ -229,7 +244,6 @@
     function closeSheets() { document.querySelectorAll('.gsheet').forEach(function (s) { s.hidden = true; }); pad.focus({ preventScroll: true }); }
     document.querySelectorAll('.gsheet').forEach(function (s) { s.addEventListener('click', function (e) { if (e.target === s || e.target.closest('[data-close]')) closeSheets(); }); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeSheets(); } });
-    document.querySelectorAll('[data-open-board]').forEach(function (b) { b.addEventListener('click', function () { loadBoard(); openSheet('board-sheet'); }); });
 
     /* ── boosters (button bottom left) ── */
     var boostBtn = $('boost-btn');
@@ -250,7 +264,7 @@
         btn.innerHTML = '<span class="m"></span><span class="t"></span><span class="q"></span>';
         btn.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
         btn.querySelector('.t').appendChild(document.createTextNode(b.name));
-        var sm = document.createElement('small'); sm.textContent = b.lock ? '🔒 ' + b.lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
+        var sm = document.createElement('small'); sm.textContent = b.lock ? 'Locked: ' + b.lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
         btn.querySelector('.q').textContent = b.lock ? (b.lock.need === 'RANK' ? 'Rank up' : 'Upgrade') : '×' + b.qty;
         if (!b.lock && (b.qty < 1 || limitHit)) btn.disabled = true;
         btn.addEventListener('click', function () { if (b.lock) { closeSheets(); TA.upgrade(b.lock.need || 'MAPO', b.name); return; } useBooster(b); });
@@ -267,42 +281,59 @@
         if (!j._ok) { TA.fail(j); return; }
         p.mult = j.mult; p.multUntil = j.multUntil; p.queued = j.queued || 0; b.qty--; p.used[b.id] = (p.used[b.id] || 0) + 1;
         if (j.mult === b.mult && !j.queued) party(String(b.mult).replace(/\.0$/, '') + '× BOOST!'); else TA.toast(j.message || 'Booster queued');
-        paintBoostBtn(); clearTips();
+        paintBoostBtn(); if (!fromTip) clearTips();
       });
     }
 
-    /* ── booster tips (Mapo + Nepo): "use this to reach the top 10" ── */
-    var tipsEl = $('tips'), lastTipAt = 0, tipOpen = null;
-    function clearTips() { tipsEl.textContent = ''; tipOpen = null; }
-    function suggest() {
-      if (!ME.calc || stateOf(focus) !== 'live' || !focus.boosters || multOf(focus) > 1 || focus.queued) return;
-      if (tipOpen || Date.now() - lastTipAt < 20000) return;
-      var t = performance.now(); recent = recent.filter(function (x) { return t - x < 5000; });
-      var rate = Math.max(3, recent.length / 5), my = displayScore(), top = focus.top || [];
-      var targets = [[1, 'reach #1'], [3, 'enter the top 3'], [10, 'enter the top 10']].filter(function (x) { return !focus.rank || focus.rank > x[0]; });
-      for (var i = 0; i < targets.length; i++) {
-        var row = top[targets[i][0] - 1]; if (!row || row.me) continue;
-        var gap = row.s - my + 1; if (gap <= 0) continue;
-        var best = null;
-        boosters.forEach(function (b) { if (!usable(b)) return; var extra = rate * b.dur * (b.mult - 1); if (extra >= gap && (!best || b.mult < best.mult)) best = b; });
-        if (best) { showTip(best, targets[i][1]); return; }
-      }
+    /* ── booster tips (Mapo + Nepo): the calculator in the game. Up to 3 cards slide in from the left now
+       and then: "Use Turbo 2× → you'll reach the top 2". Tap a card to use that booster; that card leaves. ── */
+    var tipsEl = $('tips'), lastTipAt = 0, MAX_TIPS = 3;
+    function tipCards() { return Array.prototype.slice.call(tipsEl.querySelectorAll('.tipcard:not(.out)')); }
+    function dropTip(c) { if (!c || c.classList.contains('out')) return; c.classList.add('out'); setTimeout(function () { c.remove(); }, 450); }
+    function clearTips() { tipCards().forEach(dropTip); }
+    function rateNow() { var t = performance.now(); recent = recent.filter(function (x) { return t - x < 5000; }); return Math.max(3, recent.length / 5); }
+    // Where would this booster take me? Best rank I'd pass, using my current speed.
+    function reachWith(b, rate, my, top) {
+      var extra = rate * b.dur * (b.mult - 1), best = 0;
+      for (var i = 0; i < top.length; i++) { var row = top[i]; if (row.me) continue; if (my + extra > row.s && (!focus.rank || row.r < focus.rank)) { best = row.r; break; } }
+      return best;
     }
-    function showTip(b, goal) {
-      lastTipAt = Date.now(); clearTips();
-      var c = document.createElement('div'); c.className = 'tipcard'; c.setAttribute('role', 'status');
-      c.innerHTML = '<span>⚡</span><span class="tx"></span><button type="button" class="btn btn--green">Use</button><button type="button" class="x" aria-label="Close tip">×</button>';
-      c.querySelector('.tx').textContent = 'Use ' + b.name + ' to ' + goal + '!';
-      c.querySelector('.btn').addEventListener('click', function () { useBooster(b, true); });
-      c.querySelector('.x').addEventListener('click', clearTips);
-      tipsEl.appendChild(c); tipOpen = c;
-      setTimeout(function () { if (tipOpen === c) clearTips(); }, 9000);
+    function suggest() {
+      if (!ME.calc || stateOf(focus) !== 'live' || !focus.boosters || document.hidden) return;
+      var open = tipCards();
+      if (open.length >= MAX_TIPS || Date.now() - lastTipAt < (open.length ? 9000 : 25000)) return;
+      var rate = rateNow(), my = displayScore(), top = focus.top || [];
+      if (!top.length || focus.rank === 1) return;
+      var shown = {}; open.forEach(function (c) { shown[c.getAttribute('data-b')] = 1; shown['r' + c.getAttribute('data-r')] = 1; });
+      var picks = [];
+      boosters.forEach(function (b) { if (!usable(b) || shown[b.id]) return; var r = reachWith(b, rate, my, top); if (r && !shown['r' + r]) picks.push({ b: b, r: r }); });
+      if (!picks.length) return;
+      picks.sort(function (a, b) { return a.r - b.r || a.b.mult - b.b.mult; });
+      var pick = picks[0];
+      // prefer the cheapest booster that still reaches a new rank
+      for (var i = 0; i < picks.length; i++) if (picks[i].r === pick.r && picks[i].b.mult < pick.b.mult) pick = picks[i];
+      showTip(pick.b, pick.r);
+    }
+    function showTip(b, rank) {
+      lastTipAt = Date.now();
+      var c = document.createElement('button'); c.type = 'button'; c.className = 'tipcard'; c.setAttribute('data-b', b.id); c.setAttribute('data-r', String(rank));
+      c.style.setProperty('--c', b.color || '#2E8BFF');
+      c.innerHTML = '<span class="m"></span><span class="tx"><b></b><span></span></span><span class="go">Use</span>';
+      c.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
+      c.querySelector('.tx b').textContent = b.name;
+      c.querySelector('.tx span').textContent = rank === 1 ? 'You go reach #1' : 'You go reach the top ' + rank;
+      c.setAttribute('aria-label', 'Use ' + b.name + '. ' + c.querySelector('.tx span').textContent);
+      c.addEventListener('click', function () { dropTip(c); useBooster(b, true); });
+      tipsEl.appendChild(c);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { c.classList.add('in'); }); });
+      setTimeout(function () { dropTip(c); }, 14000);
     }
     setInterval(suggest, 2000);
 
-    /* ── ads: when you open the game, in the lobby, and before results. Close after 5s. ── */
-    var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoWait = $('promo-wait'), promoAfter = null, promoTimer = 0;
-    function closePromo() { if (promoEl.hidden || promoX.disabled) return; promoEl.hidden = true; promoBody.textContent = ''; clearInterval(promoTimer); var f = promoAfter; promoAfter = null; if (f) f(); }
+    /* ── ads: when you open the game, in the lobby, and before results. The sponsor picks 5, 10 or 30 seconds;
+       a line fills left to right, then the ad can close (and closes by itself a moment later). ── */
+    var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoWait = $('promo-wait'), promoLine = $('promo-line'), promoAfter = null, promoTimer = 0, promoAuto = 0;
+    function closePromo() { if (promoEl.hidden || promoX.disabled) return; promoEl.hidden = true; promoBody.textContent = ''; clearInterval(promoTimer); clearTimeout(promoAuto); var f = promoAfter; promoAfter = null; if (f) f(); }
     promoX.addEventListener('click', closePromo);
     function showPromo(at, then) {
       var key = 'ta-promo-' + at + '-' + focus.id;
@@ -314,7 +345,9 @@
         var media;
         if (p.kind === 'YOUTUBE' && /^[A-Za-z0-9_-]{11}$/.test(p.video_id || '')) {
           media = document.createElement('div'); media.className = 'promo-media';
-          var f = document.createElement('iframe'); f.src = 'https://www.youtube-nocookie.com/embed/' + p.video_id + '?autoplay=1&mute=1&playsinline=1&rel=0'; f.title = p.title || 'Sponsored video'; f.allow = 'autoplay; encrypted-media; picture-in-picture'; f.setAttribute('allowfullscreen', ''); f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+          var f = document.createElement('iframe'); f.src = 'https://www.youtube-nocookie.com/embed/' + p.video_id + '?autoplay=1&mute=1&playsinline=1&rel=0&loop=1&playlist=' + p.video_id + '&enablejsapi=1&origin=' + encodeURIComponent(location.origin); f.title = p.title || 'Sponsored video'; f.allow = 'autoplay; encrypted-media; picture-in-picture'; f.setAttribute('allowfullscreen', ''); f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+          // Muted autoplay works on phones; the nudge below covers browsers that wait for the player to load.
+          f.addEventListener('load', function () { try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), 'https://www.youtube-nocookie.com'); } catch (e) {} });
           media.appendChild(f);
         } else if (p.image_url) {
           media = document.createElement(p.target_url ? 'a' : 'div'); media.className = 'promo-media';
@@ -328,11 +361,17 @@
         if (p.target_url) { var a = document.createElement('a'); a.className = 'btn btn--green btn--sm'; a.href = '/go/' + encodeURIComponent(p.id); a.target = '_blank'; a.rel = 'noopener sponsored'; a.textContent = 'Check am out'; row.appendChild(a); }
         promoBody.appendChild(row);
         promoAfter = then || null; promoEl.hidden = false;
-        // close button unlocks after 5 seconds
-        var left = 5; promoX.disabled = true; promoWait.textContent = String(left); var circ = promoX.querySelector('circle');
-        circ.style.transition = 'none'; circ.style.strokeDashoffset = '0'; void circ.getBoundingClientRect(); circ.style.transition = 'stroke-dashoffset 5s linear'; circ.style.strokeDashoffset = '126';
-        clearInterval(promoTimer);
-        promoTimer = setInterval(function () { left--; if (left > 0) { promoWait.textContent = String(left); return; } clearInterval(promoTimer); promoX.disabled = false; promoWait.textContent = '×'; promoX.focus(); }, 1000);
+        // close button unlocks after the ad's length (5, 10 or 30 seconds)
+        var secs = [5, 10, 30].indexOf(Number(p.duration_seconds)) > -1 ? Number(p.duration_seconds) : 5, left = secs;
+        promoX.disabled = true; promoWait.textContent = 'Wait ' + left + 's';
+        promoLine.getAnimations && promoLine.getAnimations().forEach(function (a) { a.cancel(); });
+        if (promoLine.animate) promoLine.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: secs * 1000, easing: 'linear', fill: 'forwards' });
+        clearInterval(promoTimer); clearTimeout(promoAuto);
+        promoTimer = setInterval(function () {
+          left--; if (left > 0) { promoWait.textContent = 'Wait ' + left + 's'; return; }
+          clearInterval(promoTimer); promoX.disabled = false; promoWait.textContent = 'Close'; promoX.focus();
+          promoAuto = setTimeout(closePromo, p.lead_capture && !p.lead_done ? 15000 : 3000);
+        }, 1000);
       });
     }
     function leadForm(p) {
@@ -344,7 +383,7 @@
         var btn = f.querySelector('button'); btn.classList.add('is-loading');
         TA.api('/api/leads', { promo: p.id, name: f.name.value, email: f.email.value, phone: f.phone.value, consent: f.consent.checked }).then(function (j) {
           btn.classList.remove('is-loading');
-          if (j._ok) { f.innerHTML = '<b>✓ ' + (j.message || 'Sent') + '</b>'; } else err.textContent = j.error || 'Something no work.';
+          if (j._ok) { f.textContent = ''; var b = document.createElement('b'); b.textContent = j.message || 'Sent'; f.appendChild(b); clearTimeout(promoAuto); } else err.textContent = j.error || 'Something no work.';
         });
       });
       return f;

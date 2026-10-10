@@ -1,6 +1,9 @@
 // Info pages (how to play, rules hub, merch, FAQ, about), offline page and error pages.
 import { themeShell, esc, topBar, menuSheet, FERRN_URL, LOGO_IMG } from './theme.js';
-import { STICKERS, HAND_MARK, rankAvatar, badgeSvg } from './avatar.js';
+import { STICKERS, rankAvatar, badgeSvg } from './avatar.js';
+import { naira } from './kit.js';
+// The new logo mark (the finger), for pages that used the old hand drawing.
+const MARK = '<img src="/assets/brand/mark.svg" alt="" width="120" height="138" style="display:block;width:100%;height:auto">';
 
 export function docLayout({ user, title, h1, intro, tabs = null, current = '', cards, foot = '', script = '', css = '', description }) {
   const tabNav = tabs ? `<nav class="doc-tabs" aria-label="${esc(h1)} sections">${tabs.map(([href, label]) => `<a href="${href}" ${href === current ? 'aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>` : '';
@@ -15,7 +18,7 @@ ${menuSheet(user)}`;
   return themeShell({ title, body, script, css, description });
 }
 
-const ARTS = [() => STICKERS.sparkle(), () => STICKERS.bolt(), () => STICKERS.coin(), () => STICKERS.fire(), () => STICKERS.sparkle('#FF4FA3')];
+const ARTS = [() => STICKERS.bolt(), () => STICKERS.coin(), () => STICKERS.fire()];
 const card = (inner, i = 0) => `<section class="doc-card"><div class="doc-art" aria-hidden="true">${ARTS[i % ARTS.length]()}</div>${inner}</section>`;
 export const LEGAL_TABS = [['/rules', 'Game rules'], ['/fair-play', 'Fair play'], ['/prizes', 'Prizes & withdrawals'], ['/account-rules', 'Suspensions'], ['/terms', 'Terms'], ['/privacy', 'Privacy'], ['/disclaimer', 'Disclaimer']];
 
@@ -56,15 +59,26 @@ const MERCH = [
   ['grip', 'Tap finger phone grip', 'Hold your phone steady while you tap.', '#21D4C8'],
   ['stickers', 'Sticker pack', 'The hand, the logo and the rank characters.', '#FF8A2A']
 ];
-export function merchPage(user) {
-  const items = MERCH.map(([id, name, desc, color], i) => `<article class="doc-card merch-item">
-  <div class="merch-art" style="background:${color}" aria-hidden="true">${i === 3 ? rankAvatar(56, { size: 92 }) : i === 5 ? `<div style="width:90px">${HAND_MARK}</div>` : `<span class="code">${esc(name.split(' ').slice(0, 2).join(' '))}</span>`}</div>
+// Items the super admin uploads (Admin, Merch). Until there are any, the starter ideas show.
+export function merchPage(user, dbItems = []) {
+  const HEXC = /^#[0-9a-fA-F]{6}$/;
+  const fromDb = dbItems.map(m => `<article class="doc-card merch-item">
+  ${m.image_url ? `<img class="merch-photo" src="${esc(m.image_url)}" alt="${esc(m.name)}" loading="lazy">` : `<div class="merch-art" style="background:${HEXC.test(m.color || '') ? m.color : '#2E8BFF'}" aria-hidden="true"><span class="code">${esc(m.name.split(' ').slice(0, 2).join(' '))}</span></div>`}
+  <h2>${esc(m.name)}</h2>${m.description ? `<p>${esc(m.description)}</p>` : ''}
+  <div class="row" style="justify-content:flex-start;gap:8px">${m.price_kobo ? `<b class="merch-price">${esc(naira(m.price_kobo))}</b>` : ''}<span class="doc-updated" style="margin:0">${m.status === 'BUY' ? 'On sale' : m.status === 'SOLD_OUT' ? 'Sold out' : 'Coming soon'}</span></div>
+  ${m.status === 'BUY' && /^https:\/\//.test(m.link || '') ? `<a class="btn btn--green" href="${esc(m.link)}" target="_blank" rel="noopener">Buy now</a>` : m.status === 'SOLD_OUT' ? '<button type="button" class="btn btn--soft" disabled>Sold out</button>' : `<button type="button" class="btn btn--green merch-notify" data-item="${esc(m.id)}">Notify me</button>`}
+</article>`);
+  const starter = MERCH.map(([id, name, desc, color], i) => `<article class="doc-card merch-item">
+  <div class="merch-art" style="background:${color}" aria-hidden="true">${i === 3 ? rankAvatar(56, { size: 92 }) : i === 5 ? `<div style="width:80px">${MARK}</div>` : `<span class="code">${esc(name.split(' ').slice(0, 2).join(' '))}</span>`}</div>
   <h2>${esc(name)}</h2><p>${esc(desc)}</p><span class="doc-updated" style="align-self:flex-start;margin:0">Coming soon</span>
   <button type="button" class="btn btn--green merch-notify" data-item="${id}">Notify me</button>
-</article>`).join('');
+</article>`);
+  const items = (fromDb.length ? fromDb : starter).join('');
   const css = `.merch-grid{display:grid;gap:16px;padding:0 4px 6px}
 .merch-item{display:flex;flex-direction:column;gap:8px;margin:0}
-.merch-art{height:130px;border-radius:18px;display:grid;place-items:center;text-align:center;padding:10px;border:3px solid #fff;box-shadow:0 5px 0 rgba(0,0,0,.2)}
+.merch-photo{display:block;width:100%;height:220px;object-fit:cover;border-radius:var(--r-sm);background:var(--cloud)}
+.merch-price{font:900 22px var(--display)}
+.merch-art{height:130px;border-radius:var(--r-sm);display:grid;place-items:center;text-align:center;padding:10px;border:3px solid #fff;box-shadow:0 5px 0 rgba(0,0,0,.2)}
 .merch-art .code{font-size:30px}
 .merch-item h2{margin:6px 0 0;font:900 22px/1.05 var(--display)}
 .merch-item p{margin:0;font-size:15px;line-height:1.5}
@@ -126,11 +140,11 @@ export function aboutPage(user) {
 // ── Offline page (cached by the service worker) ──────────────────────────────
 export function offlinePage() {
   const css = `.center{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:20px}
-.err{width:100%;max-width:420px;padding:28px 22px 24px;text-align:center;border-radius:28px;background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}
+.err{width:100%;max-width:420px;padding:28px 22px 24px;text-align:center;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}
 .err .art{width:120px;margin:-70px auto 6px}
 .err h1{margin:0 0 8px;font:900 34px/1 var(--display)}
 .err p{margin:0 0 18px;font-size:16px;line-height:1.5;color:var(--ink-soft)}`;
-  const body = `<main class="center"><section class="err"><div class="art">${HAND_MARK}</div>
+  const body = `<main class="center"><section class="err"><div class="art">${MARK}</div>
 <h1>Your internet don cut</h1><p>Check your data or Wi-Fi. This page go try again by itself once you come back online.</p>
 <button type="button" class="btn btn--green btn--block" id="retry">Try again</button></section></main>`;
   const script = `document.getElementById('retry').addEventListener('click',function(){location.reload()});window.addEventListener('online',function(){location.reload()});`;
@@ -145,7 +159,7 @@ export function errorPage(status, { user = null, ref = '' } = {}) {
     500: ['500', 'Wahala dey o', 'Something break for our side. No be your fault. Try again in a moment.']
   }[status] || ['500', 'Wahala dey o', 'Something break for our side. Try again in a moment.'];
   const css = `.center{min-height:calc(100vh - 70px);min-height:calc(100dvh - 70px);display:grid;place-items:center;padding:30px 18px}
-.err{position:relative;width:100%;max-width:440px;padding:30px 22px 24px;text-align:center;border-radius:28px;background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}
+.err{position:relative;width:100%;max-width:440px;padding:30px 22px 24px;text-align:center;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}
 .err .num{margin:-70px auto 8px;display:inline-block;padding:6px 22px;border-radius:22px;background:var(--pink);color:#fff;border:4px solid #fff;box-shadow:0 6px 0 var(--pink-d);font:900 italic 64px/1 var(--display);text-shadow:var(--ts-big);transform:rotate(-4deg)}
 .err h1{margin:0 0 8px;font:900 32px/1 var(--display)}
 .err p{margin:0 0 18px;font-size:16px;line-height:1.5;color:var(--ink-soft)}

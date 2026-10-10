@@ -20,7 +20,7 @@ export async function awardBadges(env) {
     const top = await env.DB.prepare("SELECT t.user_id, t.taps FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE' ORDER BY t.taps DESC LIMIT 1").bind(period).first();
     if (!top || top.taps <= 0) continue;
     const r = await env.DB.prepare('INSERT OR IGNORE INTO badges(id,user_id,kind,period,taps) VALUES(?,?,?,?,?)').bind(uid(), top.user_id, kind, period, top.taps).run();
-    if (r.meta.changes) { given++; await notify(env, top.user_id, `🏅 You are Tapper of the ${LABEL[kind]}! ${top.taps.toLocaleString('en-NG')} taps. The badge is on your profile.`, '/me'); }
+    if (r.meta.changes) { given++; await notify(env, top.user_id, `You are Tapper of the ${LABEL[kind]}! ${top.taps.toLocaleString('en-NG')} taps. The badge is on your profile.`, '/me'); }
   }
   return given;
 }

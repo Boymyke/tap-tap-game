@@ -1,10 +1,10 @@
 /* Tap Am service worker: makes the app installable, loads fast, and shows a friendly
    offline page when the internet is down. API calls are never cached. */
-const VERSION = 'tapam-v6';
+const VERSION = 'tapam-v7';
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const FONTS = 'tapam-fonts';
-const PRECACHE = ['/offline', '/assets/app.js?v=6', '/assets/game.js?v=6', '/assets/sounds.js?v=6', '/assets/logo-tapam.svg', '/favicon.svg', '/assets/brand/icon.svg', '/assets/brand/wordmark.svg',
+const PRECACHE = ['/offline', '/assets/app.js?v=7', '/assets/game.js?v=7', '/assets/sounds.js?v=7', '/favicon.svg', '/assets/brand/logo-white.svg', '/assets/brand/logo.svg', '/assets/brand/mark.svg', '/assets/brand/mark-white.svg', '/assets/landing/poster-m.webp',
   '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/manifest.webmanifest'];
 const PUBLIC_PAGES = ['/', '/how-to-play', '/rules', '/fair-play', '/prizes', '/account-rules', '/consent', '/merch', '/faq', '/about', '/terms', '/privacy', '/disclaimer', '/login', '/signup', '/plans', '/ranks'];
 
@@ -42,6 +42,9 @@ self.addEventListener('fetch', event => {
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api/')) return;            // always live
   if (url.pathname === '/sw.js') return;
+  // Landing videos stream with range requests: let the browser and CDN handle them.
+  if (url.pathname.startsWith('/assets/landing/') && /\.(webm|mp4)$/.test(url.pathname)) return;
+  if (req.headers.has('range')) return;
 
   // Static assets: cache first.
   if (url.pathname.startsWith('/assets/') || url.pathname === '/manifest.webmanifest') {

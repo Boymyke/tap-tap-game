@@ -1,27 +1,37 @@
-// Landing page: exactly one screen tall, no scrolling.
-// Portrait: bar → tap card → buttons → rotating sponsored pools.
-// Landscape / desktop: info + pools on the left, tap card on the right.
+// Landing page: exactly one screen tall, no scrolling, with a short looping video behind it.
+// Portrait: bar, tap card, buttons, rotating pools (only when real pools exist).
+// Landscape / desktop: headline + pools on the left, tap card on the right.
 import { themeShell, esc, TAGLINE, ICONS, menuSheet, LOGO_IMG } from './theme.js';
-import { HAND_MARK, STICKERS } from './avatar.js';
+import { patternBg, PATTERN_KEYS } from './patterns.js';
 
 // Every refresh picks a page theme and a tap-card colour.
 const LANDING_THEMES = ['grape', 'ocean', 'bubblegum', 'sunset', 'lagoon', 'jungle'];
 const PAD_COLORS = [['#2E8BFF', '#1A5FC2'], ['#FF4FA3', '#C42A78'], ['#FF8A2A', '#C95F10'], ['#21D4C8', '#0F9A91'], ['#9161FF', '#5E30D6'], ['#00C957', '#008F3E']];
-export const pickLanding = () => ({ theme: LANDING_THEMES[Math.floor(Math.random() * LANDING_THEMES.length)], pad: PAD_COLORS[Math.floor(Math.random() * PAD_COLORS.length)] });
+const rand = a => a[Math.floor(Math.random() * a.length)];
+export const pickLanding = () => ({ theme: rand(LANDING_THEMES), pad: rand(PAD_COLORS), pattern: rand(PATTERN_KEYS.filter(k => !['cow', 'zebra', 'leopard'].includes(k))) });
 
 const CSS = `
 html,body{height:100%;overflow:hidden}
+html{background:#0d0626}
+body.is-landing::before{display:none}
+/* background video (poster first, video after the page has loaded) */
+.lp-bg{position:fixed;inset:0;z-index:-1;overflow:hidden;background:#0d0626 url('/assets/landing/poster-d.webp') center/cover no-repeat}
+.lp-bg video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s}
+.lp-bg video.on{opacity:1}
+.lp-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,6,38,.55) 0%,rgba(13,6,38,.25) 35%,rgba(13,6,38,.7) 100%)}
+@media (orientation:portrait) and (max-width:899px){.lp-bg{background-image:url('/assets/landing/poster-m.webp')}}
+@media (min-width:900px){.lp-bg::after{background:linear-gradient(90deg,rgba(13,6,38,.82) 0%,rgba(13,6,38,.55) 45%,rgba(13,6,38,.2) 100%)}}
 .lp{height:100vh;height:100dvh;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
 .lp-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:calc(env(safe-area-inset-top) + 8px) 12px 6px}
 .lp-bar .ta-logo{width:90px;flex:none}
 .lp-stats{display:flex;gap:6px;min-width:0}
-.lp-stats .segbox{padding:4px 13px 4px 10px;gap:6px;border-radius:999px;border-width:2px}
+.lp-stats .segbox{padding:4px 13px 4px 10px;gap:6px;border-radius:var(--r-btn);border-width:2px}
 .lp-stats .seg{font-size:15px}
 @media (max-width:430px){.lp-stats .seglabel{display:none}.lp-stats .segbox{padding:4px 9px 4px 8px;gap:5px}.lp-stats .seg{font-size:13px}}
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(0,255,110,.6);animation:live 1.6s infinite}
 @keyframes live{70%{box-shadow:0 0 0 7px rgba(0,255,110,0)}100%{box-shadow:0 0 0 0 rgba(0,255,110,0)}}
 .lp-tools{display:flex;gap:6px}
-.lp-tools .iconbtn{width:38px;height:38px;border-radius:10px}
+.lp-tools .iconbtn{width:38px;height:38px;border-radius:var(--r-in);background:rgba(0,0,0,.35)}
 .lp-tools .iconbtn svg{width:20px;height:20px}
 .snd .x{display:none}.snd[aria-pressed="true"] .w{display:none}.snd[aria-pressed="true"] .x{display:inline}
 
@@ -31,30 +41,27 @@ html,body{height:100%;overflow:hidden}
 .lp-hello{display:none}
 
 /* tap card */
-.pad{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding:18px 18px 16px;border-radius:30px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none;outline:none;overflow:hidden;contain:layout paint}
+.pad{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding:18px 18px 16px;border-radius:var(--r);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none;outline:none;overflow:hidden;contain:layout paint}
 .pad:focus-visible{box-shadow:0 0 0 4px var(--green),0 6px 0 var(--cd)}
-.pad .hand{position:absolute;right:-14px;bottom:42px;width:26%;max-width:150px;opacity:.95;pointer-events:none;transform:rotate(-8deg)}
-.pad .spark{position:absolute;width:34px;pointer-events:none;animation:float 3s ease-in-out infinite}
-@keyframes float{50%{transform:translateY(-8px) rotate(12deg)}}
 .pad-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;position:relative;z-index:2;pointer-events:none}
 .pad-top .seg{font-size:clamp(26px,7vh,46px)}
 .pad-top .segbox{flex-direction:column;align-items:flex-start;gap:3px;padding:7px 11px 6px}
 .pad-mid{flex:1;display:grid;place-items:center;text-align:center;position:relative;z-index:2;pointer-events:none}
 .pad-code{display:block;font:900 italic clamp(64px,19vw,150px)/.85 var(--display);letter-spacing:-1px;color:#fff;text-shadow:0 6px 0 rgba(0,0,0,.25)}
 .pad-hint{display:block;margin-top:12px;font:800 clamp(15px,4vw,20px)/1.2 var(--body);color:#fff;text-shadow:var(--ts)}
-.pad-tag{display:block;margin-top:6px;font:700 italic 14px/1.2 var(--body);color:#fff;text-shadow:var(--ts)}
+.pad-tag{display:block;margin-top:8px;font:800 italic clamp(15px,4.2vw,19px)/1.15 var(--display);color:#fff;text-shadow:var(--ts)}
 .pad-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;position:relative;z-index:2;pointer-events:none;font:800 13px var(--body);color:#fff}
-.pad-bottom span{padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.3);text-shadow:none}
-.pad-fx{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden;border-radius:30px}
+.pad-bottom span{padding:5px 10px;border-radius:var(--r-tag);background:rgba(0,0,0,.3);text-shadow:none}
+.pad-fx{position:absolute;inset:0;pointer-events:none;z-index:3;overflow:hidden;border-radius:inherit}
 .fx-plus{position:absolute;left:0;top:0;font:900 italic 40px/1 var(--display);color:#fff;-webkit-text-stroke:3px #150B33;paint-order:stroke fill;text-shadow:0 4px 0 rgba(0,0,0,.35);will-change:transform,opacity;opacity:0;white-space:nowrap}
 .fx-ring{position:absolute;left:0;top:0;width:70px;height:70px;margin:-35px 0 0 -35px;border-radius:50%;border:4px solid rgba(255,255,255,.85);opacity:0;will-change:transform,opacity}
 .fx-bit{position:absolute;left:0;top:0;width:10px;height:14px;border-radius:2px;opacity:0;will-change:transform,opacity}
 .fx-combo{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);padding:8px 20px;border-radius:18px;background:var(--ink);border:4px solid #fff;box-shadow:0 6px 0 rgba(0,0,0,.4),0 12px 26px rgba(0,0,0,.45);font:900 italic clamp(30px,9vw,54px)/1 var(--display);color:var(--sunny);white-space:nowrap;opacity:0;will-change:transform,opacity}
 .pad.shake{animation:shake .32s}
 @keyframes shake{20%{transform:translate(-5px,2px) rotate(-.6deg)}40%{transform:translate(5px,-2px) rotate(.6deg)}60%{transform:translate(-3px,1px)}80%{transform:translate(3px,0)}}
-.pad.flash::after{content:"";position:absolute;inset:0;border-radius:30px;background:rgba(255,255,255,.35);animation:flash .35s forwards;pointer-events:none;z-index:4}
+.pad.flash::after{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(255,255,255,.35);animation:flash .35s forwards;pointer-events:none;z-index:4}
 @keyframes flash{to{opacity:0}}
-.pad-result{position:absolute;inset:12px;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;border-radius:24px;background:rgba(21,11,51,.93);text-align:center;cursor:default;animation:pop-in .25s cubic-bezier(.2,1.4,.4,1)}
+.pad-result{position:absolute;inset:12px;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;border-radius:var(--r-sm);background:rgba(21,11,51,.93);text-align:center;cursor:default;animation:pop-in .25s cubic-bezier(.2,1.4,.4,1)}
 @keyframes pop-in{from{transform:scale(.85);opacity:0}}
 .pad-result .seg{font-size:clamp(40px,12vh,72px)}
 .res-title{font:900 clamp(28px,8vw,44px)/1 var(--display);color:var(--sunny)}
@@ -91,7 +98,7 @@ html,body{height:100%;overflow:hidden}
 .pc-bot{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .pc-players{display:inline-flex;align-items:center;gap:6px;font:800 14px var(--body);color:#fff}
 .pc-players svg{width:16px;height:16px}
-.pc-bot .segbox{padding:3px 7px;border-radius:8px;gap:5px}
+.pc-bot .segbox{padding:3px 7px;border-radius:var(--r-tag);gap:5px}
 .pc-bot .seg{font-size:15px}
 .dots{display:flex;gap:6px;justify-content:center;margin-top:8px}
 .dots button{width:8px;height:8px;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer}
@@ -126,9 +133,9 @@ html,body{height:100%;overflow:hidden}
   .lp-stats .seg{font-size:18px}
   .lp-main{padding:10px 28px 28px;gap:36px}
   .lp-hello{display:block}
-  .lp-hello h1{margin:0;font:900 clamp(46px,4.6vw,70px)/.95 var(--display);color:#fff;text-shadow:var(--ts-big)}
-  .lp-hello p{margin:14px 0 0;max-width:38ch;font-size:18px;line-height:1.5;color:var(--muted)}
-  .lp-hello .lp-tagline{margin-top:10px;font:800 italic 19px var(--body);color:var(--sunny)}
+  .pad-tag{display:none}
+  .lp-hello h1{margin:0;font:900 italic clamp(50px,5vw,78px)/.92 var(--display);color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.35);letter-spacing:-.5px}
+  .lp-hello p{margin:16px 0 0;max-width:38ch;font:600 20px/1.45 var(--body);color:#fff;text-shadow:var(--ts)}
   .lp-side{gap:22px}
   .lp-cta .btn{height:58px;font-size:23px}
   .deck{height:140px}
@@ -144,7 +151,7 @@ function poolCard(p, i) {
   const vs = p.vs && p.vs.length === 2;
   const cls = { orange: 'c-orange', gold: 'c-pink', green: 'c-sky', mustard: 'c-teal' }[p.color] || 'c-orange';
   return `<a class="tcard pcard ${cls}" href="${esc(p.href)}" data-pos="${i === 0 ? 0 : i < 3 ? i : 'hide'}" data-ends="${esc(p.endsAt)}" aria-label="${esc(p.name)}, ${p.players} players${p.prize ? ', prize ' + naira(p.prize) : ''}">
-  <div class="pc-top"><span>${p.sponsor ? 'Sponsored by ' + esc(p.sponsor) : 'Tap Am pool'}${p.tier ? ' · ' + esc(p.tier) : ''}</span>${p.demo ? '<span class="tag">Demo</span>' : ''}</div>
+  <div class="pc-top"><span>${p.sponsor ? 'Sponsored by ' + esc(p.sponsor) : 'Tap Am pool'}${p.tier ? ' · ' + esc(p.tier) : ''}</span></div>
   <div class="pc-mid">${vs
     ? `<div class="pc-vs"><span class="code">${esc(p.vs[0])}</span><span class="vs">VS</span><span class="code">${esc(p.vs[1])}</span></div>`
     : `<div class="pc-name">${esc(p.name)}</div>`}${p.prize ? `<div class="pc-prize">${naira(p.prize)}</div>` : ''}</div>
@@ -153,8 +160,10 @@ function poolCard(p, i) {
 }
 
 export function landingPage({ user, pools, stats, look = pickLanding() }) {
-  const playHref = user ? (user.role === 'ADMIN' ? '/admin' : '/dashboard') : '/signup';
-  const body = `<div class="lp">
+  const playHref = user ? (user.role === 'ADMIN' ? '/admin' : user.role === 'SPONSOR' ? '/sponsor' : '/dashboard') : '/signup';
+  const anySponsored = pools.some(p => p.kind === 'SPONSORED');
+  const body = `<div class="lp-bg" aria-hidden="true"><video id="lp-video" muted loop playsinline preload="none" disablepictureinpicture></video></div>
+<div class="lp">
 <header class="lp-bar">
   <a class="ta-logo" href="/" aria-label="Tap Am home">${LOGO_IMG()}</a>
   <div class="lp-stats">
@@ -168,8 +177,7 @@ export function landingPage({ user, pools, stats, look = pickLanding() }) {
 </header>
 <main class="lp-main">
   <section class="lp-play" aria-label="Tap challenge">
-    <div class="tcard pad" id="pad" role="button" tabindex="0" aria-describedby="pad-hint" style="--c:${look.pad[0]};--cd:${look.pad[1]}">
-      <div class="hand" aria-hidden="true">${HAND_MARK}</div><span class="spark" style="left:7%;top:30%" aria-hidden="true">${STICKERS.sparkle()}</span><span class="spark" style="right:9%;top:31%;width:24px;animation-delay:-1.4s" aria-hidden="true">${STICKERS.sparkle('#fff')}</span>
+    <div class="tcard pad" id="pad" role="button" tabindex="0" aria-describedby="pad-hint" style="--c:${look.pad[0]};--cd:${look.pad[1]};background:${patternBg(look.pattern, look.pad[0])}">
       <div class="pad-top">
         <div class="segbox"><span class="seglabel">taps</span><span class="seg" id="taps" data-seg="0000" data-label="Taps"></span></div>
         <div class="segbox" style="align-items:flex-end"><span class="seglabel">seconds</span><span class="seg" id="time" data-seg="10.0" data-label="Seconds left"></span></div>
@@ -181,16 +189,16 @@ export function landingPage({ user, pools, stats, look = pickLanding() }) {
     </div>
   </section>
   <aside class="lp-side">
-    <div class="lp-hello"><h1>Who get the fastest finger?</h1><p class="lp-tagline">${esc(TAGLINE)}</p><p>Join live tap pools, tap pass everybody and climb the leaderboard. Free to start.</p></div>
+    <div class="lp-hello"><h1>Tap amm make you chop big moneyyy</h1><p>Tap and win big prizes. Free to start.</p></div>
     <div class="lp-cta">
       <a class="btn btn--green btn--shine" href="${playHref}">${user ? 'Go play' : 'Oya, join a pool'}</a>
-      ${user ? '<a class="btn btn--white" href="/how-to-play">How to play</a>' : '<a class="btn btn--white" href="/login">Login</a>'}
+      <a class="btn btn--white" href="/how-to-play">Teach me</a>
     </div>
-    <section class="pools" aria-label="Sponsored pools" aria-roledescription="carousel">
-      <div class="pools-head"><h2>Sponsored pools</h2></div>
+    ${pools.length ? `<section class="pools" aria-label="${anySponsored ? 'Sponsored pools' : 'Pools to join'}" aria-roledescription="carousel">
+      <div class="pools-head"><h2>${anySponsored ? 'Sponsored pools' : 'Pools to join'}</h2></div>
       <div class="deck" id="deck" aria-live="off">${pools.map(poolCard).join('')}</div>
-      <div class="dots" id="dots">${pools.map((p, i) => `<button type="button" aria-label="Show ${esc(p.name)}" aria-current="${i === 0}"></button>`).join('')}</div>
-    </section>
+      <div class="dots" id="dots">${pools.length > 1 ? pools.map((p, i) => `<button type="button" aria-label="Show ${esc(p.name)}" aria-current="${i === 0}"></button>`).join('') : ''}</div>
+    </section>` : ''}
   </aside>
 </main>
 </div>
@@ -280,18 +288,19 @@ padEl.addEventListener('keydown',function(e){if((e.key===' '||e.key==='Enter')&&
 padEl.addEventListener('contextmenu',function(e){e.preventDefault()});
 
 /* ── sponsored pools deck ── */
-var cards=[].slice.call(document.querySelectorAll('.pcard')),dots=[].slice.call(document.querySelectorAll('#dots button')),cur=0,timer=0,n=cards.length;
+var cards=[].slice.call(document.querySelectorAll('.pcard')),dots=[].slice.call(document.querySelectorAll('#dots button')),cur=0,timer=0,n=cards.length,deck=$('deck'),sx=0;
+if(deck){
 function layout(){cards.forEach(function(c,i){var p=(i-cur+n)%n;c.setAttribute('data-pos',p<3?String(p):'hide');c.tabIndex=p===0?0:-1;c.setAttribute('aria-hidden',String(p!==0));});dots.forEach(function(d,i){d.setAttribute('aria-current',String(i===cur))});}
 function next(){if(n<2)return;var out=cards[cur];out.setAttribute('data-pos','out');cur=(cur+1)%n;setTimeout(layout,0);setTimeout(function(){layout()},460);}
 function go(i){cur=i;layout();restart();}
 function restart(){clearInterval(timer);if(n>1&&!reduce)timer=setInterval(next,4500);}
 dots.forEach(function(d,i){d.addEventListener('click',function(){go(i)})});
-var deck=$('deck'),sx=0;
 deck.addEventListener('pointerdown',function(e){sx=e.clientX;clearInterval(timer);});
 deck.addEventListener('pointerup',function(e){var dx=e.clientX-sx;if(Math.abs(dx)>40){e.preventDefault();go(dx<0?(cur+1)%n:(cur-1+n)%n);}else restart();});
 deck.addEventListener('click',function(e){if(Math.abs(e.clientX-sx)>40)e.preventDefault();});
 document.addEventListener('visibilitychange',function(){if(document.hidden)clearInterval(timer);else restart();});
 layout();restart();
+}
 
 /* countdowns (one shared timer) */
 var cds=[].slice.call(document.querySelectorAll('[data-countdown]'));
@@ -299,22 +308,27 @@ function fmt(ms){if(ms<=0)return'00:00:00';var s=Math.floor(ms/1000),h=Math.floo
 function tickCd(){var now=Date.now();cds.forEach(function(el){var end=Date.parse(el.closest('.pcard').getAttribute('data-ends'));seg(el,fmt(end-now));});}
 tickCd();setInterval(tickCd,1000);
 
+/* ── background video: after the page loads, not on data saver / 2G / reduced motion; paused when hidden ── */
+(function(){
+  var v=$('lp-video');if(!v)return;
+  var c=navigator.connection||{};if(reduce||c.saveData||/(^|-)2g$/.test(c.effectiveType||''))return;
+  function startVideo(){
+    var small=matchMedia('(orientation: portrait) and (max-width: 899px)').matches;
+    var webm=v.canPlayType('video/webm; codecs="vp9"');
+    v.src='/assets/landing/bg-'+(small?'m':'d')+'.'+(webm?'webm':'mp4');
+    v.addEventListener('playing',function(){v.classList.add('on');},{once:true});
+    var p=v.play();if(p&&p.catch)p.catch(function(){});
+  }
+  if(document.readyState==='complete')setTimeout(startVideo,250);else window.addEventListener('load',function(){setTimeout(startVideo,250);});
+  document.addEventListener('visibilitychange',function(){if(!v.src)return;if(document.hidden)v.pause();else{var p=v.play();if(p&&p.catch)p.catch(function(){});}});
+})();
+
 /* ── online + visits ── */
 var vid=store.get('ta-vid');if(!vid){vid=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));store.set('ta-vid',vid);}
 function ping(){if(document.hidden)return;fetch('/api/presence',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({vid:vid})}).then(function(r){return r.ok?r.json():null}).then(function(j){if(!j)return;seg($('st-online'),('000'+j.online).slice(-4));seg($('st-visits'),('00000'+j.visits).slice(-6));}).catch(function(){if(window.TA&&window.TA.netFailed)window.TA.netFailed();});}
 ping();setInterval(ping,45000);document.addEventListener('visibilitychange',function(){if(!document.hidden)ping();});document.addEventListener('ta:online',ping);
 })();`;
 
-  return themeShell({ title: 'Tap fast, climb the board', description: 'Tap Am: live tapping games for the people. Tap pass everybody, climb the leaderboard and win sponsored pools.', body, script, css: CSS, bodyClass: 'is-landing', theme: look.theme, noZoom: true });
-}
-
-// Demo sponsored pools shown until real ones are switched on in settings.
-export function demoPools(now = Date.now()) {
-  const inMin = m => new Date(now + m * 60000).toISOString();
-  return [
-    { name: 'Team Jollof vs Team Fried Rice', sponsor: 'Mama Put Kitchen', vs: ['JOL', 'FRD'], prize: 50000, players: 1284, endsAt: inMin(134), color: 'orange', demo: true },
-    { name: 'Friday Night Tap', sponsor: 'Chop Life Drinks', prize: 100000, players: 842, endsAt: inMin(302), color: 'gold', demo: true },
-    { name: 'Lagos vs Abuja', sponsor: 'Eko Data', vs: ['LAG', 'ABJ'], prize: 75000, players: 2310, endsAt: inMin(47), color: 'green', demo: true },
-    { name: 'Lapo babies only', sponsor: 'Kampe Fintech', tier: 'Lapo only', prize: 20000, players: 356, endsAt: inMin(90), color: 'mustard', demo: true }
-  ];
+  const head = '<link rel="preload" as="image" href="/assets/landing/poster-m.webp" media="(orientation: portrait) and (max-width: 899px)"><link rel="preload" as="image" href="/assets/landing/poster-d.webp" media="(orientation: landscape), (min-width: 900px)">';
+  return themeShell({ title: 'Tap amm make you chop big moneyyy', description: 'Tap amm make you chop big moneyyy. Tap and win big prizes, free to start. Live tapping games on Tap Am.', body, script, css: CSS, bodyClass: 'is-landing', theme: look.theme, noZoom: true, head });
 }

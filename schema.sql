@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   referral_code TEXT UNIQUE, referred_by TEXT, referral_count INTEGER NOT NULL DEFAULT 0,
   equipped_skin TEXT NOT NULL DEFAULT 'skin-boy', prefs TEXT NOT NULL DEFAULT '{}',
   date_of_birth TEXT, terms_accepted_at TEXT, terms_version TEXT, email_verified_at TEXT,
-  gender TEXT, country TEXT, archived_at TEXT, adult_confirmed_at TEXT,
+  gender TEXT, country TEXT, archived_at TEXT, adult_confirmed_at TEXT, emoji TEXT, emoji_meaning TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS sponsor_profiles (user_id TEXT PRIMARY KEY, company TEXT NOT NULL, website TEXT, logo_url TEXT, lead_capture INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS pools (
   winners_count INTEGER NOT NULL DEFAULT 1, split TEXT NOT NULL DEFAULT '[100]', tie_rule TEXT NOT NULL DEFAULT 'FIRST', house_cut_pct INTEGER NOT NULL DEFAULT 0,
   is_private INTEGER NOT NULL DEFAULT 0, join_password TEXT, sponsor_user_id TEXT, sponsor_name TEXT,
   theme_color TEXT, skin_url TEXT, game_type TEXT NOT NULL DEFAULT 'STANDARD', side_a TEXT, side_b TEXT,
-  promo_id TEXT, bg_color TEXT, split_style TEXT NOT NULL DEFAULT 'TOP', vs_split INTEGER NOT NULL DEFAULT 0,
+  promo_id TEXT, bg_color TEXT, split_style TEXT NOT NULL DEFAULT 'TOP', vs_split INTEGER NOT NULL DEFAULT 0, pad_pattern TEXT, allow_own_pad INTEGER NOT NULL DEFAULT 0,
   settled_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS pool_entries (
   pool_id TEXT NOT NULL, user_id TEXT NOT NULL, taps INTEGER NOT NULL DEFAULT 0, raw_taps INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS gifts (id TEXT PRIMARY KEY, from_user_id TEXT, to_use
 
 -- ── sponsors' ads ───────────────────────────────────────────────────────────
 -- kind: IMAGE | YOUTUBE     (placement is always ALL: before the game, in the lobby and before results)
-CREATE TABLE IF NOT EXISTS promos (id TEXT PRIMARY KEY, title TEXT NOT NULL, owner_id TEXT, kind TEXT NOT NULL DEFAULT 'IMAGE', image_url TEXT, video_id TEXT, target_url TEXT, placement TEXT NOT NULL DEFAULT 'ALL', pool_id TEXT, active INTEGER NOT NULL DEFAULT 1, approved INTEGER NOT NULL DEFAULT 0, views INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS promos (id TEXT PRIMARY KEY, title TEXT NOT NULL, owner_id TEXT, kind TEXT NOT NULL DEFAULT 'IMAGE', image_url TEXT, video_id TEXT, target_url TEXT, placement TEXT NOT NULL DEFAULT 'ALL', pool_id TEXT, active INTEGER NOT NULL DEFAULT 1, approved INTEGER NOT NULL DEFAULT 0, views INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 5, reject_reason TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS media (key TEXT PRIMARY KEY, owner_id TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 
 -- ── voice ───────────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS voice_sessions (user_id TEXT PRIMARY KEY, pool_id TEX
 -- ── misc ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, email TEXT, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'NEW', kind TEXT NOT NULL DEFAULT 'GENERAL', data TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS slides (id TEXT PRIMARY KEY, title TEXT NOT NULL, subtitle TEXT NOT NULL DEFAULT '', image_url TEXT, link TEXT, color TEXT NOT NULL DEFAULT '#2E8BFF',
-  promo_id TEXT, sponsor_id TEXT, status TEXT NOT NULL DEFAULT 'REQUESTED', sort INTEGER NOT NULL DEFAULT 0, note TEXT, views INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0,
+  promo_id TEXT, sponsor_id TEXT, status TEXT NOT NULL DEFAULT 'REQUESTED', sort INTEGER NOT NULL DEFAULT 0, note TEXT, views INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0, cta TEXT,
   created_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, promo_id TEXT NOT NULL, sponsor_id TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL, email TEXT, phone TEXT,
   consent_text TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(promo_id, user_id));
@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS email_codes (purpose TEXT NOT NULL, email TEXT NOT NULL COLLATE NOCASE, code_hash TEXT NOT NULL, nonce TEXT NOT NULL, payload TEXT, attempts INTEGER NOT NULL DEFAULT 0, sends INTEGER NOT NULL DEFAULT 1, last_sent_at TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(purpose,email));
 CREATE TABLE IF NOT EXISTS auth_throttle (key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS visitors (vid TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS merch (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', price_kobo INTEGER NOT NULL DEFAULT 0, image_url TEXT, color TEXT NOT NULL DEFAULT '#2E8BFF', link TEXT, status TEXT NOT NULL DEFAULT 'SOON', active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+-- Special badges made by the super admin. Given badges live in `badges` with kind 'X:<id>' and period = user id.
+CREATE TABLE IF NOT EXISTS special_badges (id TEXT PRIMARY KEY, name TEXT NOT NULL, meaning TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '#9161FF', label TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS merch_interest (email TEXT NOT NULL COLLATE NOCASE, item TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(email,item));
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -88,6 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_pool_entries_score ON pool_entries(pool_id,taps D
 CREATE INDEX IF NOT EXISTS idx_pools_dates ON pools(starts_at,ends_at);
 CREATE INDEX IF NOT EXISTS idx_visitors_seen ON visitors(last_seen);
 CREATE INDEX IF NOT EXISTS idx_wtx_user ON wallet_transactions(user_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_tap_stats_user ON tap_stats(user_id, period);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,read);
 CREATE INDEX IF NOT EXISTS idx_promos_active ON promos(active,approved);
 CREATE INDEX IF NOT EXISTS idx_slides_status ON slides(status, sort);
@@ -99,7 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_pools_creator ON pools(created_by);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral ON users(referral_code);
 
 INSERT OR IGNORE INTO settings(key,value) VALUES
-  ('landing_demo_pools','1'), ('nepo_monthly_kobo','5000000'), ('nepo_yearly_kobo','50000000'), ('mapo_monthly_kobo','350000'), ('mapo_yearly_kobo','3500000'),
+  ('landing_demo_pools','0'), ('nepo_monthly_kobo','5000000'), ('nepo_yearly_kobo','50000000'), ('mapo_monthly_kobo','350000'), ('mapo_yearly_kobo','3500000'),
   ('min_withdraw_lapo_kobo','1000000'), ('min_withdraw_mapo_kobo','750000'), ('min_withdraw_nepo_kobo','500000'), ('starter_boosters','3'), ('nepo_bonus_boosters','5'), ('mapo_bonus_boosters','3'),
   ('referral_batch','10'), ('max_multi_pools','10'), ('max_multi_pools_mapo','3'), ('voice_min_rank','56'), ('voice_top_n','5'), ('house_cut_pct','0'),
   ('tap_rate_lapo','15'), ('tap_rate_mapo','25'), ('tap_rate_nepo','40'), ('tap_limits_on','0'), ('tap_limit_daily','20000'), ('tap_limit_monthly','400000'),
@@ -115,11 +119,19 @@ INSERT OR IGNORE INTO store_items(id,name,description,kind,price_kobo,multiplier
   ('booster-8x','Jaga Jaga 8×','Eight times every tap for 10 seconds. One per game.','BOOSTER',500000,8,10,'NEPO',25,'{"color":"#FF8A2A"}',1,7,1),
   ('booster-10x','Odogwu Pro 10×','Ten times every tap for 15 seconds. One per game.','BOOSTER',1500000,10,15,'NEPO',40,'{"color":"#FFD23F"}',0,8,1);
 INSERT OR IGNORE INTO store_items(id,name,description,kind,price_kobo,multiplier,duration_seconds,audience,min_rank,config,giftable,sort) VALUES
-  ('skin-boy','Boy tap pad','The classic boy pad.','SKIN',0,1,0,'ALL',1,'{"bg":"#2E8BFF","art":"boy"}',0,10),
-  ('skin-girl','Girl tap pad','The classic girl pad.','SKIN',0,1,0,'ALL',1,'{"bg":"#FF4FA3","art":"girl"}',0,11),
-  ('skin-gold','Gold rush','Shiny gold pad for big boys.','SKIN',150000,1,0,'NEPO',1,'{"bg":"#FFB800","art":"star"}',1,12),
+  ('skin-boy','Boy tap pad','The classic boy pad: blue waves.','SKIN',0,1,0,'ALL',1,'{"bg":"#2E8BFF","pattern":"waves"}',0,10),
+  ('skin-girl','Girl tap pad','The classic girl pad: pink flowers.','SKIN',0,1,0,'ALL',1,'{"bg":"#FF4FA3","pattern":"flowers"}',0,11),
+  ('skin-gold','Gold rush','Shiny gold pad for big boys.','SKIN',150000,1,0,'NEPO',1,'{"bg":"#FFB800","pattern":"swirl"}',1,12),
   ('skin-kente','Kente','Woven colours, proudly ours.','SKIN',200000,1,0,'NEPO',10,'{"bg":"#d8a73a","pattern":"kente"}',1,13),
-  ('skin-neon','Neon night','Glow-in-the-dark pad.','SKIN',300000,1,0,'NEPO',30,'{"bg":"#150B33","art":"bolt","glow":true}',1,14);
+  ('skin-neon','Neon night','Glow-in-the-dark pad.','SKIN',300000,1,0,'NEPO',30,'{"bg":"#150B33","pattern":"zebra","glow":true}',1,14),
+  ('skin-swirl','Swirl','Sweet-sweet swirl.','SKIN',50000,1,0,'ALL',1,'{"bg":"#9161FF","pattern":"swirl"}',1,15),
+  ('skin-checker','Checker','Draughts board energy.','SKIN',50000,1,0,'ALL',1,'{"bg":"#FF8A2A","pattern":"checker"}',1,16),
+  ('skin-stripes','Stripes','Clean diagonal stripes.','SKIN',50000,1,0,'ALL',1,'{"bg":"#21D4C8","pattern":"stripes"}',1,17),
+  ('skin-ripple','Ripple','Water wey dey move.','SKIN',100000,1,0,'MAPO',1,'{"bg":"#2E8BFF","pattern":"ripple"}',1,18),
+  ('skin-cow','Cow print','Moo moo, tap tap.','SKIN',100000,1,0,'MAPO',1,'{"bg":"#F4F0FF","pattern":"cow"}',1,19),
+  ('skin-daisy','Daisy','Flowers for the soft tappers.','SKIN',100000,1,0,'MAPO',1,'{"bg":"#9161FF","pattern":"flowers"}',1,20),
+  ('skin-leopard','Leopard','Fast like cat.','SKIN',150000,1,0,'MAPO',10,'{"bg":"#FFD23F","pattern":"leopard"}',1,21),
+  ('skin-zebra','Zebra','Black and white, no shaking.','SKIN',200000,1,0,'NEPO',10,'{"bg":"#F4F0FF","pattern":"zebra"}',1,22);
 
 INSERT OR IGNORE INTO backgrounds(id,name,style,color_a,color_b,sort) VALUES
   ('bg-sunset','Lagos sunset','LINEAR','#FF8A2A','#9B1FD8',1), ('bg-ocean','Atlantic','LINEAR','#0BC5EA','#2A2BB8',2),
