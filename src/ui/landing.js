@@ -133,6 +133,7 @@ body.is-landing::before{display:none}
   .lp-stats .seg{font-size:18px}
   .lp-main{padding:10px 28px 28px;gap:36px}
   .lp-hello{display:block}
+  .pad-tag{display:none}
   .lp-hello h1{margin:0;font:900 italic clamp(50px,5vw,78px)/.92 var(--display);color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.35);letter-spacing:-.5px}
   .lp-hello p{margin:16px 0 0;max-width:38ch;font:600 20px/1.45 var(--body);color:#fff;text-shadow:var(--ts)}
   .lp-side{gap:22px}

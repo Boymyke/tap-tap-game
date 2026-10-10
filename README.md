@@ -51,6 +51,7 @@ Payments are one-off (no auto-renew); members get reminders before their time en
 | `ADMIN_SETUP_KEY` (secret) | Lets you create the first super admin at `/admin/setup`. |
 | R2 bucket `MEDIA` | Picture uploads for ads, slides, skins and backgrounds. Turn on R2, create the bucket and uncomment it in the wrangler config. |
 | `TAP_METER` Durable Object | Needed only if tap limits are switched on. Already in `wrangler.preview.jsonc`; copy the binding and the `v2` migration into `wrangler.jsonc` before using limits on the live Worker. |
+| `PUBLIC_URL` (var) | Optional. The address put in invite links and QR codes, e.g. `https://www.tapammm.live` once the domain points at the Worker. Without it the current address is used. |
 
 ## Local development
 
@@ -107,6 +108,8 @@ npm run db:upgrade:4        # full game: tiers, ranks, pools v2, money, store, a
 npm run db:upgrade:4:local
 npm run db:upgrade:5        # Mapo tier, gender/country, VS pots, slides, leads, stats, badges, health (run once)
 npm run db:upgrade:5:local
+npm run db:upgrade:6        # tap-area patterns, merch, special badges, name emoji, ad length + reasons (run once)
+npm run db:upgrade:6:local
 ```
 
 ## Deploy

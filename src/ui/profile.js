@@ -122,7 +122,7 @@ export function invitePage(ctx) {
   const card = { url: refUrl, title: `${user.username} dey call you!`, line: 'Join Tap Am, tap fast and win prizes.', kind: 'invite', color: '#2E8BFF', display: 'www.tapammm.live' };
   const body = `<h1 class="h1">Invite people</h1>
 <p class="sub">${sponsor ? 'Bring your customers and fans to play your pools. Everyone who signs up with your link shows here.' : `Every ${referralBatch} people wey join with your link = 1 free booster for you.`}</p>
-<section class="tcard card c-sky" style="display:grid;gap:12px">
+<section class="tcard card c-sky" style="display:grid;grid-template-columns:minmax(0,1fr);gap:12px">
   <p style="margin:0;font-weight:700">You don bring <b style="font-size:20px">${short(user.referral_count || 0)}</b> ${Number(user.referral_count) === 1 ? 'person' : 'people'}.</p>
   ${copyRow(refUrl, 'Copy')}
   <div class="row" style="gap:8px"><button type="button" class="btn btn--white btn--sm" style="flex:1" data-share-url="${esc(refUrl)}" data-share-text="Come play Tap Am with me! Use my link:">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" style="flex:1" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.qr} QR card</button></div>

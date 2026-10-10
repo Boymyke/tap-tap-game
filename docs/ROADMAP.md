@@ -7,7 +7,7 @@ ties are set **per pool** (first to reach the score wins, or tied players split)
 ## Phase 1 — look, landing, app shell ✅ (this release)
 - Design system from the references: patterned playing cards, VS stickers, 7-segment displays, logo unchanged.
 - One-screen landing: 10-second tap challenge (big random +1s, combos, vibration, sound toggle), rotating sponsored
-  pools (demo until `settings.landing_demo_pools = '0'`), people online + total visits.
+  pools (real pools only; demo pools were removed), people online + total visits.
 - Installable app (manifest, icons, service worker), offline banner and offline page, tilt → tap area on the right.
 - Hashed session tokens, 30-day sliding sessions. How to play, Rules, Merch (notify me), FAQ, About, 404/500.
 
@@ -17,7 +17,7 @@ ties are set **per pool** (first to reach the score wins, or tied players split)
 - Roles: `LAPO` (free), `NEPO` (paid), `SPONSOR` (separate sign-up + dashboard), `ADMIN`.
 - 100 generated ranks (name, tap threshold, games-played requirement, unlocks) — editable/addable in admin.
 - Admin: users (taps, games, rank, wallet), remove/suspend accounts, gift boosters/skins to any account,
-  create skins (who can use them: Lapo/Nepo/both), create ads, create every pool type, switch off demo pools.
+  create skins (who can use them: Lapo/Nepo/both), create ads, create every pool type.
 - New game screen: big responsive tap rectangle, lobby with countdown and ads, live leaderboard over WebSocket
   (Durable Object per pool), combo/milestone/rank-up animations, vibration, mute, landscape layout.
 
@@ -42,7 +42,7 @@ ties are set **per pool** (first to reach the score wins, or tied players split)
 - Sponsor ads: image or YouTube video, link, shown before/after games and in the lobby; always closable.
 
 ## Phase 6 — tiers, redesign, sponsors v2, operations ✅ built (9 Oct 2026)
-- New "sticker pop" look (Rubik, bitmoji avatars, badges), full logo suite with the hand app icon, brand guide (`docs/BRAND.md`).
+- New "sticker pop" look (bitmoji avatars, badges), brand guide (`docs/BRAND.md`).
 - Instant page switching (prefetch + swap, ring loader). No text selection anywhere; no zoom on game screens.
 - Three tiers: Lapo / Mapo / Nepo — fingers 1/3/unlimited, pools at once 1/3/10, server tap-rate cap per tier.
 - Home rebuilt (slideshow, winnings, join by code, create, sponsored → live → coming-up, invite + QR share card).
@@ -57,3 +57,13 @@ ties are set **per pool** (first to reach the score wins, or tied players split)
 - Switch on real keys: Paystack live + Transfers, email sender, R2, Realtime.
 - Lawyer review of `docs/LEGAL_REVIEW.md` before real-money paid pools go live.
 - Copy the `TAP_METER` binding to `wrangler.jsonc` and run `npm run db:upgrade:5` before shipping this to the live `nak-am` Worker.
+
+## Oct 10 update
+- New logo, logo mark and favicon from the brand pack; Barlow / Barlow Condensed type and the earlier corner sizes.
+- Landing: looping background video (fast posters first, skipped on data saver), new copy, "Teach me", no demo pools.
+- Plain gradient backgrounds (no stars), animated gradient on login/sign-up, patterned cards.
+- Tap areas are patterns + colour. Mapo/Nepo set their own; pool creators (sponsors, admin, Nepo) can set the pool's tap area and choose whether players may use their own.
+- Back button on every page for every role. Invite page (players and sponsors), also in the menu.
+- Game: scrollable top-5 board, booster tips that slide in (tap to use), ad countdown line, YouTube ads autoplay muted, ads last 5/10/30 seconds, pools at least 60 seconds.
+- Admin: merch upload, special badges, name emoji (meaning only the owner sees), ad approval queue with reasons, delete ads, slide button text + picture or colour slides, payout rejection reasons.
+- Player: taps by day / month / year with a picker, badge tap counts, bag filters, emoji removed everywhere.
