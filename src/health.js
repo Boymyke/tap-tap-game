@@ -2,7 +2,7 @@
 // super admin (at most once every 12 hours per problem) and explain what to do about each one.
 import { nowIso } from './lib.js';
 import { settings, num, lagosDay } from './core.js';
-import { paystackOn, testPayments } from './api/money.js';
+import { gateway, testPayments } from './api/money.js';
 import { emailConfigured, sendAlertEmail } from './email.js';
 
 const H = 3600000;
@@ -39,7 +39,7 @@ export async function runChecks(env) {
   const pl = n(players);
   add('scale', pl > 50000 ? 'warn' : 'ok', 'Traffic', `${pl.toLocaleString('en-NG')} player-games today · ${n(online).toLocaleString('en-NG')} people on the site right now.`,
     pl > 50000 ? 'Time to scale: check Workers, Durable Objects and D1 usage in the Cloudflare dashboard, turn on D1 read replication, and ask Cloudflare about an Enterprise plan.' : pl > 5000 ? 'Growing well. Keep an eye on the Cloudflare bill (Workers Paid plan).' : '');
-  add('payments', paystackOn(env) ? 'ok' : testPayments(env) ? 'warn' : 'crit', 'Payments', paystackOn(env) ? 'Paystack connected.' : testPayments(env) ? 'Test mode: payments are simulated.' : 'Payments are switched off.', paystackOn(env) ? '' : 'Add the PAYSTACK_SECRET_KEY secret to the worker once your Paystack business account is live.');
+  add('payments', gateway(env) ? 'ok' : testPayments(env) ? 'warn' : 'crit', 'Payments', gateway(env) ? (gateway(env) === 'bachs' ? 'Bachs connected.' : 'Paystack connected.') : testPayments(env) ? 'Test mode: payments are simulated.' : 'Payments are switched off.', gateway(env) ? '' : 'Add the PAYSTACK_SECRET_KEY secret to the worker once your Paystack business account is live.');
   add('email', emailConfigured(env) ? 'ok' : 'warn', 'Email', emailConfigured(env) ? 'Sign-up and alert emails are being sent.' : 'No email service connected: sign-up codes show on screen (test mode) and alerts are only logged.', emailConfigured(env) ? '' : 'Add RESEND_API_KEY and EMAIL_FROM to the worker.');
   add('uploads', env.MEDIA ? 'ok' : 'warn', 'Picture uploads', env.MEDIA ? 'R2 storage connected.' : 'R2 storage is off, so ads, skins and slides can’t use uploaded pictures.', env.MEDIA ? '' : 'Turn on R2 in the Cloudflare dashboard and add the MEDIA bucket binding.');
   if (!s.alert_email) add('alertmail', 'warn', 'Alert emails', 'No alert email address set.', 'Add one in Admin → Overview → Settings.');

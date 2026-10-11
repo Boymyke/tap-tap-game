@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS pool_entries (
 -- balance_kobo = wallet (money you add; spend-only)   winnings_kobo = withdrawable
 CREATE TABLE IF NOT EXISTS wallets (user_id TEXT PRIMARY KEY, balance_kobo INTEGER NOT NULL DEFAULT 0, winnings_kobo INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS wallet_transactions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL, amount_kobo INTEGER NOT NULL, reference TEXT, status TEXT NOT NULL DEFAULT 'SUCCESS', balance TEXT NOT NULL DEFAULT 'WALLET', note TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
-CREATE TABLE IF NOT EXISTS payments (reference TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, amount_kobo INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', provider TEXT NOT NULL DEFAULT 'paystack', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, verified_at TEXT);
+CREATE TABLE IF NOT EXISTS payments (reference TEXT PRIMARY KEY, user_id TEXT NOT NULL, purpose TEXT NOT NULL, amount_kobo INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', provider TEXT NOT NULL DEFAULT 'paystack', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, verified_at TEXT, provider_ref TEXT);
+CREATE INDEX IF NOT EXISTS idx_payments_pending ON payments(provider, status, created_at);
 CREATE TABLE IF NOT EXISTS withdrawals (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, bank_name TEXT, bank_code TEXT NOT NULL, account_number TEXT NOT NULL, account_name TEXT, status TEXT NOT NULL DEFAULT 'PENDING', transfer_code TEXT, admin_note TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT);
 
 -- ── store ───────────────────────────────────────────────────────────────────

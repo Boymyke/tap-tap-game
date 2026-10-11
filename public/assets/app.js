@@ -556,9 +556,33 @@
   });
   if (history.state === null && history.replaceState) { try { history.replaceState({ ta: 1 }, ''); } catch (e) {} }
 
+  /* ── eye button on every password box: show or hide what you typed ── */
+  var EYE = '<svg class="ta-eye-closed" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.2 7C2 5.6 4.4 2.5 8 2.5s6 3.1 6.8 4.5C14 8.4 11.6 11.5 8 11.5S2 8.4 1.2 7z"/><circle cx="8" cy="7" r="2"/><path d="M2 1l12 12"/></svg><svg class="ta-eye-open" viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.2 7C2 5.6 4.4 2.5 8 2.5s6 3.1 6.8 4.5C14 8.4 11.6 11.5 8 11.5S2 8.4 1.2 7z"/><circle cx="8" cy="7" r="2"/></svg>';
+  function addEyes(root) {
+    $$('input[type="password"]', root).forEach(function (input) {
+      if (input.hasAttribute('data-eye') || (input.parentNode && input.parentNode.querySelector('.ta-eye'))) return;
+      input.setAttribute('data-eye', '');
+      var wrap = document.createElement('span'); wrap.className = 'ta-pw ta-pw-auto';
+      if (input.style.flex) { wrap.style.flex = input.style.flex; input.style.flex = ''; }
+      if (input.style.minWidth) { wrap.style.minWidth = input.style.minWidth; input.style.minWidth = ''; }
+      input.parentNode.insertBefore(wrap, input); wrap.appendChild(input);
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'ta-eye'; b.setAttribute('aria-label', 'Show password'); b.setAttribute('aria-pressed', 'false'); b.innerHTML = EYE;
+      wrap.appendChild(b);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.ta-eye'); if (!b) return;
+    e.preventDefault();
+    var id = b.getAttribute('data-toggle'), input = id ? document.getElementById(id.replace(/^#/, '')) : b.parentNode.querySelector('input');
+    if (!input) return;
+    var showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    b.setAttribute('aria-pressed', String(!showing)); b.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+
   /* ── start ───────────────────────────────────────────────────────── */
   function ready(swapped) {
-    rankCheck(); winners();
+    rankCheck(); winners(); addEyes(document);
     $$('[data-seg]').forEach(function (el) { TA.seg(el, el.getAttribute('data-seg')); });
     startCountdowns();
     initSlides(document);

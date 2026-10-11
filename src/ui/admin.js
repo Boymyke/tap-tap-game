@@ -56,7 +56,7 @@ export function adminHome(ctx) {
     <div class="two">${moneyField({ label: 'Sponsor email blast price', name: 'email_blast_kobo', value: k('email_blast_kobo') })}${moneyField({ label: 'Daily money a player can send', name: 'transfer_daily_max_kobo', value: k('transfer_daily_max_kobo') })}</div>
     <div class="two">${field({ label: 'Pools a Lapo baby can create a day', name: 'lapo_pools_per_day', type: 'number', value: v('lapo_pools_per_day', 3), attrs: 'min="0" max="50"' })}${field({ label: 'Free mystery box every (days, about)', name: 'free_box_days', type: 'number', value: v('free_box_days', 3), attrs: 'min="0" max="60"', hint: '0 = no free boxes.' })}</div>
     ${field({ label: 'House cut on paid pools (%)', name: 'house_cut_pct', type: 'number', value: v('house_cut_pct', 0), attrs: 'min="0" max="50"', hint: 'Taken from paid-pool prizes before payout. 0 = all entry fees go to winners.' })}
-    ${check({ name: 'auto_payouts', label: '<b>Automatic payouts</b> through Paystack (small amounts, older accounts, no cheating flags)', checked: st.auto_payouts === '1' })}
+    ${check({ name: 'auto_payouts', label: '<b>Automatic payouts</b> through the payment gateway (small amounts, older accounts, no cheating flags)', checked: st.auto_payouts === '1' })}
     <div class="two">${moneyField({ label: 'Auto-pay up to (₦)', name: 'auto_payout_max_kobo', value: k('auto_payout_max_kobo') })}${field({ label: 'Account at least (days old)', name: 'auto_payout_min_age_days', type: 'number', value: v('auto_payout_min_age_days', 7), attrs: 'min="0"' })}</div></div>
   <div class="sgrp"><h3>Players and site</h3>
     <div class="two">${field({ label: 'Starter boosters', name: 'starter_boosters', type: 'number', value: v('starter_boosters', 3), attrs: 'min="0"' })}${field({ label: 'Sign-ups per referral booster', name: 'referral_batch', type: 'number', value: v('referral_batch', 10), attrs: 'min="1"' })}</div>
@@ -89,7 +89,7 @@ export function adminUsers(ctx) {
   const body = `<h1 class="h1">Users</h1>
 <details class="panel" style="margin-bottom:12px"><summary style="cursor:pointer;font:900 18px var(--display)">Recovery phrases backup (CSV)</summary>
   <p class="small muted" style="margin:10px 0">Every player’s 12-word recovery phrase. <b>Anybody with this file can take over any account</b>: download it only on your own device, store it offline (encrypted drive or printed in a safe), and delete it from Downloads. Each download is logged.</p>
-  <form class="row" id="phr" style="gap:8px;flex-wrap:wrap" novalidate><input class="ta-input" style="flex:1;min-width:180px" type="password" name="password" autocomplete="current-password" placeholder="Your admin password" aria-label="Your admin password"><button class="btn btn--danger btn--sm" type="submit">Download CSV</button></form>
+  <form method="post" class="row" id="phr" style="gap:8px;flex-wrap:wrap" novalidate><input class="ta-input" style="flex:1;min-width:180px" type="password" name="password" autocomplete="current-password" placeholder="Your admin password" aria-label="Your admin password"><button class="btn btn--danger btn--sm" type="submit">Download CSV</button></form>
 </details>
 <form class="row" method="get" action="/admin/users" style="gap:8px;margin-bottom:12px"><input class="ta-input" name="q" value="${esc(q)}" placeholder="Search nickname or email" aria-label="Search users"><button class="btn btn--green" type="submit">Search</button></form>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nickname</th><th>Type</th><th>Status</th><th>Taps</th><th>Games</th><th>Wins</th><th>Rank</th><th>Wallet</th><th>Winnings</th><th>Country</th><th>Joined</th></tr></thead><tbody>
@@ -319,10 +319,10 @@ export function adminWithdrawals(ctx) {
   const pending = rows.filter(w => w.status === 'PENDING' || w.status === 'PROCESSING');
   const done = rows.filter(w => !pending.includes(w));
   const row = w => `<tr><td><a href="/admin/users/${esc(w.user_id)}">${esc(w.username)}</a>${w.flags ? ' <span class="badge red">flags</span>' : ''}</td><td><b>${esc(naira(w.amount_kobo))}</b></td><td>${esc(w.bank_name || w.bank_code)}<div class="small muted">${esc(w.account_number)} · ${esc(w.account_name || '')}</div></td><td>${esc(lagos(w.created_at))}</td><td><span class="badge ${w.status === 'PAID' ? 'live' : w.status === 'REJECTED' || w.status === 'FAILED' ? 'red' : 'soon'}">${esc(w.status.toLowerCase())}</span>${w.admin_note ? `<div class="small muted">${w.status === 'REJECTED' ? 'Reason: ' : ''}${esc(w.admin_note)}</div>` : ''}</td>
-  <td style="white-space:nowrap">${w.status === 'PENDING' ? `${paystack ? postBtn(`/api/admin/withdrawals/${w.id}/transfer`, 'Send via Paystack', { cls: 'btn--green btn--sm', confirm: `Send ${naira(w.amount_kobo)} to ${w.account_name || w.account_number} now?` }) : ''}${postBtn(`/api/admin/withdrawals/${w.id}/paid`, 'Mark paid', { confirm: 'Only mark paid if you sent the money yourself. Continue?' })}<form class="rejform" data-api="/api/admin/withdrawals/${esc(w.id)}/reject" novalidate><div class="ta-field"><input class="ta-input" name="note" maxlength="200" placeholder="Reason (the player sees it)" aria-label="Reason for rejecting"><p class="ta-error" data-err="note"></p></div><button class="btn btn--danger btn--sm" type="submit">Reject + refund</button></form>` : ''}</td></tr>`;
+  <td style="white-space:nowrap">${w.status === 'PENDING' ? `${paystack ? postBtn(`/api/admin/withdrawals/${w.id}/transfer`, 'Send via ' + paystack, { cls: 'btn--green btn--sm', confirm: `Send ${naira(w.amount_kobo)} to ${w.account_name || w.account_number} now?` }) : ''}${postBtn(`/api/admin/withdrawals/${w.id}/paid`, 'Mark paid', { confirm: 'Only mark paid if you sent the money yourself. Continue?' })}<form class="rejform" data-api="/api/admin/withdrawals/${esc(w.id)}/reject" novalidate><div class="ta-field"><input class="ta-input" name="note" maxlength="200" placeholder="Reason (the player sees it)" aria-label="Reason for rejecting"><p class="ta-error" data-err="note"></p></div><button class="btn btn--danger btn--sm" type="submit">Reject + refund</button></form>` : ''}</td></tr>`;
   const table = list => `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Player</th><th>Amount</th><th>Bank</th><th>Asked</th><th>Status</th><th></th></tr></thead><tbody>${list.map(row).join('') || '<tr><td colspan="6">Nothing here.</td></tr>'}</tbody></table></div>`;
   const body = `<div class="headrow"><h1 class="h1">Payouts</h1><a class="btn btn--white btn--sm" href="/admin/withdrawals.csv" data-no-swap download>CSV for bank upload</a></div>
-<p class="sub">${paystack ? (auto ? 'Automatic payouts are <b style="color:#fff">ON</b>: small requests from older accounts with no cheating flags are paid every 5 minutes. Everything else waits here.' : 'Automatic payouts are off (turn on in Overview, Settings).') : 'Paystack is not connected, so pay manually (download the CSV for your bank) and then press “Mark paid”.'}</p>
+<p class="sub">${paystack ? (auto ? 'Automatic payouts are <b style="color:#fff">ON</b>: small requests from older accounts with no cheating flags are paid every 5 minutes. Everything else waits here.' : 'Automatic payouts are off (turn on in Overview, Settings).') : 'No payment gateway is connected, so pay manually (download the CSV for your bank) and then press “Mark paid”.'}</p>
 <h2 class="h2" style="margin-top:0">Waiting (${pending.length})</h2>${table(pending)}<h2 class="h2">Done</h2>${table(done)}`;
   return page(ctx, 'Payouts', '/admin/withdrawals', body, { css: ADMIN_CSS });
 }
@@ -340,7 +340,7 @@ export function adminSuggestions(ctx) {
 export function setupPage() {
   const body = `<main class="ta-page"><div class="ta-card">
 <h1 style="margin:0 0 6px;font:900 30px/1 var(--display)">Set up super admin</h1><p class="ta-note" style="margin:0 0 16px">One time only. You need the setup key from the server settings.</p>
-<form class="form" data-api="/api/setup-admin" novalidate style="display:grid;gap:12px">
+<form method="post" class="form" data-api="/api/setup-admin" novalidate style="display:grid;gap:12px">
 ${['setupKey:Setup key:password', 'username:Nickname:text', 'email:Email:email', 'password:Password (10+ characters):password'].map(x => { const [n, l, t] = x.split(':'); return `<div class="ta-field"><label class="ta-label" for="s-${n}">${l}</label><input class="ta-input" id="s-${n}" name="${n}" type="${t}" required autocomplete="${n === 'password' ? 'new-password' : 'off'}"><p class="ta-error" data-err="${n}"></p></div>`; }).join('')}
 <div class="ta-msg" role="alert"></div><button class="btn btn--green btn--block" type="submit">Create admin</button></form></div></main>`;
   return themeShell({ title: 'Admin setup', body });
@@ -351,7 +351,7 @@ export function suggestPage(user) {
   const body = `<main class="ta-page"><a class="ta-logo" href="/" style="width:120px">${LOGO_IMG()}</a><div class="ta-card">
 <a href="${user ? '/dashboard' : '/'}" data-back style="color:var(--ink);font-weight:700">Back</a>
 <h1 style="margin:10px 0 6px;font:900 32px/1 var(--display)">Suggest something</h1><p class="ta-note" style="margin:0 0 16px">Wetin we fit add or fix? We dey read everything.${user ? ' Want a special pool? <a href="/suggest-pool">Suggest a pool</a>.' : ''}</p>
-<form class="form" data-api="/api/suggestions" data-reset novalidate style="display:grid;gap:12px">
+<form method="post" class="form" data-api="/api/suggestions" data-reset novalidate style="display:grid;gap:12px">
 <div class="ta-field"><label class="ta-label" for="g-name">Name (optional)</label><input class="ta-input" id="g-name" name="name" maxlength="60" value="${esc(user?.username || '')}"></div>
 <div class="ta-field"><label class="ta-label" for="g-msg">Your suggestion</label><textarea class="ta-input" id="g-msg" name="message" maxlength="2000" required></textarea><p class="ta-error" data-err="message"></p></div>
 <div class="ta-msg" role="alert"></div><button class="btn btn--green btn--block" type="submit">Send</button></form></div></main>`;
@@ -366,7 +366,7 @@ export function adminLoginPage() {
     <span class="badge red">Super admin</span>
     <h1 style="margin:12px 0 6px;font:900 32px/1 var(--display)">Admin login</h1>
     <p class="ta-note" style="margin:0 0 16px">For the Tap Am super admin only. Players and sponsors log in <a href="/login">here</a>.</p>
-    <form class="form" data-api="/api/admin/login" novalidate style="display:grid;gap:12px">
+    <form method="post" class="form" data-api="/api/admin/login" novalidate style="display:grid;gap:12px">
       <div class="ta-field"><label class="ta-label" for="a-id">Nickname or email</label><input class="ta-input" id="a-id" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required><p class="ta-error" data-err="identifier"></p></div>
       <div class="ta-field"><label class="ta-label" for="a-pw">Password</label><input class="ta-input" id="a-pw" name="password" type="password" autocomplete="current-password" maxlength="128" required><p class="ta-error" data-err="password"></p></div>
       <div class="ta-msg" role="alert"></div>

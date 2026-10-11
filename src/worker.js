@@ -14,7 +14,7 @@ import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGif
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
 import { handlePlayApi, maybeFreeBox } from './api/play.js';
-import { handleMoneyApi, payCallback, paystackOn, testPayments, BANKS, autoPayouts } from './api/money.js';
+import { handleMoneyApi, payCallback, gateway, testPayments, banksFor, autoPayouts, reconcileBachs } from './api/money.js';
 import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
@@ -35,7 +35,7 @@ export { GameRoom, TapMeter } from './game/room.js';
 const go = (req, path, status = 302) => Response.redirect(new URL(path, req.url), status);
 const homeFor = u => (u?.role === 'ADMIN' ? '/admin' : u?.role === 'SPONSOR' ? '/sponsor' : '/dashboard');
 const loginFirst = (req, url) => go(req, '/login?next=' + encodeURIComponent(url.pathname + url.search));
-const payMode = env => (paystackOn(env) ? 'paystack' : testPayments(env) ? 'test' : 'off');
+const payMode = env => gateway(env) || (testPayments(env) ? 'test' : 'off');
 const pageNum = q => Math.max(1, Math.min(1000, parseInt(q.get('page') || '1', 10) || 1));
 const csvCell = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : '') + s.replace(/"/g, '""')}"` : s; };   // also defuses spreadsheet formulas
 const csv = (name, header, rows) => new Response('﻿' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n'), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${name}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
@@ -187,6 +187,7 @@ async function sweep(env, cron) {
     .bind(new Date(Date.now() + 2 * 86400000).toISOString(), new Date(Date.now() + 3 * 86400000).toISOString(), new Date(Date.now() - 5 * 86400000).toISOString()).all()).results;
   for (const u of soon) await env.DB.prepare('INSERT INTO notifications(id,user_id,text,link) VALUES(?,?,?,?)').bind(uid(), u.id, `Your ${u.tier === 'NEPO' ? 'Nepo' : 'Mapo'} ends on ${u.tier_until.slice(0, 10)}. Renew to keep your perks.`, '/plans').run();
   try { await autoPayouts(env); } catch (e) { console.error('auto payouts', e?.message); }
+  try { await reconcileBachs(env); } catch (e) { console.error('bachs reconcile', e?.message); }
   try { await awardBadges(env); } catch (e) { console.error('badges', e?.message); }
   try { await processEmailBlasts(env, env.PUBLIC_URL || 'https://www.tapammm.live'); } catch (e) { console.error('blasts', e?.message); }
   const minute = new Date().getUTCMinutes();
@@ -199,7 +200,7 @@ async function apiRoute(req, env, path) {
   let user = null;
   const site = await handleSiteApi(req, env, path); if (site) return site;
   const auth = await handleAuthApi(req, env, path); if (auth) return auth;
-  if (path === '/api/paystack/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
+  if (path === '/api/paystack/webhook' || path === '/api/bachs/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
   user = await currentUser(req, env);
   const res = (await handlePlayApi(req, env, path, user)) || (await handleMoneyApi(req, env, path, user)) || (await handleAdminApi(req, env, path, user))
     || (await handleSponsorApi(req, env, path, user)) || (await handleVoiceApi(req, env, path, user)) || json({ error: 'Not found' }, 404);
@@ -239,7 +240,7 @@ export default {
       }
       const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
       if (path.startsWith('/api/')) {
-        if (req.method !== 'GET' && path !== '/api/paystack/webhook' && !sameOrigin(req)) return json({ error: 'Request blocked.' }, 403);
+        if (req.method !== 'GET' && path !== '/api/paystack/webhook' && path !== '/api/bachs/webhook' && !sameOrigin(req)) return json({ error: 'Request blocked.' }, 403);
         // Admin links inside API answers point at the hidden admin address — only for the admin's own requests.
         const res = await apiRoute(req, env, path);
         return path === '/api/login' || path === '/api/admin/login' || path === '/api/setup-admin' ? hideAdminPath(env, res) : res;
@@ -304,6 +305,8 @@ async function route(req, env, url, path, user) {
     case '/winners': return winnersRoute(env, q, user);
     case '/players': return playersRoute(env, q, user);
   }
+  const payM = path.match(/^\/pay\/callback\/(TA-[a-f0-9]{8,30})$/);
+  if (payM) return go(req, await payCallback(req, env, payM[1]));
   const goM = path.match(/^\/go\/([0-9a-f-]{36})$/);
   if (goM) { const t = await promoClick(env, goM[1], clientIp(req)); return t ? Response.redirect(t, 302) : go(req, '/'); }
   const slM = path.match(/^\/s\/([0-9a-z-]{8,40})$/);
@@ -389,7 +392,7 @@ async function route(req, env, url, path, user) {
         env.DB.prepare('SELECT type,amount_kobo,balance,note,created_at FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 21 OFFSET ?').bind(user.id, (pg - 1) * 20),
         env.DB.prepare('SELECT * FROM withdrawals WHERE user_id=? ORDER BY created_at DESC LIMIT 10').bind(user.id)]);
       const flash = q.get('paid') === '1' ? 'Payment received. Your wallet don update.' : q.get('paid') === '0' ? 'Payment no go through. No money was taken.' : '';
-      return html(walletPage({ ...b, tx: tx.results.slice(0, 20), page: pg, hasNext: tx.results.length > 20, withdrawals: wd.results, minWithdraw: b.perk ? b.perk.minWithdraw : 0, banks: BANKS, payMode: payMode(env), flash, perDay: Math.max(1, num(b.s, 'withdrawals_per_day', 1)) }));
+      return html(walletPage({ ...b, tx: tx.results.slice(0, 20), page: pg, hasNext: tx.results.length > 20, withdrawals: wd.results, minWithdraw: b.perk ? b.perk.minWithdraw : 0, banks: await banksFor(env), payMode: payMode(env), flash, perDay: Math.max(1, num(b.s, 'withdrawals_per_day', 1)) }));
     }
     case '/wallet/history.csv': {
       if (!await allow(env, 'csv:' + user.id, 20, 3600)) return new Response('Too many downloads. Try again later.', { status: 429 });
@@ -684,7 +687,7 @@ async function adminRoute(req, env, url, path, user) {
     if (path.endsWith('.csv')) return csv(`tap-am-payouts-${lagosDay()}.csv`, ['Account name', 'Account number', 'Bank code', 'Bank', 'Amount (NGN)', 'Narration', 'Status', 'Nickname', 'Requested (UTC)', 'Reference'],
       rows.filter(w => q.get('all') === '1' || w.status === 'PENDING').map(w => [w.account_name, w.account_number, w.bank_code, w.bank_name, (w.amount_kobo / 100).toFixed(2), 'Tap Am winnings', w.status, w.username, w.created_at, w.id]));
     const s = await settings(env);
-    return html(adminWithdrawals({ ...b, rows, paystack: paystackOn(env), auto: s.auto_payouts === '1' }));
+    return html(adminWithdrawals({ ...b, rows, paystack: gateway(env) ? (gateway(env) === 'bachs' ? 'Bachs' : 'Paystack') : null, auto: s.auto_payouts === '1' }));
   }
   if (path === '/admin/merch') {
     const items = (await env.DB.prepare('SELECT m.*, (SELECT COUNT(*) FROM merch_interest i WHERE i.item=m.id) AS interested FROM merch m ORDER BY m.sort, m.created_at DESC LIMIT 200').all()).results;

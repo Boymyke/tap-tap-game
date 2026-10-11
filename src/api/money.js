@@ -1,11 +1,24 @@
-// Wallet funding, Mapo/Nepo subscriptions and withdrawals (Paystack), with a test mode for the preview.
+// Wallet funding, Mapo/Nepo subscriptions and withdrawals through Paystack (Bachs available as a second
+// gateway) and a test mode for the preview. The server only ever credits money it has confirmed with the
+// payment gateway itself (signed webhook or a direct lookup), never because the browser says so.
 import { json, readJson, allow, uid, nowIso, hex, safeEqual } from '../lib.js';
 import { tierOf, requireRole, credit, debit, moveMoney, getWallet, giveItem, notify, settings, num, naira, loadUser, clampInt, toKobo, fundsError, adultError, lagosDay, metricStmt } from '../core.js';
 import { perks, PLANS, tierName } from '../tiers.js';
+import { bachsOn, bachs, toDecimal, decimalToKobo, bachsWebhookOk, bachsBanks } from '../bachs.js';
 
 const PAYSTACK = 'https://api.paystack.co';
 export const paystackOn = env => !!env.PAYSTACK_SECRET_KEY;
-export const testPayments = env => env.PAYMENTS_TEST_MODE === '1' && !paystackOn(env);
+// Paystack is the payment gateway. Bachs (bachs.io) is built in as a second option and is only used
+// when Paystack has no key and BACHS_SECRET_KEY is set.
+export const gateway = env => (paystackOn(env) ? 'paystack' : bachsOn(env) ? 'bachs' : null);
+const useBachs = env => gateway(env) === 'bachs';
+export const paymentsOn = env => !!gateway(env);
+export const testPayments = env => env.PAYMENTS_TEST_MODE === '1' && !paymentsOn(env);
+// Banks shown on the withdrawal form: the gateway's own list (Bachs codes can differ from Paystack's).
+export async function banksFor(env) {
+  if (useBachs(env)) { try { const l = await bachsBanks(env); if (l.length) return l; } catch (e) { console.error('bachs banks', e?.message); } }
+  return BANKS;
+}
 
 // Paystack bank codes for the most used Nigerian banks.
 export const BANKS = [
@@ -88,10 +101,37 @@ export async function applyPayment(env, reference, paidKobo) {
 
 async function startCardPayment(env, req, user, purpose, kobo) {
   const reference = 'TA-' + uid().replace(/-/g, '').slice(0, 20);
+  const origin = env.PUBLIC_URL || new URL(req.url).origin;
+  if (useBachs(env)) {
+    await env.DB.prepare('INSERT INTO payments(reference,user_id,purpose,amount_kobo,provider) VALUES(?,?,?,?,?)').bind(reference, user.id, purpose, kobo, 'bachs').run();
+    try {
+      const d = await bachs(env, 'POST', '/checkout-sessions', {
+        pricing: { currency: 'NGN', amount: toDecimal(kobo), price_type: 'fixed' },
+        payment_method_types: ['NGN_CARD', 'NGN_BANK_TRANSFER'],
+        customer: { email: user.email, name: user.username },
+        reference, metadata: { purpose, user_id: user.id },
+        success_url: `${origin}/pay/callback/${reference}`, cancel_url: `${origin}${purpose === 'SPONSOR_FUND' ? '/sponsor' : '/wallet'}?paid=0`,
+        expires_in_minutes: 60
+      }, reference);
+      if (!/^https:\/\//.test(d.checkout_url || '')) throw new Error('No checkout link');
+      await env.DB.prepare('UPDATE payments SET provider_ref=? WHERE reference=?').bind(String(d.checkout_id || ''), reference).run();
+      return json({ redirect: d.checkout_url });
+    } catch (e) {
+      console.error('bachs checkout', e?.code, e?.message);
+      await env.DB.prepare("UPDATE payments SET status='FAILED' WHERE reference=? AND status='PENDING'").bind(reference).run();
+      return json({ error: 'Payment no fit start now. Try again in a minute.' }, 502);
+    }
+  }
   await env.DB.prepare('INSERT INTO payments(reference,user_id,purpose,amount_kobo) VALUES(?,?,?,?)').bind(reference, user.id, purpose, kobo).run();
-  const origin = new URL(req.url).origin;
-  const data = await ps(env, 'POST', '/transaction/initialize', { email: user.email, amount: kobo, reference, callback_url: `${origin}/pay/callback`, metadata: { purpose, user_id: user.id } });
-  return json({ redirect: data.authorization_url });
+  try {
+    const data = await ps(env, 'POST', '/transaction/initialize', { email: user.email, amount: kobo, currency: 'NGN', reference, callback_url: `${origin}/pay/callback`, metadata: { purpose, user_id: user.id } });
+    if (!/^https:\/\//.test(data?.authorization_url || '')) throw new Error('No payment link');
+    return json({ redirect: data.authorization_url });
+  } catch (e) {
+    console.error('paystack init', e?.message);
+    await env.DB.prepare("UPDATE payments SET status='FAILED' WHERE reference=? AND status='PENDING'").bind(reference).run();
+    return json({ error: 'Payment no fit start now. Try again in a minute.' }, 502);
+  }
 }
 
 async function needAdult(env, me, data) {
@@ -107,7 +147,74 @@ async function withdrawalsToday(env, userId) {
   return Number((await env.DB.prepare("SELECT COUNT(*) n FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status!='REJECTED'").bind(userId, start).first())?.n || 0);
 }
 
+// Asks Bachs directly whether a checkout was paid, then credits it once. Used by the webhook, the
+// return page and the cron sweep, so a missed webhook or a closed tab never loses a payment.
+export async function confirmBachsCheckout(env, reference, checkoutId) {
+  const pay = await env.DB.prepare("SELECT * FROM payments WHERE reference=? AND provider='bachs'").bind(reference).first();
+  if (!pay) return { error: 'Unknown payment' };
+  if (pay.status === 'SUCCESS') return { already: true, purpose: pay.purpose };
+  const id = pay.provider_ref || checkoutId;
+  if (!id || !/^[A-Za-z0-9_-]{3,80}$/.test(id)) return { error: 'No checkout id' };
+  const cs = await bachs(env, 'GET', '/checkout-sessions/' + encodeURIComponent(id));
+  if (cs.reference && cs.reference !== reference) return { error: 'Reference mismatch' };
+  const paid = cs.status === 'COMPLETED' || cs.payment_status === 'succeeded';
+  if (!paid) return { pending: true, status: cs.status };
+  if (String(cs.currency || '').toUpperCase() !== 'NGN') return { error: 'Wrong currency' };
+  const kobo = decimalToKobo(cs.amount);
+  if (kobo === null || kobo < pay.amount_kobo) return { error: 'Amount mismatch' };
+  return applyPayment(env, reference, kobo);
+}
+
+// Checks a Bachs payout and finishes the withdrawal (paid, or failed → money back to winnings).
+export async function syncBachsPayout(env, w) {
+  if (!w?.transfer_code || w.status !== 'PROCESSING') return null;
+  const p = await bachs(env, 'GET', '/payouts/' + encodeURIComponent(w.transfer_code));
+  const st = String(p.status || '').toLowerCase();
+  if (st === 'successful' || st === 'reconciled') {
+    const c = await env.DB.prepare("UPDATE withdrawals SET status='PAID', updated_at=? WHERE id=? AND status='PROCESSING'").bind(nowIso(), w.id).run();
+    if (c.meta.changes) await notify(env, w.user_id, `Your withdrawal of ${naira(w.amount_kobo)} has been paid.`, '/wallet');
+    return 'PAID';
+  }
+  if (st === 'failed' || st === 'cancelled' || st === 'expired') {
+    const c = await env.DB.prepare("UPDATE withdrawals SET status='FAILED', admin_note=?, updated_at=? WHERE id=? AND status='PROCESSING'").bind(String(p.rejection_reason || 'Transfer ' + st).slice(0, 120), nowIso(), w.id).run();
+    if (c.meta.changes) {
+      await credit(env, w.user_id, w.amount_kobo, { balance: 'WINNINGS', type: 'WITHDRAW_REFUND', reference: w.id, note: 'Transfer failed' });
+      await notify(env, w.user_id, `Your withdrawal of ${naira(w.amount_kobo)} failed at the bank. The money is back in your winnings.`, '/wallet');
+    }
+    return 'FAILED';
+  }
+  return 'PROCESSING';
+}
+
+// Cron: payments whose webhook never came, and payouts still in flight.
+export async function reconcileBachs(env) {
+  if (!bachsOn(env)) return;
+  const since = new Date(Date.now() - 6 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
+  const older = new Date(Date.now() - 120000).toISOString().replace('T', ' ').slice(0, 19);
+  const pays = (await env.DB.prepare("SELECT reference FROM payments WHERE provider='bachs' AND status='PENDING' AND provider_ref IS NOT NULL AND created_at>=? AND created_at<=? ORDER BY created_at LIMIT 20").bind(since, older).all()).results;
+  for (const p of pays) { try { await confirmBachsCheckout(env, p.reference); } catch (e) { console.error('bachs reconcile pay', e?.message); } }
+  const ws = (await env.DB.prepare("SELECT * FROM withdrawals WHERE status='PROCESSING' AND transfer_code IS NOT NULL ORDER BY updated_at LIMIT 20").all()).results;
+  for (const w of ws) { try { await syncBachsPayout(env, w); } catch (e) { console.error('bachs reconcile payout', e?.message); } }
+}
+
 export async function handleMoneyApi(req, env, path, user) {
+  // Bachs webhook (no session; verified by signature, then confirmed with Bachs before any money moves)
+  if (path === '/api/bachs/webhook' && req.method === 'POST') {
+    if (!bachsOn(env)) return json({ ok: false }, 404);
+    const raw = await req.text();
+    if (raw.length > 200000) return json({ ok: false }, 413);
+    if (!await bachsWebhookOk(env, req, raw)) return json({ ok: false }, 401);
+    let evt; try { evt = JSON.parse(raw); } catch { return json({ ok: false }, 400); }
+    const d = evt.data || {};
+    try {
+      if (evt.type === 'collection.succeeded' && /^TA-[a-f0-9]{8,30}$/.test(String(d.reference || ''))) await confirmBachsCheckout(env, d.reference, d.checkout_id);
+      if (/^(payout|withdrawal)\./.test(String(evt.type || ''))) {
+        const w = await env.DB.prepare("SELECT * FROM withdrawals WHERE status='PROCESSING' AND (transfer_code=? OR id=?)").bind(String(d.withdrawal_id || d.id || ''), String(d.reference || '')).first();
+        if (w) await syncBachsPayout(env, w);
+      }
+    } catch (e) { console.error('bachs webhook', e?.message); return json({ ok: false }, 500); }   // 5xx: Bachs retries
+    return json({ ok: true });
+  }
   // Paystack webhook (no session; verified by signature)
   if (path === '/api/paystack/webhook' && req.method === 'POST') {
     if (!paystackOn(env)) return json({ ok: false }, 404);
@@ -117,7 +224,7 @@ export async function handleMoneyApi(req, env, path, user) {
     const sig = hex(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw))));
     if (!safeEqual(sig, String(req.headers.get('x-paystack-signature') || ''))) return json({ ok: false }, 401);
     const evt = JSON.parse(raw);
-    if (evt.event === 'charge.success') await applyPayment(env, evt.data.reference, evt.data.amount);
+    if (evt.event === 'charge.success' && String(evt.data?.currency || 'NGN').toUpperCase() === 'NGN') await applyPayment(env, evt.data.reference, evt.data.amount);
     if (evt.event === 'transfer.success' || evt.event === 'transfer.failed' || evt.event === 'transfer.reversed') {
       const w = await env.DB.prepare('SELECT * FROM withdrawals WHERE transfer_code=? OR id=?').bind(evt.data.transfer_code || '', evt.data.reference || '').first();
       if (w && w.status === 'PROCESSING') {
@@ -149,7 +256,7 @@ export async function handleMoneyApi(req, env, path, user) {
     const adult = await needAdult(env, me, data); if (adult) return adult;
     if (!await allow(env, 'fund:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
     const purpose = me.role === 'SPONSOR' ? 'SPONSOR_FUND' : 'FUND';
-    if (paystackOn(env)) return startCardPayment(env, req, me, purpose, kobo);
+    if (paymentsOn(env)) return startCardPayment(env, req, me, purpose, kobo);
     if (testPayments(env)) {
       const ref = 'TEST-' + uid().slice(0, 8);
       await env.DB.prepare('INSERT INTO payments(reference,user_id,purpose,amount_kobo,provider) VALUES(?,?,?,?,?)').bind(ref, user.id, purpose, kobo, 'test').run();
@@ -170,7 +277,7 @@ export async function handleMoneyApi(req, env, path, user) {
     const p = PLANS(s)[tier][plan];
     const label = `${tierName(tier)} ${plan}ly`;
     if (data.method === 'card') {
-      if (paystackOn(env)) return startCardPayment(env, req, me, PURPOSE[tier][plan], p.kobo);
+      if (paymentsOn(env)) return startCardPayment(env, req, me, PURPOSE[tier][plan], p.kobo);
       if (!testPayments(env)) return json({ error: 'Card payments never open yet. Pay from your wallet.' }, 503);
       const ref = 'TEST-' + uid().slice(0, 8);
       await env.DB.prepare('INSERT INTO payments(reference,user_id,purpose,amount_kobo,provider) VALUES(?,?,?,?,?)').bind(ref, user.id, PURPOSE[tier][plan], p.kobo, 'test').run();
@@ -188,9 +295,14 @@ export async function handleMoneyApi(req, env, path, user) {
   if (path === '/api/bank/resolve' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
     if (!/^\d{10}$/.test(String(data.account_number || ''))) return json({ error: 'Account number must be 10 digits.', field: 'account_number' }, 400);
-    if (!/^\d{3,6}$/.test(String(data.bank_code || ''))) return json({ error: 'Pick your bank.', field: 'bank_code' }, 400);
-    if (!paystackOn(env)) return json({ account_name: null });
+    if (!/^[A-Za-z0-9]{3,12}$/.test(String(data.bank_code || ''))) return json({ error: 'Pick your bank.', field: 'bank_code' }, 400);
+    if (!paymentsOn(env)) return json({ account_name: null });
     if (!await allow(env, 'resolve:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    if (useBachs(env)) {
+      try { const d = await bachs(env, 'POST', '/payouts/resolve-account', { bank_code: String(data.bank_code), account_number: String(data.account_number) }); if (d.status && d.data?.account_name) return json({ account_name: d.data.account_name }); }
+      catch (e) { console.error('bachs resolve', e?.message); }
+      return json({ error: 'We no fit confirm this account. Check the number and bank.', field: 'account_number' }, 400);
+    }
     try { const d = await ps(env, 'GET', `/bank/resolve?account_number=${data.account_number}&bank_code=${encodeURIComponent(data.bank_code)}`); return json({ account_name: d.account_name }); }
     catch { return json({ error: 'We no fit confirm this account. Check the number and bank.', field: 'account_number' }, 400); }
   }
@@ -253,8 +365,8 @@ export async function handleMoneyApi(req, env, path, user) {
     const min = perks(tierOf(me), s).minWithdraw;
     const kobo = clampInt(toKobo(data.amount), 0, 10000000000, 0);
     if (kobo < min) return json({ error: `Minimum withdrawal for you na ${naira(min)}.`, field: 'amount' }, 400);
-    const bank = BANKS.find(b => b[0] === String(data.bank_code));
-    if (!bank && !paystackOn(env)) return json({ error: 'Pick your bank.', field: 'bank_code' }, 400);
+    const bank = (await banksFor(env)).find(b => b[0] === String(data.bank_code));
+    if (!bank) return json({ error: 'Pick your bank.', field: 'bank_code' }, 400);
     if (!/^\d{10}$/.test(String(data.account_number || ''))) return json({ error: 'Account number must be 10 digits.', field: 'account_number' }, 400);
     const name = String(data.account_name || '').trim().slice(0, 80);
     if (name.length < 3) return json({ error: 'Enter the account name.', field: 'account_name' }, 400);
@@ -277,15 +389,25 @@ export async function handleMoneyApi(req, env, path, user) {
   return null;
 }
 
-// Paystack sends players back here after card payment.
-export async function payCallback(req, env) {
+// The gateway sends players back here after paying. Nothing is credited because of this visit alone:
+// the payment is looked up with the gateway first.
+const doneUrl = r => (r?.purpose === 'SPONSOR_FUND' ? '/sponsor?paid=1' : fromPurpose(r?.purpose) ? '/me?plan=1' : '/wallet?paid=1');
+export async function payCallback(req, env, refFromPath = '') {
+  if (refFromPath) {
+    if (!useBachs(env) || !/^TA-[a-f0-9]{8,30}$/.test(refFromPath)) return '/wallet?paid=0';
+    try {
+      const r = await confirmBachsCheckout(env, refFromPath, new URL(req.url).searchParams.get('checkout_id') || '');
+      if (r.ok || r.already) return doneUrl(r);
+      return r.pending ? '/wallet?paid=wait' : '/wallet?paid=0';
+    } catch (e) { console.error('bachs callback', e?.message); return '/wallet?paid=wait'; }
+  }
   const ref = new URL(req.url).searchParams.get('reference') || '';
   if (!paystackOn(env) || !/^TA-[a-f0-9]{8,30}$/.test(ref)) return '/wallet?paid=0';
   try {
     const d = await ps(env, 'GET', `/transaction/verify/${encodeURIComponent(ref)}`);
-    if (d.status !== 'success') return '/wallet?paid=0';
+    if (d.status !== 'success' || String(d.currency || 'NGN').toUpperCase() !== 'NGN') return '/wallet?paid=0';
     const r = await applyPayment(env, ref, d.amount);
-    return r.purpose === 'SPONSOR_FUND' ? '/sponsor?paid=1' : fromPurpose(r.purpose) ? '/me?plan=1' : '/wallet?paid=1';
+    return doneUrl(r);
   } catch { return '/wallet?paid=0'; }
 }
 
@@ -307,10 +429,24 @@ export async function processWithdrawal(env, admin, id, action, note) {
     return json({ message: 'Marked as paid' });
   }
   if (action === 'transfer') {
-    if (!paystackOn(env)) return json({ error: 'Paystack is not connected. Pay manually, then mark as paid.' }, 503);
+    if (!paymentsOn(env)) return json({ error: 'No payment gateway is connected. Pay manually, then mark as paid.' }, 503);
     // claim first so two clicks (or the sweep and an admin) can never send twice
     const c = await env.DB.prepare("UPDATE withdrawals SET status='PROCESSING', updated_at=? WHERE id=? AND status='PENDING'").bind(nowIso(), id).run();
     if (!c.meta.changes) return json({ error: 'Withdrawal not pending.' }, 409);
+    if (useBachs(env)) {
+      try {
+        const u = await env.DB.prepare('SELECT email FROM users WHERE id=?').bind(w.user_id).first();
+        // Idempotency-Key = withdrawal id: a retry can never send the money twice.
+        const t = await bachs(env, 'POST', '/payouts/withdrawals', { from_currency: 'NGN', to_currency: 'NGN', amount: toDecimal(w.amount_kobo), payment_method: 'BANK_TRANSFER', reference: w.id, email: env.PAYOUT_EMAIL || u?.email || 'payouts@tapammm.live', account_number: w.account_number, bank_code: w.bank_code, description: 'Tap Am winnings', metadata: { user_id: w.user_id } }, 'wd-' + w.id);
+        await env.DB.prepare('UPDATE withdrawals SET transfer_code=?, admin_note=?, updated_at=? WHERE id=?').bind(String(t.withdrawal_id || ''), note || (admin ? null : 'Automatic payout'), nowIso(), id).run();
+        const st = String(t.status || '').toLowerCase();
+        if (st === 'failed' || st === 'cancelled') await syncBachsPayout(env, { ...w, status: 'PROCESSING', transfer_code: t.withdrawal_id });
+        return json({ message: 'Transfer started' });
+      } catch (e) {
+        await env.DB.prepare("UPDATE withdrawals SET status='PENDING', admin_note=?, updated_at=? WHERE id=?").bind('Transfer error: ' + String(e.message).slice(0, 120), nowIso(), id).run();
+        return json({ error: 'Bachs: ' + e.message }, 502);
+      }
+    }
     try {
       const rec = await ps(env, 'POST', '/transferrecipient', { type: 'nuban', name: w.account_name, account_number: w.account_number, bank_code: w.bank_code, currency: 'NGN' });
       const t = await ps(env, 'POST', '/transfer', { source: 'balance', amount: w.amount_kobo, recipient: rec.recipient_code, reason: 'Tap Am winnings', reference: w.id });
@@ -327,7 +463,7 @@ export async function processWithdrawal(env, admin, id, action, note) {
 // Cron: automatic payouts (off by default). Small, older accounts, no anti-cheat flags.
 export async function autoPayouts(env) {
   const s = await settings(env);
-  if (s.auto_payouts !== '1' || !paystackOn(env)) return 0;
+  if (s.auto_payouts !== '1' || !paymentsOn(env)) return 0;
   const max = num(s, 'auto_payout_max_kobo', 5000000), ageDays = num(s, 'auto_payout_min_age_days', 7);
   const cutoff = new Date(Date.now() - ageDays * 86400000).toISOString();
   const rows = (await env.DB.prepare(`SELECT w.id FROM withdrawals w JOIN users u ON u.id=w.user_id WHERE w.status='PENDING' AND w.amount_kobo<=? AND datetime(u.created_at)<=datetime(?) AND u.status='ACTIVE'
