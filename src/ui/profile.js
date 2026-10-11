@@ -204,7 +204,7 @@ document.querySelectorAll('form.phrase-form').forEach(function(f){f.addEventList
     var out=document.querySelector('.phrase-out');out.hidden=false;out.textContent='';var p=document.createElement('p');p.className='small';p.style.margin='10px 0 6px';p.textContent=(j.message||'Your 12 words')+'. Write them down in order and keep them secret.';out.appendChild(p);
     var ol=document.createElement('ol');ol.className='words';String(j.phrase||'').split(' ').forEach(function(w){var li=document.createElement('li');li.textContent=w;ol.appendChild(li);});out.appendChild(ol);f.password.value='';});
 },true);});
-var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=7').then(function(){window.TASound.play(s,12,true);});});`;
+var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=8').then(function(){window.TASound.play(s,12,true);});});`;
   return appPage({ user, title: 'Settings', active: '/me', body, wallet, css: SET_CSS, script, narrow: true, theme, bgCss });
 }
 

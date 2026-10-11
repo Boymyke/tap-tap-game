@@ -309,7 +309,7 @@
   // QR code + share card live in a separate file, loaded only when needed.
   function shareCard(b) {
     b.classList.add('is-loading');
-    loadScript('/assets/share.js?v=7').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
+    loadScript('/assets/share.js?v=8').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
       .catch(function () { b.classList.remove('is-loading'); TA.toast('Could not load the share card. Check your connection.', 'err'); });
   }
   function loadScript(src) {
