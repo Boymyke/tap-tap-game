@@ -361,8 +361,9 @@ async function route(req, env, url, path, user) {
         taps: { y, m, years: yearList, days: days.results, months: months.results, today: Number(today.results[0]?.taps || 0), month: Number(month.results[0]?.taps || 0), lifetime: Number(user.lifetime_taps || 0) } }));
     }
     case '/settings': {
-      if (user.role !== 'USER') return go(req, homeFor(user));
-      return html(settingsPage({ ...b, prefs: parseJson(user.prefs, {}), backgrounds: await backgrounds(env) }));
+      if (user.role === 'ADMIN') return go(req, homeFor(user));
+      const events = (await env.DB.prepare('SELECT kind, ip, ua, created_at FROM auth_events WHERE user_id=? ORDER BY created_at DESC LIMIT 20').bind(user.id).all()).results;
+      return html(settingsPage({ ...b, prefs: parseJson(user.prefs, {}), backgrounds: await backgrounds(env), events }));
     }
     case '/calc': if (!b.perk?.calc) return go(req, '/plans'); return html(calcPage(b));
     case '/suggest-pool': {

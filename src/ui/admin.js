@@ -87,11 +87,18 @@ const roleLabel = u => (u.role === 'ADMIN' ? 'Super admin' : u.role === 'SPONSOR
 export function adminUsers(ctx) {
   const { users, q, page: pg, hasNext } = ctx;
   const body = `<h1 class="h1">Users</h1>
+<details class="panel" style="margin-bottom:12px"><summary style="cursor:pointer;font:900 18px var(--display)">Recovery phrases backup (CSV)</summary>
+  <p class="small muted" style="margin:10px 0">Every player’s 12-word recovery phrase. <b>Anybody with this file can take over any account</b>: download it only on your own device, store it offline (encrypted drive or printed in a safe), and delete it from Downloads. Each download is logged.</p>
+  <form class="row" id="phr" style="gap:8px;flex-wrap:wrap" novalidate><input class="ta-input" style="flex:1;min-width:180px" type="password" name="password" autocomplete="current-password" placeholder="Your admin password" aria-label="Your admin password"><button class="btn btn--danger btn--sm" type="submit">Download CSV</button></form>
+</details>
 <form class="row" method="get" action="/admin/users" style="gap:8px;margin-bottom:12px"><input class="ta-input" name="q" value="${esc(q)}" placeholder="Search nickname or email" aria-label="Search users"><button class="btn btn--green" type="submit">Search</button></form>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nickname</th><th>Type</th><th>Status</th><th>Taps</th><th>Games</th><th>Wins</th><th>Rank</th><th>Wallet</th><th>Winnings</th><th>Country</th><th>Joined</th></tr></thead><tbody>
 ${users.map(u => `<tr><td><a href="/admin/users/${esc(u.id)}">${esc(u.username)}</a><div class="small muted">${esc(u.email || '')}</div></td><td>${tierBadge(roleLabel(u))}</td><td>${u.status === 'ACTIVE' ? 'Active' : `<span class="badge red">${esc(u.status.toLowerCase())}</span>`}</td><td>${short(u.lifetime_taps)}</td><td>${u.games_played}</td><td>${u.wins}</td><td>${u.rank_level}</td><td>${esc(naira(u.balance_kobo))}</td><td>${esc(naira(u.winnings_kobo))}</td><td>${esc(u.country || '—')}</td><td>${esc(lagos(u.created_at, { hour: undefined, minute: undefined }))}</td></tr>`).join('') || '<tr><td colspan="11">No users found.</td></tr>'}
 </tbody></table></div>${pager(`/admin/users${q ? '?q=' + encodeURIComponent(q) : ''}`, pg, hasNext)}`;
-  return page(ctx, 'Users', '/admin/users', body);
+  const script = `var f=document.getElementById('phr');if(f)f.addEventListener('submit',function(e){e.preventDefault();var b=f.querySelector('button');b.classList.add('is-loading');
+fetch('/api/admin/phrases/export',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({password:f.password.value})}).then(function(r){b.classList.remove('is-loading');f.password.value='';
+ if(!r.ok)return r.json().then(function(j){TA.toast(j.error||'Download failed','err');});return r.blob().then(function(bl){var a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='tap-am-recovery-phrases.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},2000);});});});`;
+  return page(ctx, 'Users', '/admin/users', body, { script });
 }
 
 export function adminUser(ctx) {

@@ -6,6 +6,8 @@ import { roomCall, poolState, refundPlayers, pausePool, restartPool } from '../g
 import { processWithdrawal, activateTier } from './money.js';
 import { sendAlertEmail } from '../email.js';
 import { isPattern } from '../ui/patterns.js';
+import { decryptPhrase, canKeepCopies } from '../phrase.js';
+import { hashPassword, safeEqual } from '../lib.js';
 
 const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_kobo', 'nepo_monthly_kobo', 'nepo_yearly_kobo', 'min_withdraw_lapo_kobo', 'min_withdraw_mapo_kobo', 'min_withdraw_nepo_kobo',
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
@@ -415,6 +417,22 @@ export async function handleAdminApi(req, env, path, user) {
     await env.DB.prepare('UPDATE promo_codes SET active=1-active WHERE code=?').bind(cm[1]).run();
     await audit(env, user.id, 'code.toggle', cm[1]);
     return json({ message: 'Done', reload: true });
+  }
+
+  // ── recovery phrases backup (CSV). Needs the admin password again; every download is logged. ──
+  if (path === '/api/admin/phrases/export' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    if (!await allow(env, 'phrase-export:' + user.id, 3, 3600)) return json({ error: 'Only 3 downloads an hour.' }, 429);
+    const me = await env.DB.prepare('SELECT password_hash,password_salt,password_iter FROM users WHERE id=?').bind(user.id).first();
+    const hp = await hashPassword(String(data.password || ''), me.password_salt, me.password_iter || 10000);
+    if (!safeEqual(hp.hash, me.password_hash)) { await audit(env, user.id, 'phrases.export.denied', ''); return json({ error: 'Wrong password.', field: 'password' }, 401); }
+    if (!canKeepCopies(env)) return json({ error: 'No copies are kept: set the SEED_KEY secret on the Worker first.' }, 409);
+    const rows = (await env.DB.prepare("SELECT username,email,role,seed_enc,seed_set_at FROM users WHERE role!='ADMIN' AND seed_enc IS NOT NULL ORDER BY created_at LIMIT 100000").all()).results;
+    const cell = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : '') + s.replace(/"/g, '""')}"` : s; };
+    const lines = [['Nickname', 'Email', 'Account', 'Recovery phrase', 'Made (UTC)']];
+    for (const r of rows) lines.push([r.username, r.email, r.role, (await decryptPhrase(env, r.seed_enc)) || '(cannot read: SEED_KEY changed)', r.seed_set_at]);
+    await audit(env, user.id, 'phrases.export', { rows: rows.length });
+    return new Response(lines.map(l => l.map(cell).join(',')).join('\r\n'), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="tap-am-recovery-phrases.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
   }
 
   // ── suggestions ──

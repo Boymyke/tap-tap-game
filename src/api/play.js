@@ -145,7 +145,7 @@ export async function handlePlayApi(req, env, path, user) {
     return json({ message: `${item.name} equipped`, reload: true });
   }
   if (path === '/api/prefs' && req.method === 'POST') {
-    const deny = requireRole(user, ['USER']); if (deny) return deny;
+    const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
     const { data, response } = await readJson(req); if (response) return response;
     const me = await loadUser(env, user.id);
     const prefs = parseJson(me.prefs, {});
@@ -169,6 +169,10 @@ export async function handlePlayApi(req, env, path, user) {
       if ((me.rank_level || 1) < snd.minRank) return json({ error: `${snd.name} unlocks at rank ${snd.minRank}.`, code: 'UPGRADE', need: 'RANK', redirect: '/ranks', go: 'See ranks' }, 403);
       prefs.sound = snd.id;
     }
+    const cols = [];
+    if (typeof data.hideProfile === 'boolean') cols.push(env.DB.prepare('UPDATE users SET hide_profile=? WHERE id=?').bind(data.hideProfile ? 1 : 0, user.id));
+    if (typeof data.emailNews === 'boolean') cols.push(env.DB.prepare('UPDATE users SET email_news=? WHERE id=?').bind(data.emailNews ? 1 : 0, user.id));
+    if (cols.length) await env.DB.batch(cols);
     if (typeof data.vibrate === 'boolean') prefs.vibrate = data.vibrate;
     if (typeof data.muted === 'boolean') prefs.muted = data.muted;
     // Your tap area (Mapo + Nepo): any colour, and a pattern from a skin you own. '' = back to your skin's look.

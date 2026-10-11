@@ -66,7 +66,7 @@ ${taps ? tapsSection(taps) : ''}
 </div>
 <h2 class="h2">Your stuff</h2>
 <div class="tiles">
-  ${tile('/settings', 'Settings', 'Theme, sounds, account', 'c-ink')}
+  ${tile('/settings', 'Settings', 'Password, privacy, sounds', 'c-ink')}
   ${tile('/bag', 'My bag', 'Boosters and skins', 'c-orange')}
   ${tile('/ranks', 'Ranks', 'What every rank unlocks', 'c-pink')}
   ${tile('/top', 'Top tappers', 'Day, week, month, year', 'c-sky')}
@@ -142,19 +142,18 @@ const SET_CSS = `
 .bgopt:has(input:checked){box-shadow:0 0 0 3px var(--ink)}
 .bgopt:has(input:checked)::after{content:"";position:absolute;right:10px;top:10px;width:12px;height:7px;border:3px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg);filter:drop-shadow(0 1px 0 rgba(0,0,0,.6))}
 .sndrow{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
+.words{margin:0;padding:0;list-style:none;counter-reset:w;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.words li{counter-increment:w;display:flex;gap:6px;padding:8px;border-radius:var(--r-in);background:var(--cloud);font:800 15px var(--body);user-select:text;-webkit-user-select:text}
+.words li::before{content:counter(w);font:800 11px var(--body);color:var(--ink-soft)}
 `;
 export function settingsPage(ctx) {
-  const { user, tierKey, prefs, backgrounds, wallet, theme, bgCss } = ctx;
+  const { user, tierKey, prefs, backgrounds, wallet, theme, bgCss, events = [] } = ctx;
   const nepo = tierKey === 'NEPO', paid = tierKey !== 'LAPO';
   const curTheme = nepo && THEMES[prefs.theme] ? prefs.theme : 'grape';
   const swatches = Object.entries(THEMES).map(([k, t]) => `<label class="swatch ${nepo || k === 'grape' ? '' : 'locked'}" style="background:linear-gradient(135deg,${t.a},${t.b})" title="${esc(t.name)}"><input type="radio" name="theme" value="${k}" ${k === curTheme ? 'checked' : ''} ${nepo || k === 'grape' ? '' : 'disabled'} aria-label="${esc(t.name)} theme"></label>`).join('');
   const lvl = user.rank_level || 1;
   const soundOpts = SOUNDS.map(snd => [snd.id, `${snd.name}${!paid && snd.id !== 'pop' ? ' (Mapo/Nepo)' : lvl < snd.minRank ? ` (rank ${snd.minRank})` : ''}`]);
   const body = `<h1 class="h1">Settings</h1>
-<div class="panel set">
-  <h2>App theme</h2><p class="sub2">${nepo ? 'Pick one of 10 colours for your whole app.' : 'Nepo babies pick from 10 app colours.'}</p>
-  ${nepo ? form('/api/prefs', `<div class="swatches">${swatches}</div>`, { submit: 'Save theme' }) : `<div class="swatches" style="margin-bottom:12px">${swatches}</div><button type="button" class="btn btn--soft btn--block" ${upgradeAttrs('NEPO', 'App themes')}>${ICONS.lock} Unlock themes with Nepo</button>`}
-</div>
 <div class="panel set">
   <h2>Background</h2><p class="sub2">${nepo ? 'Backgrounds made by the Tap Am team. Shows across the app and in games.' : 'Nepo babies can change their background.'}</p>
   ${nepo ? form('/api/prefs', `<div class="bgs"><label class="bgopt" style="background:linear-gradient(165deg,#6A35FF,#1B0B4D)"><input type="radio" name="bg" value="none" ${!prefs.bg ? 'checked' : ''}>Default</label>${backgrounds.map(b => `<label class="bgopt" style="background:${esc(backgroundCss(b))}"><input type="radio" name="bg" value="${esc(b.id)}" ${prefs.bg === b.id ? 'checked' : ''}>${esc(b.name)}</label>`).join('')}</div>`, { submit: 'Save background' })
@@ -170,6 +169,24 @@ export function settingsPage(ctx) {
   ${form('/api/prefs', `${check({ name: 'vibrate', label: 'Vibrate on combos and milestones', checked: prefs.vibrate !== false })}${check({ name: 'muted', label: 'Start games with sound off', checked: !!prefs.muted })}`, { submit: 'Save' })}
 </div>
 <div class="panel set">
+  <h2>Privacy and emails</h2>
+  ${form('/api/prefs', `${check({ name: 'hideProfile', label: 'Hide my winnings and badges from other players (they still see my nickname and rank in games)', checked: !!user.hide_profile })}${check({ name: 'emailNews', label: 'Email me about new pools and offers', checked: !!user.email_news })}`, { submit: 'Save' })}
+</div>
+<div class="panel set">
+  <h2>Change password</h2><p class="sub2">You need your 12-word recovery phrase. Other devices get logged out.</p>
+  ${user.seed_set_at ? form('/api/password/change', `<div class="ta-field" data-field="phrase"><label class="ta-label" for="cp-phrase">Recovery phrase (12 words)</label><textarea class="ta-input" id="cp-phrase" name="phrase" rows="3" autocapitalize="none" autocomplete="off" spellcheck="false" required></textarea><p class="ta-error" data-err="phrase"></p></div>${field({ label: 'New password', name: 'password', type: 'password', id: 'f-newpw', attrs: 'autocomplete="new-password" required' })}`, { submit: 'Change password' }) : '<p class="small" style="margin:0">Make your recovery phrase below first.</p>'}
+</div>
+<div class="panel set">
+  <h2>Recovery phrase</h2><p class="sub2">${user.seed_set_at ? `Made ${esc(lagosDate(user.seed_set_at))}. It resets your password if you forget it.` : 'Your account has no recovery phrase yet. Make one now: it is the only way back in if you forget your password.'}</p>
+  ${form('/api/phrase/' + (user.seed_set_at ? 'show' : 'create'), `${field({ label: 'Your password', name: 'password', type: 'password', id: 'f-pw-show', attrs: 'autocomplete="current-password" required' })}`, { submit: user.seed_set_at ? 'Show my phrase' : 'Make my phrase', cls: 'phrase-form' })}
+  ${user.seed_set_at ? `<details style="margin-top:10px"><summary class="small" style="cursor:pointer;font-weight:700">Lost it? Make a new phrase</summary><div style="margin-top:10px">${form('/api/phrase/create', `${field({ label: 'Your password', name: 'password', type: 'password', id: 'f-password-new', attrs: 'autocomplete="current-password" required' })}${check({ name: 'replace', label: 'Make a new one. The old phrase stops working.' })}`, { submit: 'Make a new phrase', cls: 'phrase-form' })}</div></details>` : ''}
+  <div class="phrase-out" hidden></div>
+</div>
+<div class="panel set">
+  <h2>Sign-in history</h2><p class="sub2">Your last logins, logouts and password changes. See something you don’t know? Change your password.</p>
+  ${events.length ? `<div class="list">${events.map(e => `<div class="item" style="box-shadow:none;background:var(--cloud);padding:9px 12px"><div class="grow"><div class="t" style="font-size:15px">${esc({ LOGIN: 'Logged in', LOGOUT: 'Logged out', SIGNUP: 'Account created', PASSWORD_RESET: 'Password reset with phrase', PASSWORD_CHANGE: 'Password changed', PHRASE_NEW: 'New recovery phrase', PHRASE_VIEW: 'Recovery phrase viewed' }[e.kind] || e.kind)}</div><div class="s">${esc(e.ua || '')}${e.ip ? ' · ' + esc(e.ip) : ''}</div></div><span class="small" style="white-space:nowrap">${esc(lagos(e.created_at.includes('T') ? e.created_at : e.created_at.replace(' ', 'T') + 'Z'))}</span></div>`).join('')}</div>` : '<p class="small" style="margin:0">Nothing yet.</p>'}
+</div>
+<div class="panel set">
   <h2>Account</h2><p class="sub2">${esc(user.username)} · ${esc(user.email || '')}</p>
   <div class="actions" style="margin-top:0"><button type="button" class="btn btn--soft btn--sm" data-logout>Log out</button><a class="btn btn--soft btn--sm" href="/privacy">Privacy</a></div>
 </div>
@@ -177,7 +194,14 @@ export function settingsPage(ctx) {
   <h2>Archive my account</h2><p class="sub2">Hides your profile and logs you out everywhere. Log in again within 30 days to bring it back. After that, contact us to restore it. Withdraw your winnings first — wallet money can’t be withdrawn.</p>
   ${form('/api/account/archive', `${field({ label: 'Your password', name: 'password', type: 'password', attrs: 'autocomplete="current-password" required' })}${check({ name: 'confirm', label: 'I understand my account will be archived.' })}`, { submit: 'Archive account', btn: 'btn--danger' })}
 </div>`;
-  const script = `var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=7').then(function(){window.TASound.play(s,12,true);});});`;
+  const script = `
+document.querySelectorAll('form.phrase-form').forEach(function(f){f.addEventListener('submit',function(e){e.preventDefault();e.stopImmediatePropagation();
+  var b=f.querySelector('button[type=submit]'),body={password:f.password.value};if(f.replace)body.replace=f.replace.checked;b.classList.add('is-loading');
+  TA.api(f.getAttribute('data-api'),body).then(function(j){b.classList.remove('is-loading');if(!j._ok){TA.fail(j);return;}
+    var out=document.querySelector('.phrase-out');out.hidden=false;out.textContent='';var p=document.createElement('p');p.className='small';p.style.margin='10px 0 6px';p.textContent=(j.message||'Your 12 words')+'. Write them down in order and keep them secret.';out.appendChild(p);
+    var ol=document.createElement('ol');ol.className='words';String(j.phrase||'').split(' ').forEach(function(w){var li=document.createElement('li');li.textContent=w;ol.appendChild(li);});out.appendChild(ol);f.password.value='';});
+},true);});
+var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=7').then(function(){window.TASound.play(s,12,true);});});`;
   return appPage({ user, title: 'Settings', active: '/me', body, wallet, css: SET_CSS, script, narrow: true, theme, bgCss });
 }
 
