@@ -286,26 +286,44 @@ ${term ? (rows.length ? `<div class="list">${rows.map(r => `<a class="item" href
 }
 
 // ── Public profile (and share card) ─────────────────────────────────────────
+// Big numbers get short: 12,400 → 12.4k, 1,130,000 → 1.1m.
+const compact = n => {
+  n = Number(n || 0); const a = Math.abs(n);
+  const f = (v, sfx) => (Math.round(v * 10) / 10).toString().replace(/\.0$/, '') + sfx;
+  if (a >= 1e9) return f(n / 1e9, 'b');
+  if (a >= 999950) return f(n / 1e6, 'm');
+  if (a >= 1e4) return f(n / 1e3, 'k');
+  return Math.round(n).toLocaleString('en-NG');
+};
+const nairaCompact = k => '₦' + compact(Number(k || 0) / 100);
+
 export function profilePage(ctx) {
   const { user, p, own, hidden, won, prizes, badges, rank, origin, theme, bgCss } = ctx;
   const url = `${origin}/u/${p.username}`;
   const joined = lagosDate(p.created_at.includes('T') ? p.created_at : p.created_at.replace(' ', 'T') + 'Z');
   const card = { url, kind: 'profile', title: p.username, line: `${rank.current.name} · Rank ${rank.current.level}`, color: '#9161FF', display: 'www.tapammm.live',
-    stats: [`${short(p.lifetime_taps)} all-time taps`, `${p.tierName}`, ...(hidden || won === null ? [] : [`${nairaShort(won)} won`, `${badges.length} badge${badges.length === 1 ? '' : 's'}`]), `Joined ${joined}`] };
+    stats: [`${compact(p.lifetime_taps)} all-time taps`, ...(hidden || won === null ? [] : [`${nairaCompact(won)} won`]), `${p.tierName}`, ...(hidden || won === null ? [] : [`${badges.length} badge${badges.length === 1 ? '' : 's'}`]), `Joined ${joined}`] };
   const body = `<section class="tcard prof c-purple">${rankAvatar(rank.current.level, { size: 92, title: rank.current.name })}
   <div style="min-width:0"><h1>${nameTag(p.username, p.emoji, own ? user.emoji_meaning : null)}</h1><div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">${tierBadge(p.tierName)}<span class="small" style="font-weight:700">Joined ${esc(joined)}</span></div></div>
   <div style="grid-column:1/-1;font:800 15px var(--body)">${esc(rank.current.name)} · Rank ${rank.current.level}/100</div>
 </section>
-<div class="grid" style="margin-top:14px;grid-template-columns:repeat(${hidden ? 3 : 4},minmax(0,1fr))">
-  <div class="panel stat"><span class="k">All-time taps</span><span class="v">${short(p.lifetime_taps)}</span></div>
-  <div class="panel stat"><span class="k">Games</span><span class="v">${short(p.games_played)}</span></div>
-  <div class="panel stat"><span class="k">Wins</span><span class="v">${short(p.wins)}</span></div>
-  ${hidden ? '' : `<div class="panel stat"><span class="k">Won</span><span class="v" style="font-size:22px">${esc(nairaShort(won || 0))}</span></div>`}
+<div class="pstats">
+  <div class="panel pline"><span class="k">All-time taps</span><span class="v" title="${esc(Number(p.lifetime_taps || 0).toLocaleString('en-NG'))}">${esc(compact(p.lifetime_taps))}</span></div>
+  ${hidden ? '' : `<div class="panel pline"><span class="k">Won</span><span class="v" title="${esc(naira(won || 0))}">${esc(nairaCompact(won || 0))}</span></div>`}
+  <div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+    <div class="panel stat"><span class="k">Games</span><span class="v">${esc(compact(p.games_played))}</span></div>
+    <div class="panel stat"><span class="k">Wins</span><span class="v">${esc(compact(p.wins))}</span></div>
+  </div>
 </div>
 ${hidden ? '<div class="empty" style="margin-top:14px">This player keeps their winnings and badges private.</div>' : badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
 ${own ? `<p class="small muted" style="margin:14px 2px 0">${p.hide_profile ? 'Your winnings and badges are hidden from others.' : 'Everybody can see your winnings and badges.'} <a href="/settings" style="color:#fff;font-weight:800">Change in Settings</a></p>` : ''}
-<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share ${own ? 'my' : 'this'} profile</button>${copyRowLite(url)}</div>`;
-  return anyPage({ user, title: p.username, active: '/me', body, css: ME_CSS, theme, bgCss, description: `${p.username} on Tap Am: ${rank.current.name}, ${short(p.lifetime_taps)} taps.` });
+${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div>` : ''}`;
+  const css = ME_CSS + `.pstats{display:grid;gap:10px;margin-top:14px}
+.pstats>*{margin:0}.pstats .grid>*{margin:0}
+.pline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px}
+.pline .k{font:800 13px var(--body);text-transform:uppercase;letter-spacing:.5px;color:var(--ink-soft)}
+.pline .v{font:900 30px/1 var(--display);color:var(--ink);white-space:nowrap}`;
+  return anyPage({ user, title: p.username, active: '/me', body, css, theme, bgCss, description: `${p.username} on Tap Am: ${rank.current.name}, ${short(p.lifetime_taps)} taps.` });
 }
 const copyRowLite = url => `<button type="button" class="btn btn--white" data-copy="${esc(url)}">${ICONS.copy}<span>Copy link</span></button>`;
 
