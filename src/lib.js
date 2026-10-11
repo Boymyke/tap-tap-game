@@ -152,16 +152,13 @@ export async function readJson(req, { requireJson = true } = {}) {
 }
 
 // Fixed-window rate limit stored in D1. Returns true when the action is allowed.
+// One atomic statement, so many requests at the same moment (scripts, several tabs) can't slip past the limit.
 export async function allow(env, key, limit, windowSeconds) {
-  const now = Date.now();
-  const row = await env.DB.prepare('SELECT count,reset_at FROM auth_throttle WHERE key=?').bind(key).first();
-  if (!row || Date.parse(row.reset_at) <= now) {
-    await env.DB.prepare('INSERT INTO auth_throttle(key,count,reset_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=1,reset_at=excluded.reset_at')
-      .bind(key, new Date(now + windowSeconds * 1000).toISOString()).run();
-    return true;
-  }
-  if (row.count >= limit) return false;
-  await env.DB.prepare('UPDATE auth_throttle SET count=count+1 WHERE key=?').bind(key).run();
-  return true;
+  const now = new Date().toISOString();
+  const row = await env.DB.prepare(`INSERT INTO auth_throttle(key,count,reset_at) VALUES(?1,1,?2)
+    ON CONFLICT(key) DO UPDATE SET count = CASE WHEN auth_throttle.reset_at <= ?3 THEN 1 ELSE auth_throttle.count + 1 END,
+      reset_at = CASE WHEN auth_throttle.reset_at <= ?3 THEN excluded.reset_at ELSE auth_throttle.reset_at END
+    RETURNING count`).bind(key, new Date(Date.now() + windowSeconds * 1000).toISOString(), now).first();
+  return Number(row?.count || 1) <= limit;
 }
 export const clearLimit = (env, key) => env.DB.prepare('DELETE FROM auth_throttle WHERE key=?').bind(key).run();

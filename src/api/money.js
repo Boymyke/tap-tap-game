@@ -212,8 +212,14 @@ export async function handleMoneyApi(req, env, path, user) {
     const sent = -Number((await env.DB.prepare("SELECT COALESCE(SUM(amount_kobo),0) n FROM wallet_transactions WHERE user_id=? AND type='GIFT_SENT' AND created_at>=?").bind(user.id, dayStart).first())?.n || 0);
     if (sent + kobo > cap) return json({ error: `You fit send up to ${naira(cap)} a day. You have ${naira(Math.max(0, cap - sent))} left today.`, field: 'amount' }, 400);
     const note = String(data.note || '').trim().slice(0, 80);
-    const ok = await moveMoney(env, { from: user.id, to: to.id, amount: kobo, outType: 'GIFT_SENT', inType: 'GIFT_RECEIVED', outNote: `To ${to.username}${note ? ': ' + note : ''}`, inNote: `From ${me.username}${note ? ': ' + note : ''}` });
-    if (!ok) return fundsError(`You need ${naira(kobo)} in your wallet.`);
+    // the daily cap is checked again inside the debit itself, so sends made at the same moment can't pass it
+    const ok = await moveMoney(env, { from: user.id, to: to.id, amount: kobo, outType: 'GIFT_SENT', inType: 'GIFT_RECEIVED', outNote: `To ${to.username}${note ? ': ' + note : ''}`, inNote: `From ${me.username}${note ? ': ' + note : ''}`,
+      guard: { sql: "(SELECT COALESCE(-SUM(amount_kobo),0) FROM wallet_transactions WHERE user_id=? AND type='GIFT_SENT' AND created_at>=?) + ? <= ?", binds: [user.id, dayStart, kobo, cap] } });
+    if (!ok) {
+      const w = await env.DB.prepare('SELECT balance_kobo FROM wallets WHERE user_id=?').bind(user.id).first();
+      if (Number(w?.balance_kobo || 0) >= kobo) return json({ error: `That goes past your daily limit of ${naira(cap)}.`, field: 'amount' }, 400);
+      return fundsError(`You need ${naira(kobo)} in your wallet.`);
+    }
     await notify(env, to.id, `${me.username} sent you ${naira(kobo)}${note ? ': “' + note + '”' : ''}. It is in your wallet.`, '/wallet');
     return json({ message: `Sent ${naira(kobo)} to ${to.username}.`, reload: true });
   }
@@ -232,7 +238,8 @@ export async function handleMoneyApi(req, env, path, user) {
   if (path === '/api/codes/redeem' && req.method === 'POST') {
     if (me.role !== 'USER') return json({ error: 'Only players can use codes.' }, 403);
     const { data, response } = await readJson(req); if (response) return response;
-    if (!await allow(env, 'code:' + user.id, 10, 3600)) return json({ error: 'Too many tries. Wait an hour.' }, 429);
+    // per player and per network, so many accounts can't guess codes together
+    if (!await allow(env, 'code:' + user.id, 10, 3600) || !await allow(env, 'codeip:' + (req.headers.get('cf-connecting-ip') || 'x'), 30, 3600)) return json({ error: 'Too many tries. Wait an hour.' }, 429);
     return redeemCode(env, user, data.code);
   }
 

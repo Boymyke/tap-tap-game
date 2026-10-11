@@ -3,7 +3,7 @@
 import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
 import { landingPage, demoPools } from './ui/landing.js';
-import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
+import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage, unsubPage } from './ui/pages.js';
 import { dashboardPage, poolsPage, poolPage, createPoolPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
 import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage, winnersPage, playersPage, profilePage } from './ui/profile.js';
@@ -25,7 +25,7 @@ import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
 import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots } from './game/pools.js';
 import { awardBadges } from './game/badges.js';
-import { processEmailBlasts } from './game/blasts.js';
+import { processEmailBlasts, unsubOk } from './game/blasts.js';
 import { logAuth, decryptPhrase, canKeepCopies } from './phrase.js';
 import { runChecks, healthSweep } from './health.js';
 
@@ -103,6 +103,15 @@ async function recentWinners(env) {
 
 async function handleSiteApi(req, env, path) {
   if (path === '/api/winners' && req.method === 'GET') return json({ winners: await recentWinners(env) }, 200, { 'cache-control': 'public, max-age=60' });
+  // "Stop these emails" link from a pool news email (signed per player, works without logging in)
+  if (path === '/api/unsub' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'unsub:' + clientIp(req), 30, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const id = String(data.u || '').slice(0, 64);
+    if (!await unsubOk(env, id, data.t)) return json({ error: 'This link is not valid. Turn emails off in Settings instead.' }, 400);
+    await env.DB.prepare('UPDATE users SET email_news=0 WHERE id=?').bind(id).run();
+    return json({ message: 'Done. No more pool news emails.' });
+  }
   if (path === '/api/presence' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
     const vid = String(data.vid || '');
@@ -270,6 +279,7 @@ async function route(req, env, url, path, user) {
     case '/offline': return html(offlinePage());
     case '/policy': return go(req, '/rules', 301);
     case '/suggest': return html(suggestPage(user));
+    case '/unsub': return html(unsubPage(q.get('u') || '', q.get('t') || ''), 200, { 'x-robots-tag': 'noindex' });
     case '/admin/setup': if (isAdmin(user)) return go(req, '/admin'); return html(setupPage());
     case '/admin/login': if (isAdmin(user)) return go(req, '/admin'); return html(adminLoginPage(), 200, { 'x-robots-tag': 'noindex' });
     case '/pay/callback': return go(req, await payCallback(req, env));

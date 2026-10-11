@@ -258,9 +258,11 @@ export async function topUpPool(env, user, pool, d) {
   const from = d.from === 'WINNINGS' && user.role === 'USER' ? 'WINNINGS' : 'WALLET';
   if (!await debit(env, user.id, amount, { balance: from, type: 'POOL_TOPUP', reference: pool.id, note: pool.name })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
   // One statement: the prize only grows while the pool is still open; otherwise the money goes back.
-  const r = await env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, nowIso()).run();
+  // The record is written in the same transaction, so a pause or cancel can always find (and refund) it.
+  const [r] = await env.DB.batch([
+    env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, nowIso()),
+    env.DB.prepare('INSERT INTO pool_topups(id,pool_id,user_id,amount_kobo,balance) SELECT ?,?,?,?,? WHERE changes()>0').bind(uid(), pool.id, user.id, amount, from)]);
   if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Pool closed before the top-up' }); return json({ error: 'This pool don close. Your money is back.' }, 409); }
-  await env.DB.prepare('INSERT INTO pool_topups(id,pool_id,user_id,amount_kobo,balance) VALUES(?,?,?,?,?)').bind(uid(), pool.id, user.id, amount, from).run();
   return json({ message: `You added ${naira(amount)} to the prize!`, reload: true });
 }
 

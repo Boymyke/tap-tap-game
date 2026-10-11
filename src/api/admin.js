@@ -401,7 +401,8 @@ export async function handleAdminApi(req, env, path, user) {
     const { data, response } = await body(); if (response) return response;
     let code = String(data.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!code) code = 'TAP' + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
-    if (code.length < 4 || code.length > 20) return json({ error: 'Codes are 4–20 letters and numbers.', field: 'code' }, 400);
+    // short codes are easy to guess, so at least 6 characters
+    if (code.length < 6 || code.length > 20) return json({ error: 'Codes are 6–20 letters and numbers.', field: 'code' }, 400);
     const tier = data.tier === 'NEPO' ? 'NEPO' : 'MAPO';
     const days = clampInt(data.days, 1, 730, 30);
     const maxUses = clampInt(String(data.max_uses || '1').replace(/,/g, ''), 1, 1000000, 1);

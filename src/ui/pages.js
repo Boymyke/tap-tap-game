@@ -138,6 +138,19 @@ export function aboutPage(user) {
 }
 
 // ── Offline page (cached by the service worker) ──────────────────────────────
+// From the "stop these emails" link in a pool news email. A button (not the link itself) turns them off,
+// so email scanners that open links can't unsubscribe anyone.
+export function unsubPage(u, t) {
+  const body = `<main class="ta-page" style="justify-content:center"><a class="ta-logo" href="/" style="width:130px">${LOGO_IMG()}</a><div class="ta-card">
+<h1 style="margin:0 0 6px;font:900 30px/1 var(--display)">Stop pool news emails?</h1>
+<p class="ta-note" style="margin:0 0 16px">You will stop getting emails about new sponsor pools. Login codes and account emails still come.</p>
+<form class="form" data-api="/api/unsub" novalidate style="display:grid;gap:12px">
+<input type="hidden" name="u" value="${esc(u.slice(0, 64))}"><input type="hidden" name="t" value="${esc(t.slice(0, 64))}">
+<div class="ta-msg" role="alert"></div><button class="btn btn--block" type="submit">Yes, stop them</button></form>
+<p class="ta-note" style="margin:14px 0 0">You can turn them on again in Settings.</p></div></main>`;
+  return themeShell({ title: 'Email settings', body });
+}
+
 export function offlinePage() {
   const css = `.center{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:20px}
 .err{width:100%;max-width:420px;padding:28px 22px 24px;text-align:center;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:var(--sh-lg)}

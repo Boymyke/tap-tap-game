@@ -81,9 +81,9 @@ export async function sendMail(env, to, { subject, text, html }) {
   return { sent: false, test: true };
 }
 
-export function poolNewsEmail({ pool, sponsor, url, prize }) {
+export function poolNewsEmail({ pool, sponsor, url, prize, unsub = '' }) {
   const subject = `${sponsor} invites you: ${pool}`;
-  const text = `${sponsor} has a new Tap Am pool for you: ${pool}.${prize ? ` Prize pool: ${prize}.` : ''}\n\nJoin here: ${url}\n\nYou get this because you said yes to pool news. Turn it off any time in Settings.\nTap Am · Powered by Ferrn Agency`;
+  const text = `${sponsor} has a new Tap Am pool for you: ${pool}.${prize ? ` Prize pool: ${prize}.` : ''}\n\nJoin here: ${url}\n\nYou get this because you said yes to pool news. Turn it off any time in Settings${unsub ? ` or here: ${unsub}` : ''}.\nTap Am · Powered by Ferrn Agency`;
   const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#2A0F8F;font-family:Barlow,Arial,sans-serif;color:#150B33">
 <table role="presentation" width="100%" style="max-width:460px;margin:0 auto;background:#ffffff;border-radius:18px;padding:26px">
 <tr><td style="font-size:28px;font-weight:900;font-style:italic;color:#150B33">TAP <span style="background:#AA0FEA;color:#fff;padding:0 8px;border-radius:6px">AM</span></td></tr>
@@ -91,7 +91,7 @@ export function poolNewsEmail({ pool, sponsor, url, prize }) {
 <tr><td style="font-size:26px;font-weight:900;line-height:1.1">${esc(pool)}</td></tr>
 ${prize ? `<tr><td style="padding:10px 0;font-size:18px;font-weight:800;color:#0A9B4A">Prize pool ${esc(prize)}</td></tr>` : ''}
 <tr><td style="padding:14px 0"><a href="${esc(url)}" style="display:inline-block;background:#00FF6E;color:#150B33;font-weight:900;font-size:18px;text-decoration:none;padding:14px 22px;border-radius:12px">Join the pool</a></td></tr>
-<tr><td style="font-size:12px;line-height:1.6;color:#5B4E86">You get this because you said yes to pool news. Turn it off any time in Settings.</td></tr>
+<tr><td style="font-size:12px;line-height:1.6;color:#5B4E86">You get this because you said yes to pool news. Turn it off any time in Settings${unsub ? ` or <a href="${esc(unsub)}" style="color:#5B4E86">stop these emails</a>` : ''}.</td></tr>
 <tr><td style="padding-top:14px;font-size:12px;color:#9161FF">Tap Am · Powered by Ferrn Agency</td></tr>
 </table></body></html>`;
   return { subject, text, html };
