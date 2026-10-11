@@ -10,7 +10,7 @@ import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, 
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
-import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, setupPage, suggestPage } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, adminMoney, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
 import { handlePlayApi, maybeFreeBox } from './api/play.js';
@@ -640,6 +640,14 @@ async function adminRoute(req, env, url, path, user) {
   if (path === '/admin/merch') {
     const items = (await env.DB.prepare('SELECT m.*, (SELECT COUNT(*) FROM merch_interest i WHERE i.item=m.id) AS interested FROM merch m ORDER BY m.sort, m.created_at DESC LIMIT 200').all()).results;
     return html(adminMerch({ ...b, items, edit: items.find(i => i.id === q.get('edit')) || null }));
+  }
+  if (path === '/admin/money') {
+    const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'DAY';
+    const start = periodStart(period);
+    const [winners, funded] = await Promise.all([
+      topWinners(env, period, { limit: 50 }),
+      env.DB.prepare(`SELECT u.id, u.username, u.role, SUM(t.amount_kobo) AS funded, COUNT(*) AS times FROM wallet_transactions t JOIN users u ON u.id=t.user_id WHERE t.type='FUND' AND t.amount_kobo>0 AND datetime(t.created_at)>=datetime(?) GROUP BY u.id ORDER BY funded DESC LIMIT 50`).bind(start === '0000' ? '1970-01-01' : start).all()]);
+    return html(adminMoney({ ...b, period, winners: winners.slice(0, 50), funded: funded.results }));
   }
   if (path === '/admin/codes') return html(adminCodes({ ...b, codes: (await env.DB.prepare('SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 200').all()).results }));
   if (path === '/admin/badges') {

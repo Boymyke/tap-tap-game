@@ -6,7 +6,7 @@ import { skinPreview } from './skins.js';
 import { adForm, adList, AD_CSS, AD_JS } from './sponsor.js';
 import { backgroundCss, tierName, tierOf } from '../tiers.js';
 
-const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/suggestions', 'Suggestions']];
+const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/money', 'Top money'], ['/admin/suggestions', 'Suggestions']];
 const tabs = cur => `<nav class="tabs" aria-label="Admin sections">${TABS.map(([h, l]) => `<a href="${h}" ${h === cur ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
 const page = (ctx, title, active, body, extra = {}) => appPage({ user: ctx.user, title, active: TABS.some(t => t[0] === active) && ['/admin', '/admin/users', '/admin/pools', '/admin/ads', '/admin/health'].includes(active) ? active : '', body: tabs(extra.tab || active) + body, ...extra });
 const ADMIN_CSS = `.danger-form .btn{background:var(--danger);box-shadow:0 4px 0 var(--danger-d);color:#fff}
@@ -270,6 +270,17 @@ export function adminMerch(ctx) {
   <p class="small muted" style="margin:4px 0 8px">${m.price_kobo ? esc(naira(m.price_kobo)) : 'No price'} · ${short(m.interested || 0)} want it</p>
   <div class="actions" style="margin-top:0"><a class="btn btn--soft btn--sm" href="/admin/merch?edit=${encodeURIComponent(m.id)}">Edit</a>${postBtn(`/api/admin/merch/${m.id}/toggle`, m.active ? 'Hide' : 'Show')}${postBtn(`/api/admin/merch/${m.id}/delete`, 'Delete', { cls: 'btn--danger btn--sm', confirm: `Delete ${m.name}?` })}</div></div>`).join('')}</div>` : '<div class="empty">No merch yet. The Merch page shows starter ideas until you add items.</div>'}`;
   return page(ctx, 'Merch', '/admin/merch', body, { css: ADMIN_CSS });
+}
+
+// ── top winnings + top funded accounts ──────────────────────────────────────
+export function adminMoney(ctx) {
+  const { period, winners, funded } = ctx;
+  const tabsP = [['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year'], ['ALL', 'All time']];
+  const body = `<h1 class="h1">Top money</h1><p class="sub">Who won the most prize money and who put the most money in, for the period you pick (Lagos time).</p>
+<nav class="tabs">${tabsP.map(([k, l]) => `<a href="/admin/money?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+<h2 class="h2" style="margin-top:0">Top winnings</h2>${winners.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Prizes</th></tr></thead><tbody>${winners.map(w => `<tr><td>${w.pos}</td><td><a href="/admin/users/${esc(w.id)}">${esc(w.username)}</a>${w.hide_profile ? ' <span class="small muted">(hidden)</span>' : ''}</td><td><b>${esc(naira(w.won))}</b></td><td>${w.prizes}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No prizes paid in this period.</div>'}
+<h2 class="h2">Top funded accounts</h2>${funded.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Account</th><th>Type</th><th>Added</th><th>Times</th></tr></thead><tbody>${funded.map((f, i) => `<tr><td>${i + 1}</td><td><a href="/admin/users/${esc(f.id)}">${esc(f.username)}</a></td><td>${f.role === 'SPONSOR' ? 'Sponsor' : 'Player'}</td><td><b>${esc(naira(f.funded))}</b></td><td>${f.times}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nobody added money in this period.</div>'}`;
+  return page(ctx, 'Top money', '/admin/money', body, { css: ADMIN_CSS });
 }
 
 // ── promo codes: free Mapo / Nepo for some days ─────────────────────────────
