@@ -232,6 +232,11 @@ export default {
     let user = null;
     try {
       const url = new URL(req.url);
+      // One address for everybody (www.tapammm.live → tapammm.live), so logins and links don't split.
+      if (env.PUBLIC_URL) {
+        const pu = new URL(env.PUBLIC_URL);
+        if (url.hostname === 'www.' + pu.hostname) return Response.redirect(pu.origin + url.pathname + url.search, req.method === 'GET' || req.method === 'HEAD' ? 301 : 308);
+      }
       const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
       if (path.startsWith('/api/')) {
         if (req.method !== 'GET' && path !== '/api/paystack/webhook' && !sameOrigin(req)) return json({ error: 'Request blocked.' }, 403);

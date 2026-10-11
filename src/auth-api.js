@@ -106,7 +106,9 @@ export async function handleAuthApi(req, env, path) {
   // No email code. The 12-word phrase is shown once; it resets the password later.
   if (path === '/api/signup/start' || path === '/api/signup') {
     const { data, response } = await readJson(req); if (response) return response;
-    if (!await allow(env, 'signup-ip:' + ip, 10, 3600)) return tooMany('Too many sign-ups from this network. Try again later.');
+    // Per network: many Nigerian phones share one mobile-network address, so this is generous;
+    // the per-account limits do the real protecting.
+    if (!await allow(env, 'signup-ip:' + ip, 60, 3600)) return tooMany('Too many sign-ups from this network. Try again later.');
     const nickname = String(data.nickname ?? data.username ?? '').trim();
     const email = normEmail(data.email), password = String(data.password ?? '');
     const sponsor = data.accountType === 'SPONSOR';
@@ -153,7 +155,7 @@ export async function handleAuthApi(req, env, path) {
   if (path === '/api/password/recover') {
     const { data, response } = await readJson(req); if (response) return response;
     const identifier = String(data.identifier ?? '').trim();
-    if (!await allow(env, 'recover-ip:' + ip, 10, 3600) || !await allow(env, 'recover-id:' + identifier.toLowerCase(), 5, 3600)) return tooMany('Too many tries. Wait one hour and try again.');
+    if (!await allow(env, 'recover-ip:' + ip, 30, 3600) || !await allow(env, 'recover-id:' + identifier.toLowerCase(), 5, 3600)) return tooMany('Too many tries. Wait one hour and try again.');
     if (!identifier) return fieldError('identifier', 'Enter your nickname or email.');
     const phrase = normPhrase(data.phrase);
     if (!phrase) return fieldError('phrase', 'Type all 12 words of your recovery phrase, with spaces between them.');
@@ -242,7 +244,7 @@ export async function handleAuthApi(req, env, path) {
     if (!password) return fieldError('password', 'Enter your password.');
     if (identifier.length > 254 || password.length > 128) return json({ error: 'Wrong nickname, email or password. Check am well.' }, 401);
     const idKey = (adminLogin ? 'admin-login-id:' : 'login-id:') + identifier.toLowerCase();
-    if (!await allow(env, (adminLogin ? 'admin-login-ip:' : 'login-ip:') + ip, adminLogin ? 15 : 40, 900) || !await allow(env, idKey, adminLogin ? 5 : 10, 900)) return tooMany('Too many login tries. Wait 15 minutes and try again.');
+    if (!await allow(env, (adminLogin ? 'admin-login-ip:' : 'login-ip:') + ip, adminLogin ? 15 : 150, 900) || !await allow(env, idKey, adminLogin ? 5 : 10, 900)) return tooMany('Too many login tries. Wait 15 minutes and try again.');
     const user = identifier.includes('@')
       ? await env.DB.prepare('SELECT * FROM users WHERE email=?').bind(identifier.toLowerCase()).first()
       : await env.DB.prepare('SELECT * FROM users WHERE username=?').bind(identifier).first();
