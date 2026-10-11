@@ -18,7 +18,7 @@ import { handleMoneyApi, payCallback, gateway, testPayments, banksFor, autoPayou
 import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
-import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin } from './lib.js';
+import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex } from './lib.js';
 import { PATTERNS } from './ui/patterns.js';
 import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay } from './core.js';
 import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
@@ -149,14 +149,22 @@ async function handleSiteApi(req, env, path) {
   if (path === '/api/setup-admin' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
     if (!await allow(env, 'setup:' + clientIp(req), 10, 3600)) return json({ error: 'Too many tries.' }, 429);
-    if (!env.ADMIN_SETUP_KEY || !safeEqual(String(data.setupKey || ''), env.ADMIN_SETUP_KEY)) return json({ error: 'Wrong setup key.', field: 'setupKey' }, 403);
+    // The setup key is either the ADMIN_SETUP_KEY secret, or a one-time code whose SHA-256 is stored in
+    // settings.admin_setup_hash (put there by the developer; deleted as soon as the admin exists).
+    const key = String(data.setupKey || '');
+    const stored = (await env.DB.prepare("SELECT value FROM settings WHERE key='admin_setup_hash'").first())?.value;
+    const keyOk = (env.ADMIN_SETUP_KEY && safeEqual(key, env.ADMIN_SETUP_KEY)) || (stored && key.length >= 16 && safeEqual(await sha256Hex('tapam-setup:' + key), stored));
+    if (!keyOk) return json({ error: 'Wrong setup key.', field: 'setupKey' }, 403);
     if (await env.DB.prepare("SELECT 1 FROM users WHERE role='ADMIN' LIMIT 1").first()) return json({ error: 'Admin already exists.' }, 409);
     const username = String(data.username || '').trim(), email = String(data.email || '').trim().toLowerCase(), password = String(data.password || '');
     if (!/^[A-Za-z0-9_]{3,24}$/.test(username)) return json({ error: '3–24 letters, numbers or _.', field: 'username' }, 400);
     if (emailProblem(email)) return json({ error: 'Enter a valid email.', field: 'email' }, 400);
     if (password.length < 10) return json({ error: 'Use at least 10 characters.', field: 'password' }, 400);
     const hp = await hashPassword(password); const id = uid(), now = nowIso();
-    await env.DB.prepare("INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,role,tier,email_verified_at) VALUES(?,?,?,?,?,?,'ADMIN','LAPO',?)").bind(id, username, email, hp.hash, hp.salt, hp.iterations, now).run();
+    // one statement: only creates the admin while there is none, so two setups at once can't make two
+    const ins = await env.DB.prepare("INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,role,tier,email_verified_at) SELECT ?,?,?,?,?,?,'ADMIN','LAPO',? WHERE NOT EXISTS (SELECT 1 FROM users WHERE role='ADMIN')").bind(id, username, email, hp.hash, hp.salt, hp.iterations, now).run();
+    if (!ins.meta.changes) return json({ error: 'Admin already exists.' }, 409);
+    await env.DB.prepare("DELETE FROM settings WHERE key='admin_setup_hash'").run();
     await ensureWallet(env, id);
     return json({ message: 'Super admin created', redirect: '/admin' }, 200, { 'set-cookie': sessionCookie(await createSession(id, env)) });
   }

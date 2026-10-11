@@ -1,13 +1,12 @@
 // Sponsor email blasts: a sponsor pays to have Tap Am email their pool to players who said yes to
 // pool news (users.email_news = 1), filtered by tier. The cron sends up to 150 per run per blast.
 // Every email carries a one-click "stop these emails" link signed for that player.
-import { nowIso, sha256Hex, safeEqual } from '../lib.js';
+import { nowIso, sha256Hex, safeEqual, appSecret } from '../lib.js';
 import { naira } from '../core.js';
 import { sendMail, poolNewsEmail } from '../email.js';
 
 const BATCH = 150;
-const unsubKey = env => env.OTP_PEPPER || env.SEED_KEY || 'tapam-unsub';
-export const unsubToken = async (env, userId) => (await sha256Hex(`${unsubKey(env)}:unsub:${userId}`)).slice(0, 32);
+export const unsubToken = async (env, userId) => (await sha256Hex(`${await appSecret(env, 'OTP_PEPPER')}:unsub:${userId}`)).slice(0, 32);
 export const unsubOk = async (env, userId, token) => /^[0-9a-f]{32}$/.test(String(token || '')) && safeEqual(await unsubToken(env, userId), String(token));
 
 export async function processEmailBlasts(env, origin) {

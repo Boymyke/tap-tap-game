@@ -80,6 +80,20 @@ export async function sha256Hex(text) {
   return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 }
 
+// A server secret: the Worker secret when it is set, otherwise a long random value made once and kept in
+// the database (settings key "_secret_<name>", never shown on any page). Lets the site run safely before
+// the owner has added every secret in the Cloudflare dashboard.
+const secretCache = {};
+export async function appSecret(env, name) {
+  if (env[name]) return env[name];
+  if (secretCache[name]) return secretCache[name];
+  const key = '_secret_' + name;
+  await env.DB.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)').bind(key, hex(crypto.getRandomValues(new Uint8Array(32)))).run();
+  const v = (await env.DB.prepare('SELECT value FROM settings WHERE key=?').bind(key).first())?.value;
+  if (v) secretCache[name] = v;
+  return v;
+}
+
 // Constant-time comparison of two equal-format strings.
 export function safeEqual(a, b) {
   a = String(a); b = String(b);

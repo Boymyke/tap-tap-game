@@ -1,7 +1,7 @@
 // Sign-up (with a 12-word recovery phrase, no email code), login, password reset and change.
 import {
   json, uid, nowIso, hashPassword, sha256Hex, safeEqual, createSession, sessionCookie,
-  clientIp, readJson, allow, clearLimit, PBKDF2_ITERATIONS, LEGACY_PBKDF2_ITERATIONS, currentUser
+  clientIp, readJson, allow, clearLimit, PBKDF2_ITERATIONS, LEGACY_PBKDF2_ITERATIONS, currentUser, appSecret
 } from './lib.js';
 import { newPhrase, normPhrase, phraseMatches, phraseColumns, decryptPhrase, logAuth } from './phrase.js';
 import { nicknameProblem, emailProblem, passwordProblem, genderProblem, countryProblem, TERMS_VERSION } from './auth-rules.js';
@@ -38,7 +38,7 @@ function newCode() {
   const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
   return String(n).padStart(6, '0');
 }
-const codeHash = (env, purpose, email, nonce, code) => sha256Hex(`${purpose}:${email}:${nonce}:${code}:${env.OTP_PEPPER || ''}`);
+const codeHash = async (env, purpose, email, nonce, code) => sha256Hex(`${purpose}:${email}:${nonce}:${code}:${(await appSecret(env, 'OTP_PEPPER')) || ''}`);
 
 async function cleanup(env) {
   await env.DB.prepare('DELETE FROM email_codes WHERE created_at < ?').bind(new Date(Date.now() - RECORD_TTL_MS).toISOString()).run();
