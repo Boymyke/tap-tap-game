@@ -23,7 +23,7 @@ export const isSponsor = u => u?.role === 'SPONSOR';
 export const isPlayer = u => u?.role === 'USER';
 export const tierLabel = u => (u?.role === 'SPONSOR' ? 'Sponsor' : u?.role === 'ADMIN' ? 'Super admin' : tierName(tierOf(u)));
 
-export const USER_COLS = 'id,username,email,role,tier,tier_until,status,lifetime_taps,games_played,wins,rank_level,referral_code,referral_count,equipped_skin,prefs,gender,country,adult_confirmed_at,archived_at,emoji,emoji_meaning,created_at';
+export const USER_COLS = 'id,username,email,role,tier,tier_until,status,lifetime_taps,games_played,wins,rank_level,referral_code,referral_count,equipped_skin,prefs,gender,country,adult_confirmed_at,archived_at,emoji,emoji_meaning,email_news,hide_profile,seed_set_at,last_free_box_at,created_at';
 export async function loadUser(env, id) {
   return env.DB.prepare(`SELECT ${USER_COLS} FROM users WHERE id=?`).bind(id).first();
 }
@@ -69,6 +69,21 @@ export async function debit(env, userId, amount, { balance = 'WALLET', type, ref
     env.DB.prepare('INSERT INTO wallet_transactions(id,user_id,type,amount_kobo,reference,status,balance,note) SELECT ?,?,?,?,?,?,?,? WHERE changes()>0').bind(uid(), userId, type, -amount, reference, 'SUCCESS', balance, note)
   ]);
   return !!r.meta.changes;
+}
+
+// Moves money in one transaction: from one balance to another (same player or another player).
+// Every step only runs if the step before it changed a row, so money is never taken without landing.
+// guard: an extra SQL condition (with its values) checked in the same step as the debit, e.g. a daily cap.
+export async function moveMoney(env, { from, to, amount, fromBal = 'WALLET', toBal = 'WALLET', outType, inType, reference = null, outNote = null, inNote = null, guard = null }) {
+  if (amount <= 0) return false;
+  await ensureWallet(env, from); await ensureWallet(env, to);
+  const rs = await env.DB.batch([
+    env.DB.prepare(`UPDATE wallets SET ${col(fromBal)}=${col(fromBal)}-? WHERE user_id=? AND ${col(fromBal)}>=?${guard ? ` AND (${guard.sql})` : ''}`).bind(amount, from, amount, ...(guard?.binds || [])),
+    env.DB.prepare('INSERT INTO wallet_transactions(id,user_id,type,amount_kobo,reference,status,balance,note) SELECT ?,?,?,?,?,?,?,? WHERE changes()>0').bind(uid(), from, outType, -amount, reference, 'SUCCESS', fromBal, outNote),
+    env.DB.prepare(`UPDATE wallets SET ${col(toBal)}=${col(toBal)}+? WHERE user_id=? AND changes()>0`).bind(amount, to),
+    env.DB.prepare('INSERT INTO wallet_transactions(id,user_id,type,amount_kobo,reference,status,balance,note) SELECT ?,?,?,?,?,?,?,? WHERE changes()>0').bind(uid(), to, inType, amount, reference, 'SUCCESS', toBal, inNote)
+  ]);
+  return !!rs[0].meta.changes;
 }
 
 // ── inventory ───────────────────────────────────────────────────────────────

@@ -30,10 +30,10 @@ export const adGuide = () => `<details class="panel" style="margin-bottom:14px">
 export const AD_JS = `
 document.querySelectorAll('[data-preview-ad]').forEach(function(b){b.addEventListener('click',function(){var id=b.getAttribute('data-preview-ad');b.classList.add('is-loading');
  TA.api('/api/promo?preview='+encodeURIComponent(id),undefined,'GET').then(function(j){b.classList.remove('is-loading');var p=j.promo;if(!p){TA.toast('Ad not found','err');return;}
-  var media='';if(p.kind==='YOUTUBE'&&/^[A-Za-z0-9_-]{11}$/.test(p.video_id||''))media='<div style="border-radius:var(--r-sm);overflow:hidden;background:#000"><iframe src="https://www.youtube-nocookie.com/embed/'+p.video_id+'?autoplay=1&mute=1&rel=0&playsinline=1&loop=1&playlist='+p.video_id+'" style="display:block;width:100%;aspect-ratio:16/9;border:0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>';
+  var media='';if(p.kind==='YOUTUBE'&&/^[A-Za-z0-9_-]{11}$/.test(p.video_id||''))media='<div data-yt style="border-radius:var(--r-sm);overflow:hidden;background:#000"></div>';
   else if(p.image_url)media='<img src="'+p.image_url.replace(/"/g,'')+'" alt="" style="display:block;width:100%;border-radius:var(--r-sm);max-height:50vh;object-fit:contain;background:#000">';
   var d=TA.dialog('<div style="display:flex;justify-content:space-between;font:800 12px var(--body);color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px"><span>Preview · how players see it</span><span>Close shows after '+(p.duration_seconds||5)+'s</span></div>'+media+'<h3 style="margin:10px 0 8px"></h3>'+(p.lead_capture?'<p class="small" style="margin:0 0 8px">Lead form shows here: name, email, phone + consent tick.</p>':'')+'<div class="actions">'+(p.target_url?'<span class="btn btn--green btn--sm">Check am out</span>':'')+'<button type="button" class="btn btn--soft btn--sm" data-close>Close preview</button></div>',function(e,close){if(e&&e.target.closest('[data-close]'))close();});
-  d.querySelector('h3').textContent=p.title;});});});`;
+  d.querySelector('h3').textContent=p.title;var y=d.querySelector('[data-yt]');if(y)y.appendChild(TA.ytAd(p.video_id,p.title));});});});`;
 
 export function adForm(pools) {
   return form('/api/promos', `

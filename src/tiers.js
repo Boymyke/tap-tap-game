@@ -21,7 +21,7 @@ export const tierName = t => ({ LAPO: 'Lapo baby', MAPO: 'Mapo baby', NEPO: 'Nep
 export function perks(t, s = {}) {
   const tier = TIER_KEYS.includes(t) ? t : 'LAPO';
   const base = {
-    LAPO: { fingers: 1, rate: num(s, 'tap_rate_lapo', 15), pools: 1, create: false, calc: false, sounds: false, themes: false, backgrounds: false, gift: false, voice: false, uploads: false, minWithdraw: num(s, 'min_withdraw_lapo_kobo', 1000000) },
+    LAPO: { fingers: 1, rate: num(s, 'tap_rate_lapo', 15), pools: 1, create: true, createPerDay: num(s, 'lapo_pools_per_day', 3), calc: false, sounds: false, themes: false, backgrounds: false, gift: false, voice: false, uploads: false, minWithdraw: num(s, 'min_withdraw_lapo_kobo', 1000000) },
     MAPO: { fingers: 3, rate: num(s, 'tap_rate_mapo', 25), pools: num(s, 'max_multi_pools_mapo', 3), create: true, calc: true, sounds: true, themes: false, backgrounds: false, gift: false, voice: false, uploads: false, minWithdraw: num(s, 'min_withdraw_mapo_kobo', 750000) },
     NEPO: { fingers: 0, rate: num(s, 'tap_rate_nepo', 40), pools: num(s, 'max_multi_pools', 10), create: true, calc: true, sounds: true, themes: true, backgrounds: true, gift: true, voice: true, uploads: true, minWithdraw: num(s, 'min_withdraw_nepo_kobo', 500000) }
   }[tier];
@@ -44,10 +44,9 @@ export function comparison(s) {
     ['Free and paid pools', true, true, true],
     ['Win prizes', true, true, true],
     ['Boosters in the store', 'Everybody boosters', '+ Mapo boosters', 'Every booster'],
-    ['Create your own pools', false, true, true],
+    ['Create your own pools', '3 a day', true, true],
     ['Booster calculator + live booster tips', false, true, true],
     ['Tap sounds (unlock more as you rank up)', false, true, true],
-    ['10 app themes', false, false, true],
     ['Backgrounds', false, false, true],
     ['Gift boosters to friends', false, false, true],
     ['Talk live in games (Para Para Boy rank, top 5)', false, false, true],
@@ -69,7 +68,8 @@ export const THEMES = {
   crimson: { name: 'Crimson', a: '#E2263F', b: '#6B0A1C', accent: '#FFD23F', deep: '#2E040C' },
   midnight: { name: 'Midnight', a: '#2B2E4A', b: '#0B0C18', accent: '#00FF6E', deep: '#05060C' }
 };
-export const themeFor = (u, prefs = {}) => (isNepo(u) && THEMES[prefs.theme] ? prefs.theme : 'grape');
+// App themes are switched off for everybody: one look for all. Backgrounds (Nepo) still work.
+export const themeFor = () => 'grape';
 
 // ── Tap sounds (synthesised in the browser, no files). Mapo/Nepo, unlocked by rank level. ──
 export const SOUNDS = [

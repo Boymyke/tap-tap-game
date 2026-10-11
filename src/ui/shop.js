@@ -32,6 +32,9 @@ const STORE_CSS = `
 .bcard .dur svg{width:14px;height:14px}
 .fbar{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:none}
 .fbar::-webkit-scrollbar{display:none}
+.fbar .ftab{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 14px;border-radius:var(--r-btn);background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 2px rgba(255,255,255,.2);color:#fff;font:700 14px var(--body);text-decoration:none}
+.fbar .ftab[aria-pressed="true"]{background:#fff;color:var(--ink);box-shadow:0 3px 0 rgba(0,0,0,.25)}
+.fbar .ftab small{opacity:.7;font-weight:800}
 .fbar button{flex:none;min-height:38px;padding:0 14px;border:0;border-radius:var(--r-btn);background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 2px rgba(255,255,255,.2);color:#fff;font:700 14px var(--body);cursor:pointer}
 .fbar button[aria-pressed="true"]{background:#fff;color:var(--ink);box-shadow:0 3px 0 rgba(0,0,0,.25)}
 .pats{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px}
@@ -46,14 +49,16 @@ const GROUPS = [['ALL', 'For everybody', 'Every player fit buy these.'], ['MAPO'
 
 export function storePage(ctx) {
   const { user, items, tab, wallet, theme, bgCss } = ctx;
+  const gpick = ['ALL', 'MAPO', 'NEPO', 'RANK'].includes(ctx.group) ? ctx.group : 'ALL';
   const shown = items.filter(i => i.kind === tab);
   const bcard = i => {
     const cfg = JSON.parse(i.config || '{}'), lock = i.lock;
     const price = i.price_kobo;
-    return `<article class="bcard ${lock ? 'is-locked' : ''}" style="--c:${esc(cfg.color || '#2E8BFF')}" data-item="${esc(i.id)}" data-price="${price}">
-      <div class="top"><span class="mult">${esc(String(i.multiplier).replace(/\.0$/, ''))}×</span><span class="dur">${CLOCK}${i.duration_seconds}s</span></div>
+    const box = i.kind === 'BOX';
+    return `<article class="bcard ${lock ? 'is-locked' : ''}" style="--c:${esc(box ? (i.audience === 'NEPO' ? '#FF4FA3' : i.audience === 'MAPO' ? '#21D4C8' : '#9161FF') : cfg.color || '#2E8BFF')}" data-item="${esc(i.id)}" data-price="${price}">
+      <div class="top">${box ? `<span class="mult" style="font-size:40px">?</span><span class="dur">Surprise inside</span>` : `<span class="mult">${esc(String(i.multiplier).replace(/\.0$/, ''))}×</span><span class="dur">${CLOCK}${i.duration_seconds}s</span>`}</div>
       <div class="in"><div class="nm">${esc(i.name)}</div><div class="ds">${esc(i.description)}</div>
-        <div class="chips">${i.per_game_limit ? `<span>${i.per_game_limit} per game</span>` : '<span>Use many per game</span>'}${i.owned ? `<span class="own">You have ${short(i.owned)}</span>` : ''}${i.min_rank > 1 ? `<span>Rank ${i.min_rank}+</span>` : ''}</div>
+        <div class="chips">${box ? `<span>${{ ALL: 'Everybody', MAPO: 'Mapo + Nepo', NEPO: 'Nepo only' }[i.audience] || ''}</span>` : i.per_game_limit ? `<span>${i.per_game_limit} per game</span>` : '<span>Use many per game</span>'}${i.owned ? `<span class="own">You have ${short(i.owned)}</span>` : ''}${i.min_rank > 1 ? `<span>Rank ${i.min_rank}+</span>` : ''}</div>
         ${lock ? '' : `<div class="buy"><div class="stepper" role="group" aria-label="How many"><button type="button" data-step="-1" aria-label="One less">−</button><input class="ta-input" type="number" inputmode="numeric" min="1" max="100" value="1" aria-label="Quantity" data-qty><button type="button" data-step="1" aria-label="One more">+</button></div>
         <div class="total"><span>${price ? esc(naira(price)) + ' each' : 'Free'}</span><b data-total>${price ? esc(naira(price)) : 'Free'}</b></div>
         <button type="button" class="btn btn--green btn--block" data-buy>${price ? 'Buy' : 'Get free'}</button></div>`}
@@ -68,13 +73,18 @@ export function storePage(ctx) {
       <div class="nm">${esc(i.name)}</div><div class="ds">${esc(i.description)}</div>${btn}
       ${lock ? `<button type="button" class="locked-overlay" style="border:0;cursor:pointer" ${upgradeAttrs(lock.need || 'NEPO', i.name)}>${ICONS.lock}<span>${esc(lock.why)}</span></button>` : ''}</article>`;
   };
-  const groups = GROUPS.map(([k, title, sub]) => {
-    const list = shown.filter(i => groupOf(i) === k);
-    return list.length ? `<section class="sgroup"><h2>${title}</h2><p>${sub}</p></section><div class="sgrid">${list.map(tab === 'BOOSTER' ? bcard : scard).join('')}</div>` : '';
-  }).join('');
+  // Under Boosters and Tap skins: one tab per group (everybody, Mapo, Nepo, ranks), up to 10 items each.
+  const groups = tab === 'BOX'
+    ? (shown.length ? `<section class="sgroup"><h2>Mystery boxes</h2><p>Open one for a booster, a skin or wallet money. Free boxes drop for active players now and then.</p></section><div class="sgrid">${shown.map(bcard).join('')}</div>` : '')
+    : GROUPS.filter(([k]) => k === gpick).map(([k, title, sub]) => {
+      const list = shown.filter(i => groupOf(i) === k);
+      return list.length ? `<section class="sgroup"><h2>${title}</h2><p>${sub}</p></section><div class="sgrid">${list.map(tab === 'BOOSTER' ? bcard : scard).join('')}</div>` : '';
+    }).join('');
+  const subTabs = tab === 'BOX' ? '' : `<div class="fbar" role="group" aria-label="Filter">${[['ALL', 'For everybody'], ['MAPO', 'Mapo'], ['NEPO', 'Nepo'], ['RANK', 'Ranks']].map(([k, l]) => `<a class="ftab" href="/store?tab=${tab}&g=${k}" aria-pressed="${k === gpick}">${l} <small>${shown.filter(i => groupOf(i) === k).length}</small></a>`).join('')}</div>`;
   const body = `<div class="headrow"><h1 class="h1">Store</h1><a class="btn btn--white btn--sm" href="/bag">My bag</a></div>
 <p class="sub">Get boosters and skins and pay from your wallet as e dey hot. You have ${esc(naira(wallet.balance_kobo))}.</p>
-<nav class="tabs">${[['BOOSTER', 'Boosters'], ['SKIN', 'Tap skins']].map(([k, l]) => `<a href="/store?tab=${k}" ${k === tab ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+<nav class="tabs">${[['BOOSTER', 'Boosters'], ['SKIN', 'Tap skins'], ['BOX', 'Mystery boxes']].map(([k, l]) => `<a href="/store?tab=${k}" ${k === tab ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+${subTabs}
 ${groups || '<div class="empty">Nothing here yet.</div>'}
 <div class="actions"><a class="btn btn--white btn--sm" href="/wallet">Fund wallet</a><a class="btn btn--ghost btn--sm" href="/plans">Compare plans</a></div>`;
   const script = `
@@ -93,11 +103,12 @@ document.querySelectorAll('.bcard[data-item]').forEach(function(c){var q=c.query
 
 // ── Bag (inventory, gifting, your tap area) ─────────────────────────────────
 // Filters: all, boosters, tap skins, one-per-game boosters, strong boosters (4× and up). Remembered per tab.
-const BAG_FILTERS = [['all', 'All'], ['booster', 'Boosters'], ['skin', 'Tap skins'], ['once', 'One per game'], ['big', '4× and up']];
+const BAG_FILTERS = [['all', 'All'], ['booster', 'Boosters'], ['skin', 'Tap skins'], ['box', 'Mystery boxes'], ['once', 'One per game'], ['big', '4× and up']];
 export function bagPage(ctx) {
   const { user, inv, nepo, paid, prefs = {}, patterns = [], wallet, theme, bgCss } = ctx;
   const boosters = inv.filter(i => i.kind === 'BOOSTER' && i.quantity > 0);
   const skins = inv.filter(i => i.kind === 'SKIN');
+  const boxes = inv.filter(i => i.kind === 'BOX' && i.quantity > 0);
   const tags = b => ['booster', b.per_game_limit ? 'once' : '', b.multiplier >= 4 ? 'big' : ''].filter(Boolean).join(' ');
   const equipped = skins.find(i => i.equipped);
   const eqCfg = equipped ? JSON.parse(equipped.config || '{}') : { bg: '#2E8BFF', pattern: 'waves' };
@@ -116,6 +127,7 @@ export function bagPage(ctx) {
   const body = `<div class="headrow"><h1 class="h1">My bag</h1><a class="btn btn--green btn--sm" href="/store">Store</a></div>
 <div class="fbar" role="group" aria-label="Filter your bag">${BAG_FILTERS.map(([k, l], i) => `<button type="button" data-bag-filter="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div>
 <h2 class="h2" data-bag-sec="booster">Boosters</h2>${boosters.length ? `<div class="list" data-bag-sec="booster">${boosters.map(b => { const c = JSON.parse(b.config || '{}'); return `<div class="item" data-bag-item="${tags(b)}"><span style="display:grid;place-items:center;width:52px;height:52px;border-radius:var(--r-in);background:${esc(c.color || '#2E8BFF')};color:#fff;font:900 italic 20px var(--display);text-shadow:var(--ts);flex:none">${esc(String(b.multiplier).replace(/\.0$/, ''))}×</span><div class="grow"><div class="t">${esc(b.name)}</div><div class="s">${b.multiplier}× for ${b.duration_seconds}s${b.per_game_limit ? ` · ${b.per_game_limit} per game` : ''}</div></div><b class="amt">×${short(b.quantity)}</b></div>`; }).join('')}</div><div class="empty" data-bag-none hidden>No booster like that in your bag.</div>` : '<div class="empty" data-bag-sec="booster">No boosters. <a href="/store">Get some</a>.</div>'}
+<h2 class="h2" data-bag-sec="box">Mystery boxes <a href="/store?tab=BOX">Get boxes</a></h2>${boxes.length ? `<div class="list" data-bag-sec="box">${boxes.map(x => `<div class="item"><span style="display:grid;place-items:center;width:52px;height:52px;border-radius:var(--r-in);background:${x.audience === 'NEPO' ? '#FF4FA3' : x.audience === 'MAPO' ? '#21D4C8' : '#9161FF'};color:#fff;font:900 30px var(--display);text-shadow:var(--ts);flex:none">?</span><div class="grow"><div class="t">${esc(x.name)}</div><div class="s">You have ${short(x.quantity)}</div></div><button type="button" class="btn btn--green btn--sm" data-open-box="${esc(x.item_id)}">Open</button></div>`).join('')}</div>` : '<div class="empty" data-bag-sec="box">No mystery boxes yet. Free ones drop for active players now and then.</div>'}
 ${nepo ? `<h2 class="h2" data-bag-sec="booster">Gift a booster</h2><div class="panel" data-bag-sec="booster">${form('/api/gift', `
   ${field({ label: 'Player nickname', name: 'to', placeholder: 'Their nickname', attrs: 'autocapitalize="none" autocomplete="off" maxlength="24" required' })}
   <div class="two">${select({ label: 'Booster', name: 'item', options: boosters.map(b => [b.item_id, `${b.name} (you have ${b.quantity})`]) })}${field({ label: 'How many', name: 'qty', type: 'number', value: '1', attrs: 'min="1" max="50" inputmode="numeric"' })}</div>
@@ -128,13 +140,17 @@ ${myPad}
   const script = `
 var KEY='ta-bag-filter',bar=document.querySelector('.fbar');
 function apply(k){bar.querySelectorAll('[data-bag-filter]').forEach(function(b){b.setAttribute('aria-pressed',String(b.getAttribute('data-bag-filter')===k));});
- var showB=k==='all'||k==='booster'||k==='once'||k==='big',showS=k==='all'||k==='skin',n=0;
- document.querySelectorAll('[data-bag-sec]').forEach(function(e){e.hidden=e.getAttribute('data-bag-sec')==='booster'?!showB:!showS;});
+ var showB=k==='all'||k==='booster'||k==='once'||k==='big',showS=k==='all'||k==='skin',showX=k==='all'||k==='box',n=0;
+ document.querySelectorAll('[data-bag-sec]').forEach(function(e){var t=e.getAttribute('data-bag-sec');e.hidden=t==='booster'?!showB:t==='box'?!showX:!showS;});
  document.querySelectorAll('[data-bag-item]').forEach(function(e){var on=k==='all'||k==='booster'||e.getAttribute('data-bag-item').split(' ').indexOf(k)>-1;e.hidden=!on;if(on)n++;});
  var none=document.querySelector('[data-bag-none]');if(none)none.hidden=!showB||n>0;
  try{sessionStorage.setItem(KEY,k);}catch(e){}}
 bar.addEventListener('click',function(e){var b=e.target.closest('[data-bag-filter]');if(b)apply(b.getAttribute('data-bag-filter'));});
 var saved='all';try{saved=sessionStorage.getItem(KEY)||'all';}catch(e){}apply(bar.querySelector('[data-bag-filter="'+saved+'"]')?saved:'all');
+document.querySelectorAll('[data-open-box]').forEach(function(b){b.addEventListener('click',function(){b.classList.add('is-loading');
+ TA.api('/api/box/open',{item:b.getAttribute('data-open-box')}).then(function(j){b.classList.remove('is-loading');if(!j._ok){TA.fail(j);return;}
+  var d=TA.dialog('<div class="dlg-art" style="font:900 72px/96px var(--display);color:var(--purple)">?</div><h3>Box open!</h3><p></p><div class="actions"><button type="button" class="btn btn--green" data-yes>Nice one</button></div>',function(e,close){if(!e||e.target.closest('[data-yes]')){close();TA.go(location.pathname+location.search,{replace:true,fresh:true});}});
+  d.querySelector('p').textContent=j.message;if(TA.celebrate&&j.reward&&j.reward.kind!=='BOOSTER')TA.celebrate('Box open!',j.reward.name||TA.naira(j.reward.amount||0));});});});
 var PB=${JSON.stringify(PB)},mp=document.querySelector('[data-mypad]');
 if(mp){var f=mp.closest('form');function pad(){var c=f.padColor.value,k=(f.querySelector('input[name=padPattern]:checked')||{}).value;mp.style.background=(PB[k]?PB[k]+',':'')+c;f.querySelectorAll('[data-pat]').forEach(function(l){var kk=l.getAttribute('data-pat');l.style.background=(PB[kk]?PB[kk]+',':'')+c;});}
  f.addEventListener('input',pad);f.addEventListener('change',pad);pad();}`;
@@ -142,7 +158,7 @@ if(mp){var f=mp.closest('form');function pad(){var c=f.padColor.value,k=(f.query
 }
 
 // ── Wallet ──────────────────────────────────────────────────────────────────
-const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' };
+const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' , GIFT_SENT: 'Sent to a player', GIFT_RECEIVED: 'From a player', CONVERT: 'Winnings to wallet', BOX_REWARD: 'Mystery box', POOL_TOPUP: 'Added to a prize', EMAIL_BLAST: 'Pool email to players' };
 export const txLabel = t => TX[t] || t;
 export function walletPage(ctx) {
   const { user, wallet, tx, page, hasNext, withdrawals, minWithdraw, banks, payMode, flash, perDay, theme, bgCss, tierKey } = ctx;
@@ -154,6 +170,13 @@ ${payMode === 'test' ? '<div class="panel" style="margin-bottom:12px;background:
   <div class="tcard card c-sky"><div class="stat"><span class="k">Wallet${sponsor ? ' (for prizes)' : ''}</span><span class="v">${esc(nairaShort(wallet.balance_kobo))}</span><span class="small">Money you add. Spend only — e no dey withdraw.</span></div></div>
   ${sponsor ? '' : `<div class="tcard card c-green"><div class="stat"><span class="k">Winnings</span><span class="v">${esc(nairaShort(wallet.winnings_kobo))}</span><span class="small">Money you win. Withdraw from ${esc(naira(minWithdraw))}.</span></div></div>`}
 </div>
+${sponsor ? '' : `<h2 class="h2">Send money to a player</h2><div class="panel">${form('/api/wallet/send', `
+  <div class="two">${field({ label: 'Their nickname', name: 'to', placeholder: 'Nickname', attrs: 'autocapitalize="none" autocomplete="off" maxlength="24" required' })}${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}</div>
+  ${field({ label: 'Message (optional)', name: 'note', placeholder: 'Happy birthday!', attrs: 'maxlength="80"' })}
+  <p class="small muted" style="margin:0">Comes from your wallet (not winnings). They can spend it in Tap Am but can’t withdraw it.</p>`, { submit: 'Send money' })}</div>
+<h2 class="h2">Move winnings to your wallet</h2><div class="panel">${form('/api/wallet/convert', `
+  ${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}
+  ${check({ name: 'ack', label: 'I understand money moved to my wallet can’t be withdrawn again.' })}`, { submit: 'Move to wallet' })}</div>`}
 <h2 class="h2">Add money</h2><div class="panel">${form('/api/wallet/fund', `
   ${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '2,000', attrs: 'required' })}
   <div class="note"><b>Important:</b> money you add to your wallet <b>can’t be withdrawn</b>. You spend it inside Tap Am — on pool entries, boosters, skins${sponsor ? ' and sponsored prizes' : ' and plans'}. Only winnings can be withdrawn.</div>
@@ -192,9 +215,9 @@ export function plansPage(ctx) {
   const { user, tierKey, until, settings: s, plans, payMode, wallet, theme, bgCss, standalone } = ctx;
   const n = k => naira(k);
   const tiers = [
-    { key: 'LAPO', name: 'Lapo baby', c: 'c-sky', month: 0, year: 0, line: 'Play free. Win real prizes.', perks: ['1 finger at a time', 'Tap in 1 pool at once', 'Free + paid pools', 'Everybody boosters', 'Boy + girl tap skins'] },
+    { key: 'LAPO', name: 'Lapo baby', c: 'c-sky', month: 0, year: 0, line: 'Play free. Win real prizes.', perks: ['1 finger at a time', 'Tap in 1 pool at once', 'Free + paid pools', 'Create 3 pools a day', 'Everybody boosters', 'Boy + girl tap skins'] },
     { key: 'MAPO', name: 'Mapo baby', c: 'c-teal', month: plans.MAPO.month.kobo, year: plans.MAPO.year.kobo, line: 'More fingers, more pools.', perks: ['3 fingers at once', `Tap in ${plans.MAPO_pools} pools at once`, 'Create your own pools', 'Booster calculator + live tips', 'Tap sounds', `${plans.MAPO.bonus} bonus boosters`] },
-    { key: 'NEPO', name: 'Nepo baby', c: 'c-pink', month: plans.NEPO.month.kobo, year: plans.NEPO.year.kobo, line: 'Everything. No limits.', perks: ['Unlimited fingers', `Tap in ${plans.NEPO_pools} pools at once`, 'Every booster + big one-use boosters', '10 app themes + backgrounds', 'Gift boosters', 'Talk live in games', `${plans.NEPO.bonus} bonus boosters`] }
+    { key: 'NEPO', name: 'Nepo baby', c: 'c-pink', month: plans.NEPO.month.kobo, year: plans.NEPO.year.kobo, line: 'Everything. No limits.', perks: ['Unlimited fingers', `Tap in ${plans.NEPO_pools} pools at once`, 'Every booster + big one-use boosters', 'Backgrounds', 'Gift boosters', 'Talk live in games', `${plans.NEPO.bonus} bonus boosters`] }
   ];
   const btns = t => {
     if (!user) return t.key === 'LAPO' ? '<a class="btn btn--white btn--block" href="/signup">Start free</a>' : `<a class="btn btn--block" href="/signup">Sign up first</a>`;
@@ -209,6 +232,7 @@ export function plansPage(ctx) {
   const rows = comparison(s);
   const cell = v => (v === true ? `<span class="yes" aria-label="Yes">${ICONS.check.replace('<svg', '<svg width="18" height="18"')}</span>` : v === false ? '<span class="no" aria-label="No">—</span>' : esc(v));
   const body = `<h1 class="h1">Lapo, Mapo or Nepo?</h1><p class="sub">${user && tierKey !== 'LAPO' && until ? `You are a ${esc(tierName(tierKey))} till <b style="color:#fff">${esc(lagosDate(until))}</b>. Paying again adds more time.` : 'Everybody starts as a Lapo baby — free. Upgrade any time. Plans don’t renew by themselves; we remind you before yours ends.'}</p>
+${user?.role === 'USER' ? `<details class="panel" style="margin-bottom:14px"><summary style="cursor:pointer;font:900 18px var(--display)">Got a promo code?</summary><div style="margin-top:10px">${form('/api/codes/redeem', field({ label: 'Promo code', name: 'code', placeholder: 'TAPXXXXXX', attrs: 'autocapitalize="characters" autocomplete="off" maxlength="20" required' }), { submit: 'Use code' })}</div></details>` : ''}
 <div class="seg-choice billing" role="radiogroup" aria-label="Billing" id="billing"><label><input type="radio" name="bill" value="month" checked><span>Monthly</span></label><label><input type="radio" name="bill" value="year"><span>Yearly · 2 months free</span></label></div>
 <div class="plans">${tiers.map(t => `<section class="tcard plan ${t.c}">
   <div class="row"><h2>${t.name}</h2>${tierKey === t.key ? '<span class="badge live">Your plan</span>' : ''}</div>

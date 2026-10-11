@@ -51,13 +51,17 @@
     ctx.save(); roundRect(ctx, 90, cardY, W - 180, cardH, 36); ctx.clip(); ctx.fillStyle = texture(ctx); ctx.fillRect(90, cardY, W - 180, cardH); ctx.restore();
     ctx.lineWidth = 8; ctx.strokeStyle = '#fff'; roundRect(ctx, 94, cardY + 4, W - 188, cardH - 8, 32); ctx.stroke();
     ctx.fillStyle = '#150B33'; roundRect(ctx, 140, cardY + 50, 300, 64, 14); ctx.fill();
-    ctx.fillStyle = '#00FF6E'; ctx.font = '800 36px ' + D; ctx.textBaseline = 'middle'; ctx.fillText(d.kind === 'invite' ? 'JOIN ME' : 'TAP WITH ME', 168, cardY + 83);
+    ctx.fillStyle = '#00FF6E'; ctx.font = '800 36px ' + D; ctx.textBaseline = 'middle'; ctx.fillText(d.kind === 'invite' ? 'JOIN ME' : d.kind === 'profile' ? 'MY TAP AM' : 'TAP WITH ME', 168, cardY + 83);
     ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#fff'; ctx.font = '900 92px ' + D;
     ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowOffsetY = 5; ctx.shadowBlur = 0;
     var lines = wrap(ctx, d.title || 'Tap Am', W - 300), y = cardY + 220;
     lines.forEach(function (l) { ctx.fillText(l, 140, y); y += 92; });
     ctx.font = '700 44px ' + B; ctx.shadowOffsetY = 3;
-    if (d.line) { wrap(ctx, d.line, W - 300).slice(0, 2).forEach(function (l) { ctx.fillText(l, 140, y + 10); y += 56; }); }
+    if (d.line) { wrap(ctx, d.line, W - 300).slice(0, d.stats ? 1 : 2).forEach(function (l) { ctx.fillText(l, 140, y + 10); y += 56; }); }
+    if (d.stats && d.stats.length) {   // profile card: up to 6 small facts in two columns
+      ctx.font = '700 36px ' + B; ctx.shadowOffsetY = 2;
+      d.stats.slice(0, 6).forEach(function (t, i) { var cx = 140 + (i % 2) * 400, cy = y + 34 + Math.floor(i / 2) * 52; ctx.fillStyle = 'rgba(0,0,0,.25)'; roundRect(ctx, cx - 12, cy - 36, 384, 48, 10); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(String(t).slice(0, 22), cx, cy); });
+    }
     ctx.shadowColor = 'transparent';
     if (d.code) { ctx.fillStyle = '#150B33'; roundRect(ctx, 140, cardY + cardH - 116, 520, 76, 14); ctx.fill(); ctx.fillStyle = '#FFD23F'; ctx.font = '900 44px ' + D; ctx.fillText('CODE  ' + d.code, 172, cardY + cardH - 64); }
     // QR + link

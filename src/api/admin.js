@@ -2,14 +2,16 @@
 import { json, readJson, uid, nowIso, allow } from '../lib.js';
 import { requireRole, credit, debit, giveItem, notify, audit, clampInt, clearSettingsCache, naira, toKobo, settings } from '../core.js';
 import { clearRankCache, generateRanks, recalcRank } from '../game/ranks.js';
-import { roomCall, poolState } from '../game/pools.js';
+import { roomCall, poolState, refundPlayers, pausePool, restartPool } from '../game/pools.js';
 import { processWithdrawal, activateTier } from './money.js';
 import { sendAlertEmail } from '../email.js';
 import { isPattern } from '../ui/patterns.js';
+import { decryptPhrase, canKeepCopies } from '../phrase.js';
+import { hashPassword, safeEqual } from '../lib.js';
 
 const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_kobo', 'nepo_monthly_kobo', 'nepo_yearly_kobo', 'min_withdraw_lapo_kobo', 'min_withdraw_mapo_kobo', 'min_withdraw_nepo_kobo',
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
-  'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day'];
+  'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day', 'email_blast_kobo', 'lapo_pools_per_day', 'transfer_daily_max_kobo', 'free_box_days'];
 const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts'];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
@@ -108,10 +110,42 @@ export async function handleAdminApi(req, env, path, user) {
   }
 
   // ── pools ──
-  const pm = path.match(/^\/api\/admin\/pools\/([^/]+)\/(settle|cancel)$/);
+  // ── server overload: pause every live / upcoming pool (money + boosters back), restart later ──
+  if (path === '/api/admin/overload/pause-all' && req.method === 'POST') {
+    const { data } = await body();
+    if (data?.confirm !== true) return json({ error: 'Tick confirm to pause every live and upcoming pool.', field: 'confirm' }, 400);
+    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED') AND ends_at>? LIMIT 200").bind(nowIso()).all()).results;
+    let n = 0, players = 0;
+    for (const p of pools) { const r = await pausePool(env, p); if (r.paused) { n++; players += r.players; } }
+    await env.DB.prepare("INSERT INTO settings(key,value) VALUES('overload','1') ON CONFLICT(key) DO UPDATE SET value='1'").run(); clearSettingsCache();
+    await audit(env, user.id, 'overload.pause', { pools: n, players });
+    return json({ message: `Paused ${n} pool${n === 1 ? '' : 's'}. ${players} players got their money and boosters back.`, reload: true });
+  }
+  if (path === '/api/admin/overload/restart-all' && req.method === 'POST') {
+    const { data } = await body();
+    const minutes = clampInt(data?.minutes, 1, 1440, 10);
+    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE status='PAUSED' LIMIT 200").all()).results;
+    let n = 0;
+    for (const p of pools) if ((await restartPool(env, p, minutes)).restarted) n++;
+    await env.DB.prepare("INSERT INTO settings(key,value) VALUES('overload','0') ON CONFLICT(key) DO UPDATE SET value='0'").run(); clearSettingsCache();
+    await audit(env, user.id, 'overload.restart', { pools: n, minutes });
+    return json({ message: `Restarted ${n} pool${n === 1 ? '' : 's'}. They start in ${minutes} minutes.`, reload: true });
+  }
+  const pm = path.match(/^\/api\/admin\/pools\/([^/]+)\/(settle|cancel|pause|restart)$/);
   if (pm && req.method === 'POST') {
     const pool = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(pm[1]).first();
     if (!pool) return json({ error: 'Pool not found.' }, 404);
+    if (pm[2] === 'pause') {
+      const r = await pausePool(env, pool);
+      await audit(env, user.id, 'pool.pause', pool.id);
+      return r.paused ? json({ message: `Paused. ${r.players} players got their money and ${r.boosters} boosters back.`, reload: true }) : json({ error: 'This pool can’t be paused now.' }, 409);
+    }
+    if (pm[2] === 'restart') {
+      const { data } = await body();
+      const r = await restartPool(env, pool, clampInt(data?.minutes, 1, 1440, 10));
+      await audit(env, user.id, 'pool.restart', pool.id);
+      return r.restarted ? json({ message: 'Pool restarted. Players were told to join again.', reload: true }) : json({ error: 'Only paused pools can restart.' }, 409);
+    }
     if (pm[2] === 'settle') {
       if (poolState(pool) !== 'ended') return json({ error: 'Pool never end.' }, 409);
       const r = await roomCall(env, pool.id, '/settle', { id: pool.id });
@@ -123,9 +157,10 @@ export async function handleAdminApi(req, env, path, user) {
       const c = await env.DB.prepare("UPDATE pools SET status='CANCELLED', settled_at=? WHERE id=? AND settled_at IS NULL").bind(nowIso(), pool.id).run();
       if (!c.meta.changes) return json({ error: 'Pool already settled.' }, 409);
       await roomCall(env, pool.id, '/init', { pool: { ...pool, ends_at: nowIso() } }).catch(() => {});   // stop taps now
-      const paid = (await env.DB.prepare("SELECT e.user_id, e.paid_kobo, COALESCE((SELECT t.balance FROM wallet_transactions t WHERE t.user_id=e.user_id AND t.reference=e.pool_id AND t.type='ENTRY_FEE' ORDER BY t.created_at DESC LIMIT 1), 'WALLET') AS src FROM pool_entries e WHERE e.pool_id=? AND e.paid_kobo>0").bind(pool.id).all()).results;
-      for (const e of paid) { await credit(env, e.user_id, e.paid_kobo, { balance: e.src === 'WINNINGS' ? 'WINNINGS' : 'WALLET', type: 'REFUND', reference: pool.id, note: `Refund: ${pool.name}` }); await notify(env, e.user_id, `“${pool.name}” was cancelled. Your ${naira(e.paid_kobo)} entry is back in your ${e.src === 'WINNINGS' ? 'winnings' : 'wallet'}.`, '/wallet'); }
-      const seeded = Number(pool.prize_kobo) - paid.reduce((a, e) => a + e.paid_kobo, 0);
+      const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(pool.id).all()).results.map(r => r.user_id);
+      const back = await refundPlayers(env, pool, 'Refund');   // entry fees + prize top-ups go back to whoever paid them
+      for (const u of players) await notify(env, u, `“${pool.name}” was cancelled. Any money you paid into it is back with you.`, '/wallet');
+      const seeded = Number(pool.prize_kobo) - back;
       if (seeded > 0 && pool.created_by && pool.created_by !== user.id) {
         const creator = await env.DB.prepare('SELECT role FROM users WHERE id=?').bind(pool.created_by).first();
         if (creator && creator.role !== 'ADMIN') await credit(env, pool.created_by, seeded, { type: 'REFUND', reference: pool.id, note: `Prize refund: ${pool.name}` });
@@ -359,6 +394,46 @@ export async function handleAdminApi(req, env, path, user) {
     await Promise.all(live.map(p => roomCall(env, p.id, '/emoji', { uid: target.id, emoji: emoji || null }).catch(() => {})));
     await audit(env, user.id, 'user.emoji', { id: target.id, emoji: emoji || null });
     return json({ message: emoji ? `${target.username} now has ${emoji}` : 'Emoji removed', reload: true });
+  }
+
+  // ── promo codes: a free Mapo or Nepo plan for some days ──
+  if (path === '/api/admin/codes' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    let code = String(data.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code) code = 'TAP' + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+    // short codes are easy to guess, so at least 6 characters
+    if (code.length < 6 || code.length > 20) return json({ error: 'Codes are 6–20 letters and numbers.', field: 'code' }, 400);
+    const tier = data.tier === 'NEPO' ? 'NEPO' : 'MAPO';
+    const days = clampInt(data.days, 1, 730, 30);
+    const maxUses = clampInt(String(data.max_uses || '1').replace(/,/g, ''), 1, 1000000, 1);
+    const exp = data.expires ? Date.parse(String(data.expires)) : 0;
+    if (data.expires && !exp) return json({ error: 'Pick a valid end date.', field: 'expires' }, 400);
+    const r = await env.DB.prepare('INSERT OR IGNORE INTO promo_codes(code,tier,days,max_uses,expires_at,note,created_by) VALUES(?,?,?,?,?,?,?)').bind(code, tier, days, maxUses, exp ? new Date(exp).toISOString() : null, String(data.note || '').slice(0, 80) || null, user.id).run();
+    if (!r.meta.changes) return json({ error: 'That code already exists.', field: 'code' }, 409);
+    await audit(env, user.id, 'code.create', { code, tier, days, maxUses });
+    return json({ message: `Code ${code} made: ${tier === 'NEPO' ? 'Nepo' : 'Mapo'} for ${days} days, ${maxUses} use${maxUses === 1 ? '' : 's'}.`, reload: true });
+  }
+  const cm = path.match(/^\/api\/admin\/codes\/([A-Z0-9]{4,20})\/toggle$/);
+  if (cm && req.method === 'POST') {
+    await env.DB.prepare('UPDATE promo_codes SET active=1-active WHERE code=?').bind(cm[1]).run();
+    await audit(env, user.id, 'code.toggle', cm[1]);
+    return json({ message: 'Done', reload: true });
+  }
+
+  // ── recovery phrases backup (CSV). Needs the admin password again; every download is logged. ──
+  if (path === '/api/admin/phrases/export' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    if (!await allow(env, 'phrase-export:' + user.id, 3, 3600)) return json({ error: 'Only 3 downloads an hour.' }, 429);
+    const me = await env.DB.prepare('SELECT password_hash,password_salt,password_iter FROM users WHERE id=?').bind(user.id).first();
+    const hp = await hashPassword(String(data.password || ''), me.password_salt, me.password_iter || 10000);
+    if (!safeEqual(hp.hash, me.password_hash)) { await audit(env, user.id, 'phrases.export.denied', ''); return json({ error: 'Wrong password.', field: 'password' }, 401); }
+    if (!canKeepCopies(env)) return json({ error: 'No copies are kept: set the SEED_KEY secret on the Worker first.' }, 409);
+    const rows = (await env.DB.prepare("SELECT username,email,role,seed_enc,seed_set_at FROM users WHERE role!='ADMIN' AND seed_enc IS NOT NULL ORDER BY created_at LIMIT 100000").all()).results;
+    const cell = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : '') + s.replace(/"/g, '""')}"` : s; };
+    const lines = [['Nickname', 'Email', 'Account', 'Recovery phrase', 'Made (UTC)']];
+    for (const r of rows) lines.push([r.username, r.email, r.role, (await decryptPhrase(env, r.seed_enc)) || '(cannot read: SEED_KEY changed)', r.seed_set_at]);
+    await audit(env, user.id, 'phrases.export', { rows: rows.length });
+    return new Response(lines.map(l => l.map(cell).join(',')).join('\r\n'), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="tap-am-recovery-phrases.csv"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
   }
 
   // ── suggestions ──

@@ -2,18 +2,18 @@
 // and runs health checks on a schedule.
 import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
-import { landingPage } from './ui/landing.js';
-import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
+import { landingPage, demoPools } from './ui/landing.js';
+import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage, unsubPage } from './ui/pages.js';
 import { dashboardPage, poolsPage, poolPage, createPoolPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
-import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage } from './ui/profile.js';
+import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage, winnersPage, playersPage, profilePage } from './ui/profile.js';
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
-import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, setupPage, suggestPage } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, adminMoney, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
-import { handlePlayApi } from './api/play.js';
+import { handlePlayApi, maybeFreeBox } from './api/play.js';
 import { handleMoneyApi, payCallback, paystackOn, testPayments, BANKS, autoPayouts } from './api/money.js';
 import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
@@ -25,6 +25,8 @@ import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
 import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots } from './game/pools.js';
 import { awardBadges } from './game/badges.js';
+import { processEmailBlasts, unsubOk } from './game/blasts.js';
+import { logAuth, decryptPhrase, canKeepCopies } from './phrase.js';
 import { runChecks, healthSweep } from './health.js';
 
 export { GameRoom, TapMeter } from './game/room.js';
@@ -67,8 +69,9 @@ async function siteStats(env) {
   const r = await env.DB.prepare('SELECT (SELECT COUNT(*) FROM visitors WHERE last_seen>?) AS online,(SELECT COUNT(*) FROM visitors) AS visits').bind(since).first();
   return { online: Math.max(1, Number(r?.online || 0)), visits: Number(r?.visits || 0) };
 }
-// Real pools only (no demo pools). Sponsored first.
+// Real pools first (sponsored first). When the admin switch is on, sample sponsored pools fill the deck.
 async function featuredPools(env, user) {
+  const s = await settings(env);
   const real = (await env.DB.prepare(`SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p
     WHERE p.ends_at>? AND p.status!='CANCELLED' AND p.is_private=0 ORDER BY CASE p.kind WHEN 'SPONSORED' THEN 0 WHEN 'PAID' THEN 1 ELSE 2 END, p.starts_at ASC LIMIT 6`).bind(nowIso()).all()).results;
   const colors = ['green', 'orange', 'gold', 'mustard'];
@@ -78,11 +81,37 @@ async function featuredPools(env, user) {
     tier: { NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo only' }[p.audience] || '', color: p.kind === 'SPONSORED' ? 'orange' : p.kind === 'PAID' ? 'gold' : colors[i % 4],
     kind: p.kind, href: user ? `/pool/${p.id}` : '/signup'
   }));
-  return mapped;
+  if (s.landing_demo_pools !== '1') return mapped;
+  const href = user ? homeFor(user) : '/signup';
+  return [...mapped, ...demoPools().map(p => ({ ...p, href }))].slice(0, 6);
 }
 
 // ── site API: presence, merch, suggestions, logout, first admin ─────────────
+// Recent real winners for the "just won" toasts (landing + sign-up). Names are partly hidden, and
+// players who hide their profile show as "A player". Cached for a minute per isolate.
+let winCache = null, winAt = 0;
+const maskName = n => String(n).slice(0, 3) + '***';
+async function recentWinners(env) {
+  if (winCache && Date.now() - winAt < 60000) return winCache;
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const rows = (await env.DB.prepare(`SELECT u.username, u.prefs, pe.prize_kobo, p.name FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
+    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>? ORDER BY p.settled_at DESC LIMIT 20`).bind(since).all()).results;
+  winCache = rows.map(r => ({ who: parseJson(r.prefs, {}).hideProfile ? 'A player' : maskName(r.username), amount: Number(r.prize_kobo), pool: r.name }));
+  winAt = Date.now();
+  return winCache;
+}
+
 async function handleSiteApi(req, env, path) {
+  if (path === '/api/winners' && req.method === 'GET') return json({ winners: await recentWinners(env) }, 200, { 'cache-control': 'public, max-age=60' });
+  // "Stop these emails" link from a pool news email (signed per player, works without logging in)
+  if (path === '/api/unsub' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'unsub:' + clientIp(req), 30, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const id = String(data.u || '').slice(0, 64);
+    if (!await unsubOk(env, id, data.t)) return json({ error: 'This link is not valid. Turn emails off in Settings instead.' }, 400);
+    await env.DB.prepare('UPDATE users SET email_news=0 WHERE id=?').bind(id).run();
+    return json({ message: 'Done. No more pool news emails.' });
+  }
   if (path === '/api/presence' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
     const vid = String(data.vid || '');
@@ -103,6 +132,8 @@ async function handleSiteApi(req, env, path) {
     return json({ message: 'Saved' });
   }
   if (path === '/api/logout' && req.method === 'POST') {
+    const who = await currentUser(req, env);
+    if (who) await logAuth(env, who.id, 'LOGOUT', req);
     await destroySession(req, env);
     return json({ message: 'Logged out' }, 200, { 'set-cookie': sessionCookie('', 0) });
   }
@@ -135,7 +166,7 @@ async function handleSiteApi(req, env, path) {
 // ── scheduled jobs ──────────────────────────────────────────────────────────
 async function sweep(env, cron) {
   const cutoff = new Date(Date.now() - 20000).toISOString();
-  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status!='CANCELLED' AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
+  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
   for (const p of due) { try { await roomCall(env, p.id, '/settle', { id: p.id }); } catch (e) { console.error('sweep settle', p.id, e?.message); } }
   const now = nowIso();
   const res = await env.DB.batch([
@@ -157,9 +188,41 @@ async function sweep(env, cron) {
   for (const u of soon) await env.DB.prepare('INSERT INTO notifications(id,user_id,text,link) VALUES(?,?,?,?)').bind(uid(), u.id, `Your ${u.tier === 'NEPO' ? 'Nepo' : 'Mapo'} ends on ${u.tier_until.slice(0, 10)}. Renew to keep your perks.`, '/plans').run();
   try { await autoPayouts(env); } catch (e) { console.error('auto payouts', e?.message); }
   try { await awardBadges(env); } catch (e) { console.error('badges', e?.message); }
+  try { await processEmailBlasts(env, env.PUBLIC_URL || 'https://www.tapammm.live'); } catch (e) { console.error('blasts', e?.message); }
   const minute = new Date().getUTCMinutes();
   if (minute % 15 < 5) { try { await healthSweep(env); } catch (e) { console.error('health', e?.message); } }
   return due.length;
+}
+
+// API dispatch (the API answers' admin links are rewritten by the caller).
+async function apiRoute(req, env, path) {
+  let user = null;
+  const site = await handleSiteApi(req, env, path); if (site) return site;
+  const auth = await handleAuthApi(req, env, path); if (auth) return auth;
+  if (path === '/api/paystack/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
+  user = await currentUser(req, env);
+  const res = (await handlePlayApi(req, env, path, user)) || (await handleMoneyApi(req, env, path, user)) || (await handleAdminApi(req, env, path, user))
+    || (await handleSponsorApi(req, env, path, user)) || (await handleVoiceApi(req, env, path, user)) || json({ error: 'Not found' }, 404);
+  const out = isAdmin(user) ? await hideAdminPath(env, res) : res;
+  if (user?._renewCookie && !out.headers.has('set-cookie')) { const r2 = new Response(out.body, out); r2.headers.append('set-cookie', user._renewCookie); return r2; }
+  return out;
+}
+
+// ── hidden admin address ────────────────────────────────────────────────────
+const adminPath = env => (/^\/[A-Za-z0-9_-]{8,64}$/.test(env.ADMIN_PATH || '') ? env.ADMIN_PATH : '/whotfareyou123456789');
+const ADMIN_LINK = /(["'`(=\s])\/admin(?=[\/"'`?#)\s]|$)/g;
+// Rewrites /admin links (not /api/admin) in a page, a JSON answer and a redirect to the hidden address.
+async function hideAdminPath(env, res) {
+  const AP = adminPath(env);
+  const loc = res.headers.get('location');
+  const type = res.headers.get('content-type') || '';
+  if (!loc && !/text\/html|application\/json/.test(type)) return res;
+  let body = res.body;
+  if (/text\/html|application\/json/.test(type)) { const t = await res.text(); body = t.includes('/admin') ? t.replace(ADMIN_LINK, `$1${AP}`) : t; }
+  const out = new Response(body, res);
+  out.headers.delete('content-length');
+  if (loc) { const u = new URL(loc, 'https://x'); if (/^\/admin(\/|$)/.test(u.pathname)) out.headers.set('location', loc.replace(/\/admin(?=\/|\?|#|$)/, AP)); }
+  return out;
 }
 
 // ── entry ───────────────────────────────────────────────────────────────────
@@ -169,21 +232,29 @@ export default {
     let user = null;
     try {
       const url = new URL(req.url);
+      // One address for everybody (www.tapammm.live → tapammm.live), so logins and links don't split.
+      if (env.PUBLIC_URL) {
+        const pu = new URL(env.PUBLIC_URL);
+        if (url.hostname === 'www.' + pu.hostname) return Response.redirect(pu.origin + url.pathname + url.search, req.method === 'GET' || req.method === 'HEAD' ? 301 : 308);
+      }
       const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
       if (path.startsWith('/api/')) {
         if (req.method !== 'GET' && path !== '/api/paystack/webhook' && !sameOrigin(req)) return json({ error: 'Request blocked.' }, 403);
-        const site = await handleSiteApi(req, env, path); if (site) return site;
-        const auth = await handleAuthApi(req, env, path); if (auth) return auth;
-        if (path === '/api/paystack/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
-        user = await currentUser(req, env);
-        const res = (await handlePlayApi(req, env, path, user)) || (await handleMoneyApi(req, env, path, user)) || (await handleAdminApi(req, env, path, user))
-          || (await handleSponsorApi(req, env, path, user)) || (await handleVoiceApi(req, env, path, user)) || json({ error: 'Not found' }, 404);
-        if (user?._renewCookie && !res.headers.has('set-cookie')) { const r2 = new Response(res.body, res); r2.headers.append('set-cookie', user._renewCookie); return r2; }
-        return res;
+        // Admin links inside API answers point at the hidden admin address — only for the admin's own requests.
+        const res = await apiRoute(req, env, path);
+        return path === '/api/login' || path === '/api/admin/login' || path === '/api/setup-admin' ? hideAdminPath(env, res) : res;
       }
       if (path.startsWith('/media/')) return serveMedia(env, path.slice(7));
+      // The super admin pages live at a hidden address (ADMIN_PATH, default /whotfareyou123456789).
+      // The old /admin pages answer "not found" for everybody, signed in or not.
+      if (/^\/admin(\/|\.|$)/.test(path)) { user = await currentUser(req, env); return html(errorPage(404, { user }), 404, { 'x-robots-tag': 'noindex' }); }
+      const AP = adminPath(env);
+      const secret = path === AP || path.startsWith(AP + '/');
       user = await currentUser(req, env);
-      const res = await route(req, env, url, path, user);
+      const inner = secret ? '/admin' + path.slice(AP.length) : path;
+      let res = await route(req, env, inner === path ? url : Object.assign(new URL(url), { pathname: inner }), inner, user);
+      if (secret || isAdmin(user)) res = await hideAdminPath(env, res);
+      if (secret) { res = new Response(res.body, res); res.headers.set('x-robots-tag', 'noindex, nofollow'); res.headers.set('cache-control', 'no-store'); }
       if (user?._renewCookie && !res.headers.has('set-cookie')) { const r2 = new Response(res.body, res); r2.headers.append('set-cookie', user._renewCookie); return r2; }
       return res;
     } catch (e) {
@@ -213,6 +284,7 @@ async function route(req, env, url, path, user) {
     case '/offline': return html(offlinePage());
     case '/policy': return go(req, '/rules', 301);
     case '/suggest': return html(suggestPage(user));
+    case '/unsub': return html(unsubPage(q.get('u') || '', q.get('t') || ''), 200, { 'x-robots-tag': 'noindex' });
     case '/admin/setup': if (isAdmin(user)) return go(req, '/admin'); return html(setupPage());
     case '/admin/login': if (isAdmin(user)) return go(req, '/admin'); return html(adminLoginPage(), 200, { 'x-robots-tag': 'noindex' });
     case '/pay/callback': return go(req, await payCallback(req, env));
@@ -229,6 +301,8 @@ async function route(req, env, url, path, user) {
       return html(ranksPage({ user, ranks: await allRanks(env), myLevel: user?.role === 'USER' ? user.rank_level : 0, theme: b.theme, bgCss: b.bgCss }));
     }
     case '/top': return topRoute(env, q, user);
+    case '/winners': return winnersRoute(env, q, user);
+    case '/players': return playersRoute(env, q, user);
   }
   const goM = path.match(/^\/go\/([0-9a-f-]{36})$/);
   if (goM) { const t = await promoClick(env, goM[1], clientIp(req)); return t ? Response.redirect(t, 302) : go(req, '/'); }
@@ -239,6 +313,8 @@ async function route(req, env, url, path, user) {
     const link = sl?.link || '/pools';
     return /^\/(?!\/)[a-z0-9/_?=&.-]*$/i.test(link) || /^https:\/\//i.test(link) ? Response.redirect(new URL(link, req.url).href, 302) : go(req, '/pools');
   }
+  const uM = path.match(/^\/u\/([A-Za-z0-9_]{3,24})$/);
+  if (uM) return profileRoute(env, url, uM[1], user);
   const resM = path.match(/^\/results\/([^/]+)$/);
   if (resM) return go(req, `/pool/${resM[1]}`);
   if (LEGAL_PATHS.includes(path.slice(1))) return html(legalPage(path.slice(1), user));
@@ -256,6 +332,7 @@ async function route(req, env, url, path, user) {
   switch (path) {
     case '/dashboard': {
       if (user.role !== 'USER') return go(req, homeFor(user));
+      try { await maybeFreeBox(env, user, b.s); } catch (e) { console.error('free box', e?.message); }
       if (!user.referral_code) {   // accounts made before referrals existed
         for (let i = 0; i < 5 && !user.referral_code; i++) { const c = randomCode(6); const r = await env.DB.prepare('UPDATE users SET referral_code=? WHERE id=? AND referral_code IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE referral_code=?)').bind(c, user.id, c).run(); if (r.meta.changes) user.referral_code = c; }
       }
@@ -276,19 +353,31 @@ async function route(req, env, url, path, user) {
     case '/pools/new': {
       if (user.role === 'USER' && !b.perk?.create) return go(req, '/plans');
       const ads = user.role === 'SPONSOR' || user.role === 'ADMIN' ? (await env.DB.prepare(user.role === 'ADMIN' ? 'SELECT id,title,approved,active FROM promos WHERE approved=1 ORDER BY created_at DESC LIMIT 100' : 'SELECT id,title,approved,active FROM promos WHERE owner_id=? ORDER BY created_at DESC').bind(...(user.role === 'ADMIN' ? [] : [user.id])).all()).results : [];
-      return html(createPoolPage({ ...b, role: user.role, ads }));
+      let blast = null, lapoLeft = null;
+      if (user.role === 'SPONSOR') {   // price + how many players would get the email, per tier
+        const now = nowIso();
+        const c = await env.DB.prepare(`SELECT COUNT(*) a, SUM(CASE WHEN tier='LAPO' OR tier_until<=? THEN 1 ELSE 0 END) l, SUM(CASE WHEN tier='MAPO' AND (tier_until IS NULL OR tier_until>?) THEN 1 ELSE 0 END) m, SUM(CASE WHEN tier='NEPO' AND (tier_until IS NULL OR tier_until>?) THEN 1 ELSE 0 END) n FROM users WHERE role='USER' AND status='ACTIVE' AND email_news=1`).bind(now, now, now).first();
+        blast = { price: num(b.s, 'email_blast_kobo', 2500000), counts: { ALL: Number(c?.a || 0), LAPO: Number(c?.l || 0), MAPO: Number(c?.m || 0), NEPO: Number(c?.n || 0) } };
+      }
+      if (user.role === 'USER' && b.tierKey === 'LAPO') {
+        const max = num(b.s, 'lapo_pools_per_day', 3);
+        const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19);
+        const made = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pools WHERE created_by=? AND created_at>=?').bind(user.id, dayStart).first())?.n || 0);
+        lapoLeft = { max, left: Math.max(0, max - made) };
+      }
+      return html(createPoolPage({ ...b, role: user.role, ads, blast, lapoLeft }));
     }
     case '/play': return playRoute(req, env, url, user, b);
     case '/store': {
       if (user.role !== 'USER') return go(req, homeFor(user));
-      const tab = q.get('tab') === 'SKIN' ? 'SKIN' : 'BOOSTER';
-      const items = (await env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.active=1 AND s.kind IN ('BOOSTER','SKIN') ORDER BY s.sort, s.price_kobo").bind(user.id).all()).results
+      const tab = ['SKIN', 'BOX'].includes(q.get('tab')) ? q.get('tab') : 'BOOSTER';
+      const items = (await env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.active=1 AND s.kind IN ('BOOSTER','SKIN','BOX') ORDER BY s.sort, s.price_kobo").bind(user.id).all()).results
         .map(i => ({ ...i, lock: itemLock(i, user), equipped: i.kind === 'SKIN' && user.equipped_skin === i.id }));
-      return html(storePage({ ...b, items, tab }));
+      return html(storePage({ ...b, items, tab, group: q.get('g') }));
     }
     case '/bag': {
       const inv = (await env.DB.prepare(`SELECT s.id AS item_id, s.name, s.kind, s.multiplier, s.duration_seconds, s.audience, s.config, s.per_game_limit, COALESCE(i.quantity,0) AS quantity, s.price_kobo, s.min_rank
-        FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE ((i.quantity>0) OR (s.kind='SKIN' AND s.price_kobo=0 AND s.active=1)) AND s.kind IN ('BOOSTER','SKIN') ORDER BY s.sort`).bind(user.id).all()).results
+        FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE ((i.quantity>0) OR (s.kind='SKIN' AND s.price_kobo=0 AND s.active=1)) AND s.kind IN ('BOOSTER','SKIN','BOX') ORDER BY s.sort`).bind(user.id).all()).results
         .filter(i => i.quantity > 0 || !itemLock(i, user)).map(i => ({ ...i, equipped: i.kind === 'SKIN' && user.equipped_skin === i.item_id }));
       // Patterns this player owns (from any skin they have, free ones included) for "Your tap area".
       const patterns = [...new Set(inv.filter(i => i.kind === 'SKIN').map(i => parseJson(i.config, {}).pattern).filter(k => PATTERNS[k]))];
@@ -325,8 +414,9 @@ async function route(req, env, url, path, user) {
         taps: { y, m, years: yearList, days: days.results, months: months.results, today: Number(today.results[0]?.taps || 0), month: Number(month.results[0]?.taps || 0), lifetime: Number(user.lifetime_taps || 0) } }));
     }
     case '/settings': {
-      if (user.role !== 'USER') return go(req, homeFor(user));
-      return html(settingsPage({ ...b, prefs: parseJson(user.prefs, {}), backgrounds: await backgrounds(env) }));
+      if (user.role === 'ADMIN') return go(req, homeFor(user));
+      const events = (await env.DB.prepare('SELECT kind, ip, ua, created_at FROM auth_events WHERE user_id=? ORDER BY created_at DESC LIMIT 20').bind(user.id).all()).results;
+      return html(settingsPage({ ...b, prefs: parseJson(user.prefs, {}), backgrounds: await backgrounds(env), events }));
     }
     case '/calc': if (!b.perk?.calc) return go(req, '/plans'); return html(calcPage(b));
     case '/suggest-pool': {
@@ -344,25 +434,74 @@ async function route(req, env, url, path, user) {
   return html(errorPage(404, { user }), 404);
 }
 
+// Top tappers: every player in order (50 a page), with a nickname search. All time comes first.
 async function topRoute(env, q, user) {
-  const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'DAY';
+  const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
+  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24), pg = pageNum(q);
   const ranks = await allRanks(env);
   const name = lvl => ranks.find(r => r.level === lvl)?.name || '';
+  const like = term ? term + '%' : '';
   let rows, me = null;
   if (period === 'ALL') {
-    rows = (await env.DB.prepare("SELECT id,username,rank_level,lifetime_taps AS taps FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0 ORDER BY lifetime_taps DESC LIMIT 50").all()).results;
-    if (user?.role === 'USER' && !rows.some(r => r.id === user.id) && user.lifetime_taps > 0) me = { taps: user.lifetime_taps, pos: 1 + Number((await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>?").bind(user.lifetime_taps).first())?.n || 0) };
+    rows = (await env.DB.prepare(`SELECT * FROM (SELECT id,username,rank_level,emoji,lifetime_taps AS taps, ROW_NUMBER() OVER (ORDER BY lifetime_taps DESC, created_at) AS pos FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0) WHERE (?='' OR username LIKE ?) ORDER BY pos LIMIT 51 OFFSET ?`).bind(like, like, (pg - 1) * 50).all()).results;
+    if (user?.role === 'USER' && !term && user.lifetime_taps > 0 && !rows.some(r => r.id === user.id)) me = { taps: user.lifetime_taps, pos: 1 + Number((await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>?").bind(user.lifetime_taps).first())?.n || 0) };
   } else {
     const key = periodKeys()[period];
-    rows = (await env.DB.prepare("SELECT u.id,u.username,u.rank_level,t.taps FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE' ORDER BY t.taps DESC LIMIT 50").bind(key).all()).results;
-    if (user?.role === 'USER' && !rows.some(r => r.id === user.id)) {
+    rows = (await env.DB.prepare(`SELECT * FROM (SELECT u.id,u.username,u.rank_level,u.emoji,t.taps, ROW_NUMBER() OVER (ORDER BY t.taps DESC, u.created_at) AS pos FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE') WHERE (?='' OR username LIKE ?) ORDER BY pos LIMIT 51 OFFSET ?`).bind(key, like, like, (pg - 1) * 50).all()).results;
+    if (user?.role === 'USER' && !term && !rows.some(r => r.id === user.id)) {
       const mine = await env.DB.prepare('SELECT taps FROM tap_stats WHERE period=? AND user_id=?').bind(key, user.id).first();
       if (mine) me = { taps: mine.taps, pos: 1 + Number((await env.DB.prepare('SELECT COUNT(*) n FROM tap_stats WHERE period=? AND taps>?').bind(key, mine.taps).first())?.n || 0) };
     }
   }
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
   const label = { DAY: 'today', WEEK: 'this week', MONTH: 'this month', YEAR: 'this year', ALL: 'of all time' }[period];
-  return html(topPage({ user, period, rows: rows.map(r => ({ ...r, rank_name: name(r.rank_level) })), me, label, badgeKind: period === 'ALL' ? 'DAY' : period, theme: b.theme, bgCss: b.bgCss }));
+  return html(topPage({ user, period, rows: rows.slice(0, 50).map(r => ({ ...r, rank_name: name(r.rank_level) })), hasNext: rows.length > 50, page: pg, term, me, label, badgeKind: period === 'ALL' ? 'DAY' : period, theme: b.theme, bgCss: b.bgCss }));
+}
+
+// Period start (Lagos time) for winner boards.
+function periodStart(period) {
+  const now = Date.now(), l = new Date(now + 3600000);
+  const day = Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate()) - 3600000;
+  if (period === 'DAY') return new Date(day).toISOString();
+  if (period === 'WEEK') { const dow = (l.getUTCDay() + 6) % 7; return new Date(day - dow * 86400000).toISOString(); }
+  if (period === 'MONTH') return new Date(Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), 1) - 3600000).toISOString();
+  if (period === 'YEAR') return new Date(Date.UTC(l.getUTCFullYear(), 0, 1) - 3600000).toISOString();
+  return '0000';
+}
+// Top winners: prize money won per player (from settled pools). Hidden profiles show as "Hidden player".
+async function topWinners(env, period, { limit = 50, offset = 0, term = '' } = {}) {
+  const like = term ? term + '%' : '';
+  return (await env.DB.prepare(`SELECT * FROM (SELECT u.id, u.username, u.emoji, u.rank_level, u.hide_profile, SUM(pe.prize_kobo) AS won, COUNT(*) AS prizes, ROW_NUMBER() OVER (ORDER BY SUM(pe.prize_kobo) DESC) AS pos
+    FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
+    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>=? AND u.status='ACTIVE' GROUP BY u.id) WHERE (?='' OR (username LIKE ? AND hide_profile=0)) ORDER BY pos LIMIT ? OFFSET ?`).bind(periodStart(period), like, like, limit + 1, offset).all()).results;
+}
+async function winnersRoute(env, q, user) {
+  const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
+  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24), pg = pageNum(q);
+  const rows = await topWinners(env, period, { offset: (pg - 1) * 50, term });
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(winnersPage({ user, period, term, page: pg, hasNext: rows.length > 50, rows: rows.slice(0, 50), theme: b.theme, bgCss: b.bgCss }));
+}
+
+// Player search + public profiles. Players can hide their winnings and badges.
+async function playersRoute(env, q, user) {
+  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24);
+  const rows = term.length >= 2 ? (await env.DB.prepare("SELECT username, emoji, rank_level, tier, tier_until, lifetime_taps FROM users WHERE role='USER' AND status='ACTIVE' AND username LIKE ? ORDER BY lifetime_taps DESC LIMIT 30").bind(term + '%').all()).results : [];
+  const ranks = await allRanks(env);
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(playersPage({ user, term, rows: rows.map(r => ({ ...r, rank_name: ranks.find(x => x.level === r.rank_level)?.name || '', tierName: tierLabel(r) })), theme: b.theme, bgCss: b.bgCss }));
+}
+async function profileRoute(env, url, nick, user) {
+  const p = await env.DB.prepare("SELECT id, username, emoji, rank_level, tier, tier_until, lifetime_taps, games_played, wins, hide_profile, created_at, role, status FROM users WHERE username=?").bind(nick).first();
+  if (!p || p.role !== 'USER' || p.status !== 'ACTIVE') return html(errorPage(404, { user }), 404);
+  const own = user?.id === p.id;
+  const hidden = !!p.hide_profile && !own;
+  const [won, badges] = hidden ? [null, { results: [] }] : await Promise.all([
+    env.DB.prepare('SELECT COALESCE(SUM(prize_kobo),0) n, COUNT(*) c FROM pool_entries WHERE user_id=? AND prize_kobo>0').bind(p.id).first(),
+    env.DB.prepare("SELECT b.kind,b.period,b.taps,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all()]);
+  const ranks = await allRanks(env);
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(profilePage({ user, p: { ...p, tierName: tierLabel(p) }, own, hidden, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
 }
 
 async function poolRoute(req, env, id, user, b, origin) {
@@ -395,14 +534,16 @@ async function playRoute(req, env, url, user, b) {
   if (!ids.length) return go(req, '/pools?scope=mine');
   const pk = b.perk;
   const found = (await Promise.all(ids.map(id => getPool(env, id, user)))).filter(Boolean);
-  const joined = found.filter(p => p.joined).slice(0, pk.pools);
+  let joined = found.filter(p => p.joined && p.status !== 'PAUSED').slice(0, pk.pools);
+  // Lapo-rules pools are played on their own (no one-tap-counts-in-many).
+  if (joined.length > 1) { const normal = joined.filter(p => !p.lapo_rules); joined = normal.length ? normal : joined.slice(0, 1); }
   if (!joined.length) return go(req, found[0] ? `/pool/${found[0].id}` : '/pools');
-  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg }; });
+  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg, lapoRules: x.lapoRules }; });
   const prefs = parseJson(user.prefs, {});
   const [skinRow, items] = await env.DB.batch([
     env.DB.prepare("SELECT config FROM store_items WHERE id=? AND kind='SKIN'").bind(user.equipped_skin || 'skin-boy'),
     env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS quantity FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.kind='BOOSTER' AND s.active=1 ORDER BY s.sort").bind(user.id)]);
-  const boosters = items.results.filter(x => x.quantity > 0 || itemLock(x, user)).map(x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, color: parseJson(x.config, {}).color || '#2E8BFF', lock: lock ? { why: lock.why, need: lock.need } : null }; });
+  const boosters = items.results.filter(x => x.quantity > 0 || itemLock(x, user)).map(x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, everybody: x.audience === 'ALL', color: parseJson(x.config, {}).color || '#2E8BFF', lock: lock ? { why: lock.why, need: lock.need } : null }; });
   const voice = { enabled: !!(env.CALLS_APP_ID && env.CALLS_APP_TOKEN), topN: num(b.s, 'voice_top_n', 5), minRank: num(b.s, 'voice_min_rank', 56) };
   const me = { name: user.username, tier: b.tierKey, fingers: pk.fingers, rate: pk.rate, sound: soundFor(user, prefs), muted: !!prefs.muted, vibrate: prefs.vibrate !== false, calc: !!pk.calc, rank: user.rank_level || 1, emoji: user.emoji || null };
   return html(playPage({ user, pools, boosters, skin: parseJson(skinRow.results[0]?.config, { bg: '#2E8BFF', pattern: 'waves' }), prefs, voice, serverNow: nowIso(), me, paid: b.tierKey !== 'LAPO', theme: b.theme, bgCss: b.bgCss }));
@@ -499,14 +640,14 @@ async function adminRoute(req, env, url, path, user) {
     const [wallet, inv, items, entries, profile, flags] = await Promise.all([
       getWallet(env, target.id),
       env.DB.prepare('SELECT s.name, s.kind, i.quantity FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND i.quantity>0').bind(target.id).all(),
-      env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN') ORDER BY kind, sort").all(),
+      env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN','BOX') ORDER BY kind, sort").all(),
       env.DB.prepare('SELECT pe.*, p.name FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id WHERE pe.user_id=? ORDER BY pe.joined_at DESC LIMIT 30').bind(target.id).all(),
       target.role === 'SPONSOR' ? env.DB.prepare('SELECT * FROM sponsor_profiles WHERE user_id=?').bind(target.id).first() : null,
       env.DB.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='anticheat.flag' AND detail LIKE ?").bind(`%${target.id}%`).first()]);
     return html(adminUser({ ...b, target, wallet, inv: inv.results, items: items.results, entries: entries.results, rankName: ranks.find(r => r.level === target.rank_level)?.name || '', profile, flags: Number(flags?.n || 0) }));
   }
   if (path === '/admin/gifts') {
-    const [items, recent] = await env.DB.batch([env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN') AND active=1 ORDER BY kind, sort"), env.DB.prepare("SELECT detail,created_at FROM audit_logs WHERE action='gift.bulk' ORDER BY created_at DESC LIMIT 20")]);
+    const [items, recent] = await env.DB.batch([env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN','BOX') AND active=1 ORDER BY kind, sort"), env.DB.prepare("SELECT detail,created_at FROM audit_logs WHERE action='gift.bulk' ORDER BY created_at DESC LIMIT 20")]);
     return html(adminGifts({ ...b, items: items.results, recent: recent.results }));
   }
   if (path === '/admin/pools') {
@@ -549,6 +690,15 @@ async function adminRoute(req, env, url, path, user) {
     const items = (await env.DB.prepare('SELECT m.*, (SELECT COUNT(*) FROM merch_interest i WHERE i.item=m.id) AS interested FROM merch m ORDER BY m.sort, m.created_at DESC LIMIT 200').all()).results;
     return html(adminMerch({ ...b, items, edit: items.find(i => i.id === q.get('edit')) || null }));
   }
+  if (path === '/admin/money') {
+    const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'DAY';
+    const start = periodStart(period);
+    const [winners, funded] = await Promise.all([
+      topWinners(env, period, { limit: 50 }),
+      env.DB.prepare(`SELECT u.id, u.username, u.role, SUM(t.amount_kobo) AS funded, COUNT(*) AS times FROM wallet_transactions t JOIN users u ON u.id=t.user_id WHERE t.type='FUND' AND t.amount_kobo>0 AND datetime(t.created_at)>=datetime(?) GROUP BY u.id ORDER BY funded DESC LIMIT 50`).bind(start === '0000' ? '1970-01-01' : start).all()]);
+    return html(adminMoney({ ...b, period, winners: winners.slice(0, 50), funded: funded.results }));
+  }
+  if (path === '/admin/codes') return html(adminCodes({ ...b, codes: (await env.DB.prepare('SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 200').all()).results }));
   if (path === '/admin/badges') {
     const [list, given] = await env.DB.batch([
       env.DB.prepare("SELECT sb.*, (SELECT COUNT(*) FROM badges b WHERE b.kind='X:' || sb.id) AS holders FROM special_badges sb ORDER BY sb.created_at DESC"),

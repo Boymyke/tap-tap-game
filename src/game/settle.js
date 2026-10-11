@@ -68,7 +68,7 @@ export async function settlePool(env, poolId, ranked) {
   const pool = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(poolId).first();
   if (!pool || pool.settled_at) return { skipped: true };
   // claim the settlement so it only ever runs once
-  const claim = await env.DB.prepare("UPDATE pools SET settled_at=?, status='COMPLETED' WHERE id=? AND settled_at IS NULL").bind(new Date().toISOString(), poolId).run();
+  const claim = await env.DB.prepare("UPDATE pools SET settled_at=?, status='COMPLETED' WHERE id=? AND settled_at IS NULL AND status!='PAUSED'").bind(new Date().toISOString(), poolId).run();
   if (!claim.meta.changes) return { skipped: true };
 
   if (pool.vs_split) {   // entry fees per player decide each side's pot

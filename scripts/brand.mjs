@@ -1,5 +1,5 @@
 // Builds every Tap Am logo file from the three source files in public/assets/brand/src:
-//   logo-main.svg  "TAP" + green "AM" box
+//   logo-main.svg  "TAP" + coloured "AM" box (purple by default; also green and blue versions)
 //   mark.svg       the green finger (logo mark)
 //   favicon.svg    green rounded square with the white finger
 //   node scripts/brand.mjs          (needs `sharp`: npm i -g sharp, or NODE_PATH to a global install)
@@ -15,6 +15,7 @@ const BRAND = ROOT + 'public/assets/brand/';
 const ICONS = ROOT + 'public/assets/icons/';
 mkdirSync(BRAND, { recursive: true }); mkdirSync(ICONS, { recursive: true });
 
+export const BOX = { purple: '#AA0FEA', green: '#00A84D', blue: '#2E8BFF' };
 export const C = { green: '#006012', greenBright: '#00FF6E', ink: '#150B33', grape: '#6A35FF', grapeDeep: '#2A0F8F', white: '#FFFFFF' };
 
 const read = name => readFileSync(SRC + name, 'utf8');
@@ -22,10 +23,11 @@ const pathsOf = svg => [...svg.matchAll(/<path([^>]*)\sd="([^"]+)"/g)].map(m => 
 
 // ── main logo ───────────────────────────────────────────────────────────────
 const main = read('logo-main.svg');
-const LOGO = { w: 119.79, h: 24.53 };
+const vb = main.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+const LOGO = { w: +vb[1], h: +vb[2] };
 const box = (main.match(/<rect[^>]*>/) || [''])[0].replace(/class="[^"]*"/, '');
 const mainPaths = pathsOf(main);
-const logo = ({ tap = '#000', boxFill = C.green, am = '#fff' } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${LOGO.w} ${LOGO.h}" width="${LOGO.w * 2}" height="${LOGO.h * 2}">` +
+const logo = ({ tap = '#000', boxFill = BOX.purple, am = '#fff' } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${LOGO.w} ${LOGO.h}" width="${LOGO.w * 2}" height="${LOGO.h * 2}">` +
   box.replace('<rect', `<rect fill="${boxFill}"`) +
   mainPaths.map(p => `<path fill="${p.cls === 'cls-2' ? am : tap}" d="${p.d}"/>`).join('') + '</svg>';
 
@@ -57,8 +59,13 @@ const og = () => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"
   <text x="96" y="560" font-family="Barlow, Arial, sans-serif" font-weight="700" font-size="28" fill="#fff">www.tapammm.live</text></svg>`;
 
 const files = {
+  // "TAP" black or white; the "AM" box purple (default), green or blue.
   'logo.svg': logo({ tap: '#000' }),
   'logo-white.svg': logo({ tap: '#fff' }),
+  'logo-green.svg': logo({ tap: '#000', boxFill: BOX.green }),
+  'logo-white-green.svg': logo({ tap: '#fff', boxFill: BOX.green }),
+  'logo-blue.svg': logo({ tap: '#000', boxFill: BOX.blue }),
+  'logo-white-blue.svg': logo({ tap: '#fff', boxFill: BOX.blue }),
   'logo-mono-white.svg': logo({ tap: '#fff', boxFill: '#fff', am: C.ink }),
   'mark.svg': mark(C.green),
   'mark-white.svg': mark('#fff'),
