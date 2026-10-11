@@ -1,5 +1,5 @@
-// Wallet funding, Mapo/Nepo subscriptions and withdrawals through Bachs (bachs.io), with Paystack kept as
-// a fallback and a test mode for the preview. The server only ever credits money it has confirmed with the
+// Wallet funding, Mapo/Nepo subscriptions and withdrawals through Paystack (Bachs available as a second
+// gateway) and a test mode for the preview. The server only ever credits money it has confirmed with the
 // payment gateway itself (signed webhook or a direct lookup), never because the browser says so.
 import { json, readJson, allow, uid, nowIso, hex, safeEqual } from '../lib.js';
 import { tierOf, requireRole, credit, debit, moveMoney, getWallet, giveItem, notify, settings, num, naira, loadUser, clampInt, toKobo, fundsError, adultError, lagosDay, metricStmt } from '../core.js';
@@ -8,12 +8,15 @@ import { bachsOn, bachs, toDecimal, decimalToKobo, bachsWebhookOk, bachsBanks } 
 
 const PAYSTACK = 'https://api.paystack.co';
 export const paystackOn = env => !!env.PAYSTACK_SECRET_KEY;
-export const gateway = env => (bachsOn(env) ? 'bachs' : paystackOn(env) ? 'paystack' : null);
+// Paystack is the payment gateway. Bachs (bachs.io) is built in as a second option and is only used
+// when Paystack has no key and BACHS_SECRET_KEY is set.
+export const gateway = env => (paystackOn(env) ? 'paystack' : bachsOn(env) ? 'bachs' : null);
+const useBachs = env => gateway(env) === 'bachs';
 export const paymentsOn = env => !!gateway(env);
 export const testPayments = env => env.PAYMENTS_TEST_MODE === '1' && !paymentsOn(env);
 // Banks shown on the withdrawal form: the gateway's own list (Bachs codes can differ from Paystack's).
 export async function banksFor(env) {
-  if (bachsOn(env)) { try { const l = await bachsBanks(env); if (l.length) return l; } catch (e) { console.error('bachs banks', e?.message); } }
+  if (useBachs(env)) { try { const l = await bachsBanks(env); if (l.length) return l; } catch (e) { console.error('bachs banks', e?.message); } }
   return BANKS;
 }
 
@@ -99,7 +102,7 @@ export async function applyPayment(env, reference, paidKobo) {
 async function startCardPayment(env, req, user, purpose, kobo) {
   const reference = 'TA-' + uid().replace(/-/g, '').slice(0, 20);
   const origin = env.PUBLIC_URL || new URL(req.url).origin;
-  if (bachsOn(env)) {
+  if (useBachs(env)) {
     await env.DB.prepare('INSERT INTO payments(reference,user_id,purpose,amount_kobo,provider) VALUES(?,?,?,?,?)').bind(reference, user.id, purpose, kobo, 'bachs').run();
     try {
       const d = await bachs(env, 'POST', '/checkout-sessions', {
@@ -120,8 +123,15 @@ async function startCardPayment(env, req, user, purpose, kobo) {
     }
   }
   await env.DB.prepare('INSERT INTO payments(reference,user_id,purpose,amount_kobo) VALUES(?,?,?,?)').bind(reference, user.id, purpose, kobo).run();
-  const data = await ps(env, 'POST', '/transaction/initialize', { email: user.email, amount: kobo, reference, callback_url: `${origin}/pay/callback`, metadata: { purpose, user_id: user.id } });
-  return json({ redirect: data.authorization_url });
+  try {
+    const data = await ps(env, 'POST', '/transaction/initialize', { email: user.email, amount: kobo, currency: 'NGN', reference, callback_url: `${origin}/pay/callback`, metadata: { purpose, user_id: user.id } });
+    if (!/^https:\/\//.test(data?.authorization_url || '')) throw new Error('No payment link');
+    return json({ redirect: data.authorization_url });
+  } catch (e) {
+    console.error('paystack init', e?.message);
+    await env.DB.prepare("UPDATE payments SET status='FAILED' WHERE reference=? AND status='PENDING'").bind(reference).run();
+    return json({ error: 'Payment no fit start now. Try again in a minute.' }, 502);
+  }
 }
 
 async function needAdult(env, me, data) {
@@ -214,7 +224,7 @@ export async function handleMoneyApi(req, env, path, user) {
     const sig = hex(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(raw))));
     if (!safeEqual(sig, String(req.headers.get('x-paystack-signature') || ''))) return json({ ok: false }, 401);
     const evt = JSON.parse(raw);
-    if (evt.event === 'charge.success') await applyPayment(env, evt.data.reference, evt.data.amount);
+    if (evt.event === 'charge.success' && String(evt.data?.currency || 'NGN').toUpperCase() === 'NGN') await applyPayment(env, evt.data.reference, evt.data.amount);
     if (evt.event === 'transfer.success' || evt.event === 'transfer.failed' || evt.event === 'transfer.reversed') {
       const w = await env.DB.prepare('SELECT * FROM withdrawals WHERE transfer_code=? OR id=?').bind(evt.data.transfer_code || '', evt.data.reference || '').first();
       if (w && w.status === 'PROCESSING') {
@@ -288,7 +298,7 @@ export async function handleMoneyApi(req, env, path, user) {
     if (!/^[A-Za-z0-9]{3,12}$/.test(String(data.bank_code || ''))) return json({ error: 'Pick your bank.', field: 'bank_code' }, 400);
     if (!paymentsOn(env)) return json({ account_name: null });
     if (!await allow(env, 'resolve:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
-    if (bachsOn(env)) {
+    if (useBachs(env)) {
       try { const d = await bachs(env, 'POST', '/payouts/resolve-account', { bank_code: String(data.bank_code), account_number: String(data.account_number) }); if (d.status && d.data?.account_name) return json({ account_name: d.data.account_name }); }
       catch (e) { console.error('bachs resolve', e?.message); }
       return json({ error: 'We no fit confirm this account. Check the number and bank.', field: 'account_number' }, 400);
@@ -384,7 +394,7 @@ export async function handleMoneyApi(req, env, path, user) {
 const doneUrl = r => (r?.purpose === 'SPONSOR_FUND' ? '/sponsor?paid=1' : fromPurpose(r?.purpose) ? '/me?plan=1' : '/wallet?paid=1');
 export async function payCallback(req, env, refFromPath = '') {
   if (refFromPath) {
-    if (!bachsOn(env) || !/^TA-[a-f0-9]{8,30}$/.test(refFromPath)) return '/wallet?paid=0';
+    if (!useBachs(env) || !/^TA-[a-f0-9]{8,30}$/.test(refFromPath)) return '/wallet?paid=0';
     try {
       const r = await confirmBachsCheckout(env, refFromPath, new URL(req.url).searchParams.get('checkout_id') || '');
       if (r.ok || r.already) return doneUrl(r);
@@ -395,7 +405,7 @@ export async function payCallback(req, env, refFromPath = '') {
   if (!paystackOn(env) || !/^TA-[a-f0-9]{8,30}$/.test(ref)) return '/wallet?paid=0';
   try {
     const d = await ps(env, 'GET', `/transaction/verify/${encodeURIComponent(ref)}`);
-    if (d.status !== 'success') return '/wallet?paid=0';
+    if (d.status !== 'success' || String(d.currency || 'NGN').toUpperCase() !== 'NGN') return '/wallet?paid=0';
     const r = await applyPayment(env, ref, d.amount);
     return doneUrl(r);
   } catch { return '/wallet?paid=0'; }
@@ -423,7 +433,7 @@ export async function processWithdrawal(env, admin, id, action, note) {
     // claim first so two clicks (or the sweep and an admin) can never send twice
     const c = await env.DB.prepare("UPDATE withdrawals SET status='PROCESSING', updated_at=? WHERE id=? AND status='PENDING'").bind(nowIso(), id).run();
     if (!c.meta.changes) return json({ error: 'Withdrawal not pending.' }, 409);
-    if (bachsOn(env)) {
+    if (useBachs(env)) {
       try {
         const u = await env.DB.prepare('SELECT email FROM users WHERE id=?').bind(w.user_id).first();
         // Idempotency-Key = withdrawal id: a retry can never send the money twice.

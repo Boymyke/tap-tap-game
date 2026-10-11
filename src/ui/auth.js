@@ -30,7 +30,7 @@ ${logoBlock()}
     <a class="ta-tab" role="tab" id="tab-login" href="/login" aria-controls="v-login" aria-selected="${!signup}">Login</a>
   </div>
 
-  <form class="ta-form" id="v-login" role="tabpanel" aria-labelledby="tab-login" novalidate ${signup ? 'hidden' : ''}>
+  <form method="post" class="ta-form" id="v-login" role="tabpanel" aria-labelledby="tab-login" novalidate ${signup ? 'hidden' : ''}>
     <div class="ta-field">
       <label class="ta-label" for="login-id">Nickname or Email</label>
       <input class="ta-input" id="login-id" name="identifier" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="254" placeholder="your nickname or email" required aria-describedby="e-login-id">
@@ -46,7 +46,7 @@ ${logoBlock()}
     <button class="ta-btn" type="submit" data-label="Oyaaaa Enterr">Oyaaaa Enterr</button>
   </form>
 
-  <form class="ta-form" id="v-signup" role="tabpanel" aria-labelledby="tab-signup" novalidate ${signup ? '' : 'hidden'} data-type="${sponsor ? 'SPONSOR' : 'USER'}" data-ref="${refCode}">
+  <form method="post" class="ta-form" id="v-signup" role="tabpanel" aria-labelledby="tab-signup" novalidate ${signup ? '' : 'hidden'} data-type="${sponsor ? 'SPONSOR' : 'USER'}" data-ref="${refCode}">
     ${sponsor ? `<p class="ta-note" style="margin:0 0 4px">Sponsor account: create sponsored pools and run ads. <a href="/signup">Sign up as a player instead</a></p>
     <div class="ta-field">
       <label class="ta-label" for="su-company">Company or brand</label>
@@ -88,7 +88,7 @@ ${logoBlock()}
     ${sponsor ? '' : '<p class="ta-note" style="margin:10px 0 0;text-align:center">Be a brand? <a href="/signup?type=sponsor">Sign up as a sponsor</a></p>'}
   </form>
 
-  <form class="ta-form ta-step" id="v-phrase" novalidate hidden>
+  <form method="post" class="ta-form ta-step" id="v-phrase" novalidate hidden>
     <h2>Your recovery phrase</h2>
     <p class="ta-sub">These 12 words are the <b>only way</b> to get back in if you forget your password, and you need them to change your password. Write them down in order and keep them secret. Anybody with these words can take your account.</p>
     <ol class="phrase" data-phrase aria-label="Your 12 recovery words"></ol>
@@ -98,7 +98,7 @@ ${logoBlock()}
     <button class="ta-btn ta-btn--shine" type="submit" data-label="Enter Tap Am" disabled>Enter Tap Am</button>
   </form>
 
-  <form class="ta-form ta-step" id="v-forgot" novalidate hidden>
+  <form method="post" class="ta-form ta-step" id="v-forgot" novalidate hidden>
     ${back('Back to login', 'login')}
     <h2>You don forget password?</h2>
     <p class="ta-sub">No wahala. Use the 12-word recovery phrase you got when you signed up.</p>
@@ -122,7 +122,7 @@ ${logoBlock()}
     <button class="ta-btn-ghost" type="button" data-go="forgot-email">Old account with no phrase? Use an email code</button>
   </form>
 
-  <form class="ta-form ta-step" id="v-forgot-email" novalidate hidden>
+  <form method="post" class="ta-form ta-step" id="v-forgot-email" novalidate hidden>
     ${back('Use my recovery phrase', 'forgot')}
     <h2>Email code</h2>
     <p class="ta-sub">Only for accounts made before recovery phrases. Enter your email and we go send you a code.</p>
@@ -135,7 +135,7 @@ ${logoBlock()}
     <button class="ta-btn ta-btn--shine" type="submit" data-label="Send me code">Send me code</button>
   </form>
 
-  <form class="ta-form ta-step" id="v-reset" novalidate hidden>
+  <form method="post" class="ta-form ta-step" id="v-reset" novalidate hidden>
     ${back('Use another email', 'forgot-email')}
     <h2>Set new password</h2>
     <p class="ta-sub">If account dey for <b data-email></b>, we don send 6-digit code there. Enter am with your new password.</p>
@@ -181,10 +181,7 @@ tabs.login.addEventListener('click',function(e){e.preventDefault();show('login')
 tabs.signup.addEventListener('click',function(e){e.preventDefault();show('signup')});
 document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-go'))})});
 
-document.querySelectorAll('.ta-eye').forEach(function(b){b.addEventListener('click',function(){
-  var input=$(b.getAttribute('data-toggle')),showing=input.type==='text';
-  input.type=showing?'password':'text';b.setAttribute('aria-pressed',String(!showing));b.setAttribute('aria-label',showing?'Show password':'Hide password');
-})});
+// the eye buttons (show / hide password) are handled for every page in app.js
 
 // ── field errors ──
 function setErr(input,errId,text){
@@ -273,14 +270,14 @@ var phraseText='',goTo='/dashboard';
 function showPhrase(p,redirect){phraseText=p||'';goTo=redirect||'/dashboard';var ol=views.phrase.querySelector('[data-phrase]');ol.textContent='';
   phraseText.split(' ').forEach(function(w){var li=document.createElement('li');li.textContent=w;ol.appendChild(li);});show('phrase');}
 views.phrase.querySelector('[data-copy-phrase]').addEventListener('click',function(){var b=this;(navigator.clipboard?navigator.clipboard.writeText(phraseText):Promise.reject()).then(function(){b.textContent='Copied';},function(){b.textContent='Copy failed: write them down';});});
-views.phrase.querySelector('[data-save-phrase]').addEventListener('click',function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['Tap Am recovery phrase\n\n'+phraseText.split(' ').map(function(w,i){return (i+1)+'. '+w}).join('\n')+'\n\nKeep this secret. Anybody with these words can take your account.\n'],{type:'text/plain'}));a.download='tap-am-recovery-phrase.txt';document.body.appendChild(a);a.click();a.remove();});
+views.phrase.querySelector('[data-save-phrase]').addEventListener('click',function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['Tap Am recovery phrase\\n\\n'+phraseText.split(' ').map(function(w,i){return (i+1)+'. '+w}).join('\\n')+'\\n\\nKeep this secret. Anybody with these words can take your account.\\n'],{type:'text/plain'}));a.download='tap-am-recovery-phrase.txt';document.body.appendChild(a);a.click();a.remove();});
 $('ph-ok').addEventListener('change',function(){views.phrase.querySelector('button[type=submit]').disabled=!this.checked;});
 views.phrase.addEventListener('submit',function(e){e.preventDefault();if(!$('ph-ok').checked)return;location.href=goTo;});
 window.addEventListener('beforeunload',function(e){if(!views.phrase.hidden&&!$('ph-ok').checked){e.preventDefault();e.returnValue='';}});
 
 // ── forgot / reset ──
 views.forgot.addEventListener('submit',function(e){e.preventDefault();var v=views.forgot,id=$('fg-id'),ph=$('fg-phrase'),pw=$('fg-pw');msg(v);
-  var words=ph.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  var words=ph.value.trim().toLowerCase().split(/\\s+/).filter(Boolean);
   var ok1=setErr(id,'e-fg-id',id.value.trim()?'':'Enter your nickname or email.');
   var ok2=setErr(ph,'e-fg-phrase',words.length===12?'':'Type all 12 words, with spaces between them.');
   var ok3=setErr(pw,'e-fg-pw',pwProblem(pw.value,''));

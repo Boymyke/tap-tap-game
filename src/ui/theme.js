@@ -206,6 +206,7 @@ select.ta-input:invalid{color:#9A8FC2}
 .ta-error::before{content:"!";flex:none;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--danger);color:#fff;font-size:11px;font-weight:900}
 .ta-error:empty{display:none}
 .ta-pw{position:relative}
+.ta-pw-auto{display:block;width:100%}.ta-pw-auto>input{width:100%;padding-right:50px}
 .ta-pw .ta-input{padding-right:50px}
 .ta-eye{position:absolute;top:3px;right:3px;width:44px;height:44px;display:grid;place-items:center;border:0;background:none;color:var(--ink-soft);cursor:pointer;border-radius:12px}
 .ta-eye svg{width:18px;height:16px}

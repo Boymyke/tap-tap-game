@@ -63,7 +63,7 @@ const DOCS = {
     title: 'Prizes & Withdrawal Rules', h1: 'Prizes & withdrawals', description: 'How Tap Am prizes, wallets and withdrawals work.',
     lede: 'Money you add is for spending inside Tap Am. Money you win can be withdrawn to a Nigerian bank account, once a day.',
     sections: [
-      ['Two balances', `<ul><li><strong>Wallet</strong>: money you add (through our payment partner, Bachs). You spend it on entry fees, boosters, skins and plans. <strong>Wallet money can’t be withdrawn or refunded</strong>, except when a pool is cancelled or nobody taps (entry fees go back to the wallet).</li>
+      ['Two balances', `<ul><li><strong>Wallet</strong>: money you add (through Paystack). You spend it on entry fees, boosters, skins and plans. <strong>Wallet money can’t be withdrawn or refunded</strong>, except when a pool is cancelled or nobody taps (entry fees go back to the wallet).</li>
 <li><strong>Winnings</strong>: prizes you win. You can withdraw them, or spend them on entry fees and plans.</li></ul>`],
       ['Age', `<p>Adding money, joining paid pools, buying with money and withdrawing are only for people aged <strong>18 or older</strong>. We ask you to confirm this once before your first money action and record when you did.</p>`, FLAG('Self-confirmation of age is the only age check in place. Ask counsel whether KYC/age verification (e.g. BVN or ID) is required for paid entry, payouts and payment-provider rules.')],
       ['Withdrawals', `<ul><li>Minimum withdrawal depends on your tier: Lapo ₦10,000, Mapo ₦7,500, Nepo ₦5,000 (current settings).</li>
@@ -71,7 +71,7 @@ const DOCS = {
 <li>Withdrawals go to a Nigerian bank account in your name. We check every withdrawal; small withdrawals from established accounts with no fair-play flags may be paid automatically, others are paid after a manual check.</li>
 <li>If a withdrawal is rejected or the bank transfer fails, the money goes back to your winnings and we tell you why where we can.</li>
 <li>We may ask you to confirm your identity before paying, and hold payouts linked to fair-play reviews.</li></ul>`, FLAG('Check payout KYC obligations, tax treatment of prizes (including any withholding) and the right to hold payouts pending investigation.')],
-      ['Paying for things', `<ul><li>Card and bank-transfer payments are handled by our payment partner, Bachs (bachs.io). We never see or store your full card details; we store the payment reference, amount and result.</li>
+      ['Paying for things', `<ul><li>Card payments are handled by Paystack. We never see or store your full card details; we store the payment reference, amount and result.</li>
 <li>Plans (Mapo and Nepo) last 30 days (monthly) or 365 days (yearly) and do not renew by themselves. Upgrading from Mapo to Nepo turns your remaining Mapo days into Nepo days of the same value.</li>
 <li>Store items and plans are not refundable once used or started, unless the law says otherwise.</li></ul>`],
       ['Sponsored prizes', `<p>Sponsors fund sponsored prizes in advance from their sponsor wallet. Tap Am pays winners from those funds. Sponsors don’t decide who wins.</p>`, FLAG('Sponsored free-entry prize competitions may need a sales promotion approval (FCCPC) and/or a state promotional permit.')]
@@ -124,7 +124,7 @@ const DOCS = {
 <li><strong>Account:</strong> nickname, email, password (stored only as a salted one-way hash), gender, country, when you confirmed your email, when you accepted the Terms, and — if you use money — when you confirmed you are 18+. Sponsors also give a company name, website and logo.</li>
 <li><strong>Email codes:</strong> 6-digit sign-up and reset codes, stored only as hashes; they expire after 10 minutes.</li>
 <li><strong>Game data:</strong> pools you join or create, taps, scores, boosters used, ranks, badges, top-tapper totals, and fair-play flags.</li>
-<li><strong>Money:</strong> wallet and winnings balances and history, payment references and results from our payment partner (not your card details), and for withdrawals your bank, account number and account name.</li>
+<li><strong>Money:</strong> wallet and winnings balances and history, Paystack payment references and results (not your card details), and for withdrawals your bank, account number and account name.</li>
 <li><strong>Settings:</strong> theme, background, tap sound, vibration and sound preferences.</li>
 <li><strong>Ads:</strong> how many times ads are shown and tapped (not linked to you). If you choose to send your details to a sponsor from an ad, we store your name, email and/or phone and your consent, and share them with that sponsor.</li>
 <li><strong>Login session:</strong> one cookie (<code>nakam_session</code>) that keeps you signed in for up to 30 days after you last open Tap Am. We store only a hash of it.</li>
@@ -139,7 +139,7 @@ const DOCS = {
 <p>Automatic decisions: our server automatically drops taps above your tier’s speed and flags unusual play for a person to review. Small withdrawals may be paid automatically when there are no flags.</p>`],
       ['Who can see it', `<ul><li><strong>Other players</strong> see your nickname, tier, rank character, badges and scores. Never your email, gender or country.</li>
 <li><strong>Sponsors</strong> see total views, taps and players for their pools and ads, and the contact details of players who chose to send them.</li>
-<li><strong>Service providers</strong> working for us: Cloudflare (hosting, database, live voice), Bachs (payments and payouts), our email provider (codes and alerts) and YouTube (when an ad is a YouTube video, YouTube receives your IP when the video loads).</li>
+<li><strong>Service providers</strong> working for us: Cloudflare (hosting, database, live voice), Paystack (payments and payouts), our email provider (codes and alerts) and YouTube (when an ad is a YouTube video, YouTube receives your IP when the video loads).</li>
 <li><strong>Authorities</strong>, when the law requires it.</li></ul>`, FLAG('Sponsor lead sharing: confirm the consent wording, the sponsor’s status as an independent controller, and whether a data-sharing agreement with each sponsor is needed.')],
       ['Where it is stored', `<p>Tap Am runs on Cloudflare’s global network, so your data may be processed outside Nigeria.</p>`, FLAG('Cross-border transfer: confirm the NDPA basis (adequacy, contract clauses or consent) for processing on Cloudflare outside Nigeria.')],
       ['How long we keep it', `<p>Account data stays while your account exists. Archived accounts can be restored for 30 days. Login sessions end after 30 days without use. Payment and withdrawal records are kept as long as the law requires. Ask us to delete your account and we delete or anonymise your data, except what we must keep for legal, fraud or fair-play reasons.</p>`],

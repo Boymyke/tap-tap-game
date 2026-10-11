@@ -165,7 +165,7 @@ export function walletPage(ctx) {
   const sponsor = user.role === 'SPONSOR';
   const body = `<h1 class="h1">Wallet</h1>
 ${flash ? `<div class="panel" style="margin-bottom:12px;box-shadow:0 0 0 3px var(--green)">${esc(flash)}</div>` : ''}
-${payMode === 'test' ? '<div class="panel" style="margin-bottom:12px;background:var(--sunny)"><b>Test mode:</b> payments are simulated. No real money moves until the payment gateway (Bachs) is connected.</div>' : ''}
+${payMode === 'test' ? '<div class="panel" style="margin-bottom:12px;background:var(--sunny)"><b>Test mode:</b> payments are simulated. No real money moves until Paystack is connected.</div>' : ''}
 <div class="grid ${sponsor ? '' : 'g2'}">
   <div class="tcard card c-sky"><div class="stat"><span class="k">Wallet${sponsor ? ' (for prizes)' : ''}</span><span class="v">${esc(nairaShort(wallet.balance_kobo))}</span><span class="small">Money you add. Spend only — e no dey withdraw.</span></div></div>
   ${sponsor ? '' : `<div class="tcard card c-green"><div class="stat"><span class="k">Winnings</span><span class="v">${esc(nairaShort(wallet.winnings_kobo))}</span><span class="small">Money you win. Withdraw from ${esc(naira(minWithdraw))}.</span></div></div>`}
