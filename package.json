@@ -24,7 +24,10 @@
     "build:share": "node scripts/build-share.mjs",
     "db:upgrade:6": "wrangler d1 execute nak-am --remote --file=migrations/0006_patterns_merch_badges.sql",
     "db:upgrade:6:local": "wrangler d1 execute nak-am --local --file=migrations/0006_patterns_merch_badges.sql",
-    "preview:db:upgrade:6": "wrangler d1 execute tap-am-ui-preview --remote -c wrangler.preview.jsonc --file=migrations/0006_patterns_merch_badges.sql"
+    "preview:db:upgrade:6": "wrangler d1 execute tap-am-ui-preview --remote -c wrangler.preview.jsonc --file=migrations/0006_patterns_merch_badges.sql",
+    "db:upgrade:7": "wrangler d1 execute nak-am --remote --file=migrations/0007_money_boxes_codes_phrases.sql",
+    "db:upgrade:7:local": "wrangler d1 execute nak-am --local --file=migrations/0007_money_boxes_codes_phrases.sql",
+    "preview:db:upgrade:7": "wrangler d1 execute tap-am-ui-preview --remote -c wrangler.preview.jsonc --file=migrations/0007_money_boxes_codes_phrases.sql"
   },
   "devDependencies": {
     "wrangler": "^4.68.0"

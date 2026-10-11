@@ -293,5 +293,5 @@ async function post(form,url,payload,onOk,onErr,button){
 }
 })();`;
 
-  return themeShell({ title: signup ? 'Sign up' : 'Login', body, script, bodyClass: 'bg-anim' });
+  return themeShell({ title: signup ? 'Sign up' : 'Login', body: body + (signup ? '<div data-winners hidden></div>' : ''), script, bodyClass: 'bg-anim' });
 }

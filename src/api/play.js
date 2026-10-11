@@ -52,8 +52,11 @@ export async function handlePlayApi(req, env, path, user) {
     if (poolState(pool) === 'ended') return json({ error: 'This pool don end.' }, 409);
     const item = await env.DB.prepare("SELECT * FROM store_items WHERE id=? AND kind='BOOSTER'").bind(String(data.item || '')).first();
     if (!item) return json({ error: 'Pick a booster.' }, 400);
+    if (pool.status === 'PAUSED') return json({ error: 'This pool is paused.' }, 409);
     const me = await loadUser(env, user.id);
-    const lock = itemLock(item, me);
+    // Lapo-rules pools: only the boosters a Lapo baby can use.
+    const lock = itemLock(item, pool.lapo_rules ? { ...me, tier: 'LAPO', tier_until: null } : me);
+    if (lock && pool.lapo_rules && lock.need !== 'RANK') return json({ error: `This pool uses Lapo baby rules: ${item.name} is not allowed here.` }, 403);
     if (lock) return lock.need === 'RANK' ? json({ error: lock.why + '. Keep tapping to rank up.', code: 'UPGRADE', need: 'RANK', redirect: '/ranks', go: 'See ranks' }, 403) : upgradeError(`${item.name}: ${lock.why}.`, lock.need || 'MAPO');
     if (!await takeItem(env, user.id, item.id)) return json({ error: `You no get ${item.name} again. Buy more for the store.`, redirect: '/store', go: 'Store' }, 409);
     const r = await roomCall(env, pool.id, '/boost', { uid: user.id, item: item.id, mult: item.multiplier, dur: item.duration_seconds, limit: item.per_game_limit || 0 });
@@ -81,7 +84,8 @@ export async function handlePlayApi(req, env, path, user) {
       limitInfo = await r.json();
       taps = limitInfo.allow;
     }
-    const results = await Promise.all(ids.map(async id => { const r = await roomCall(env, id, '/tap', { uid: user.id, taps, rate: pk.rate }); return [id, r.data]; }));
+    const lapoRate = perks('LAPO', s).rate;
+    const results = await Promise.all(ids.map(async id => { const r = await roomCall(env, id, '/tap', { uid: user.id, taps, rate: pk.rate, lapoRate, count: ids.length }); return [id, r.data]; }));
     const live = results.filter(([, d]) => typeof d.score === 'number').map(([id]) => id);
     return json({ results: Object.fromEntries(results), skipped: ids.filter(i => !live.includes(i)), ...(limitInfo && limitInfo.allow === 0 ? { limit: 'You don reach your tap limit for now. Try again later.' } : {}) });
   }
@@ -128,9 +132,7 @@ export async function handlePlayApi(req, env, path, user) {
     const prefs = parseJson(me.prefs, {});
     const t = tierOf(me);
     if (data.theme !== undefined) {
-      if (!THEMES[data.theme]) return json({ error: 'Pick a theme.', field: 'theme' }, 400);
-      if (data.theme !== 'grape' && t !== 'NEPO') return upgradeError('App themes are for Nepo babies.', 'NEPO');
-      prefs.theme = data.theme;
+      return json({ error: 'App themes are switched off.', field: 'theme' }, 403);
     }
     if (data.bg !== undefined) {
       if (data.bg === '' || data.bg === 'none') delete prefs.bg;

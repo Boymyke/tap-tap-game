@@ -155,7 +155,7 @@ html,body{min-height:100%}
 .pager{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px}
 .pager span{font:700 14px var(--body);color:#fff}
 /* copy row */
-.copyrow{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:var(--r-btn);background:#fff;color:var(--ink)}
+.copyrow{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:var(--r-btn);background:#fff;color:var(--ink);text-shadow:none}
 .copyrow code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:800 16px var(--display);letter-spacing:.5px}
 .copybtn{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 13px;border:0;border-radius:var(--r-in);background:var(--ink);color:#fff;font:800 13px var(--body);cursor:pointer}
 .copybtn svg{width:16px;height:16px}

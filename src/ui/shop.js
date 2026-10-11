@@ -192,9 +192,9 @@ export function plansPage(ctx) {
   const { user, tierKey, until, settings: s, plans, payMode, wallet, theme, bgCss, standalone } = ctx;
   const n = k => naira(k);
   const tiers = [
-    { key: 'LAPO', name: 'Lapo baby', c: 'c-sky', month: 0, year: 0, line: 'Play free. Win real prizes.', perks: ['1 finger at a time', 'Tap in 1 pool at once', 'Free + paid pools', 'Everybody boosters', 'Boy + girl tap skins'] },
+    { key: 'LAPO', name: 'Lapo baby', c: 'c-sky', month: 0, year: 0, line: 'Play free. Win real prizes.', perks: ['1 finger at a time', 'Tap in 1 pool at once', 'Free + paid pools', 'Create 3 pools a day', 'Everybody boosters', 'Boy + girl tap skins'] },
     { key: 'MAPO', name: 'Mapo baby', c: 'c-teal', month: plans.MAPO.month.kobo, year: plans.MAPO.year.kobo, line: 'More fingers, more pools.', perks: ['3 fingers at once', `Tap in ${plans.MAPO_pools} pools at once`, 'Create your own pools', 'Booster calculator + live tips', 'Tap sounds', `${plans.MAPO.bonus} bonus boosters`] },
-    { key: 'NEPO', name: 'Nepo baby', c: 'c-pink', month: plans.NEPO.month.kobo, year: plans.NEPO.year.kobo, line: 'Everything. No limits.', perks: ['Unlimited fingers', `Tap in ${plans.NEPO_pools} pools at once`, 'Every booster + big one-use boosters', '10 app themes + backgrounds', 'Gift boosters', 'Talk live in games', `${plans.NEPO.bonus} bonus boosters`] }
+    { key: 'NEPO', name: 'Nepo baby', c: 'c-pink', month: plans.NEPO.month.kobo, year: plans.NEPO.year.kobo, line: 'Everything. No limits.', perks: ['Unlimited fingers', `Tap in ${plans.NEPO_pools} pools at once`, 'Every booster + big one-use boosters', 'Backgrounds', 'Gift boosters', 'Talk live in games', `${plans.NEPO.bonus} bonus boosters`] }
   ];
   const btns = t => {
     if (!user) return t.key === 'LAPO' ? '<a class="btn btn--white btn--block" href="/signup">Start free</a>' : `<a class="btn btn--block" href="/signup">Sign up first</a>`;

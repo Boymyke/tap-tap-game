@@ -1,12 +1,13 @@
 // Pool creation, joining and listing — shared by players (Mapo/Nepo), sponsors and the super admin.
 import { uid, nowIso, json } from '../lib.js';
 import { isPattern } from '../ui/patterns.js';
-import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError } from '../core.js';
+import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 export const MAX_WINNERS = 100;
 export const NO_LIMIT = 100000;
 export const MIN_POOL_SECONDS = 60;
+export const SPONSOR_MIN_PRIZE = 1000000;   // ₦10,000
 
 // Prize shares in basis points (sum 10000). TOP = bigger shares for higher places, EQUAL = same for all.
 export function buildSplit(n, style = 'TOP') {
@@ -59,8 +60,13 @@ export const joinBlocked = (pool, user) => joinBlock(pool, user)?.why || null;
 export async function createPool(env, user, d) {
   const s = await settings(env);
   const admin = isAdmin(user), sponsor = isSponsor(user), player = user.role === 'USER';
-  if (player && !isPaid(user)) return upgradeError('Creating pools na for Mapo and Nepo babies. Upgrade to create your own pool.');
   if (!admin && !sponsor && !player) return json({ error: 'You no fit create pools.' }, 403);
+  if (player && !isPaid(user)) {   // Lapo babies: a few pools a day (Lagos time)
+    const perDay = num(s, 'lapo_pools_per_day', 3);
+    const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();
+    const made = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pools WHERE created_by=? AND created_at>=?').bind(user.id, dayStart.replace('T', ' ').slice(0, 19)).first())?.n || 0);
+    if (made >= perDay) return upgradeError(`Lapo babies fit create ${perDay} pools a day. Come back tomorrow, or upgrade to create more.`);
+  }
 
   const name = String(d.name || '').trim(), description = String(d.description || '').trim();
   if (name.length < 3 || name.length > 60) return json({ error: 'Pool name must be 3–60 characters.', field: 'name' }, 400);
@@ -82,7 +88,7 @@ export async function createPool(env, user, d) {
   const entryFee = kind === 'PAID' ? clampInt(toKobo(d.entry_fee), 0, 100000000, 0) : 0;
   if (kind === 'PAID' && entryFee < 10000) return json({ error: 'Entry fee for a paid pool must be at least ₦100.', field: 'entry_fee' }, 400);
   let prize = kind === 'FREE' ? 0 : clampInt(toKobo(d.prize || 0), 0, 10000000000, 0);
-  if (kind === 'SPONSORED' && prize < 100000) return json({ error: 'A sponsored prize must be at least ₦1,000.', field: 'prize' }, 400);
+  if (kind === 'SPONSORED' && prize < (sponsor ? SPONSOR_MIN_PRIZE : 100000)) return json({ error: `A sponsored prize must be at least ${naira(sponsor ? SPONSOR_MIN_PRIZE : 100000)}.`, field: 'prize' }, 400);
   const winners = clampInt(d.winners, 1, MAX_WINNERS, 1);
   const style = d.split_style === 'EQUAL' ? 'EQUAL' : 'TOP';
   const split = buildSplit(winners, style);
@@ -93,8 +99,9 @@ export async function createPool(env, user, d) {
   const sideB = gameType === 'MATCH' ? String(d.side_b || '').trim().slice(0, 24) : null;
   if (gameType === 'MATCH' && !sideA) return json({ error: 'Name side A for the VS pool.', field: 'side_a' }, 400);
   if (gameType === 'MATCH' && (!sideB || sideA.toLowerCase() === sideB.toLowerCase())) return json({ error: 'Name side B (different from side A).', field: 'side_b' }, 400);
-  // colours: sponsors, the admin and Nepo babies
-  const canColour = admin || sponsor || isNepo(user);
+  // Pool colours, background and tap area: sponsors and the admin only.
+  const canColour = admin || sponsor;
+  const lapoRules = d.lapo_rules === true ? 1 : 0;   // everybody plays like a Lapo baby (1 finger, Lapo speed, everybody boosters)
   // Pool tap area (colour + pattern). Players use it unless the creator lets them use their own.
   const custom = canColour && d.custom_pad !== false && (HEX.test(d.theme_color || '') || isPattern(d.pad_pattern));
   const theme = custom && HEX.test(d.theme_color || '') ? d.theme_color : null;
@@ -130,7 +137,7 @@ export async function createPool(env, user, d) {
     id, name, description, starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString(), kind, audience,
     entry_fee_kobo: entryFee, prize_kobo: prize, winners_count: split.length, split: JSON.stringify(split), split_style: style, tie_rule: tie, house_cut_pct: cut,
     is_private: isPrivate ? 1 : 0, join_password: password, sponsor_user_id: sponsor ? user.id : null, sponsor_name: sponsorName,
-    theme_color: theme, pad_pattern: padPattern, allow_own_pad: allowOwnPad, bg_color: bg, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: d.boosters_allowed === false ? 0 : 1,
+    theme_color: theme, pad_pattern: padPattern, allow_own_pad: allowOwnPad, bg_color: bg, lapo_rules: lapoRules, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: d.boosters_allowed === false ? 0 : 1,
     max_players: maxPlayers, hashtag: code, created_by: user.id, status: start > now ? 'SCHEDULED' : 'LIVE', min_tier: audience === 'ALL' ? 'LAPO' : audience, promo_id: promoId
   };
   const cols = Object.keys(pool);
@@ -215,7 +222,7 @@ export function poolPublic(p) {
   return {
     id: p.id, name: p.name, description: p.description, code: p.hashtag, kind: p.kind, audience: p.audience, startsAt: p.starts_at, endsAt: p.ends_at,
     entryFee: p.entry_fee_kobo, prize: p.prize_kobo, split, splitStyle: p.split_style || 'TOP', tie: p.tie_rule, private: !!p.is_private, players: p.players,
-    sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, skinUrl: p.skin_url || null, bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
+    sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED', bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
     houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), promoId: p.promo_id || null, createdBy: p.created_by, creatorRole: p.creator_role || null,
     joined: !!p.joined, state: poolState(p)
   };

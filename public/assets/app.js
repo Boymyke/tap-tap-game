@@ -101,11 +101,29 @@
   var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
   function showInstallButtons() { if (standalone) return; $$('[data-install]').forEach(function (b) { b.hidden = false; }); }
+  // Step-by-step install help for the device in hand.
+  function installSteps() {
+    var ua = navigator.userAgent, ipad = /ipad/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+    if (isIOS || ipad) {
+      if (/crios|fxios|edgios/i.test(ua)) return { title: 'Install on iPhone / iPad', steps: ['Tap the Share button (square with an arrow) in this browser. If you don’t see “Add to Home Screen”, open www.tapammm.live in Safari instead.', 'Scroll down and tap “Add to Home Screen”.', 'Tap “Add”. Tap Am now sits on your home screen like an app.'] };
+      return { title: 'Install on iPhone / iPad', steps: ['Tap the Share button (square with an arrow up) at the bottom of Safari.', 'Scroll down and tap “Add to Home Screen”.', 'Tap “Add” at the top right. Open Tap Am from your home screen.'] };
+    }
+    if (/samsungbrowser/i.test(ua)) return { title: 'Install on Samsung', steps: ['Tap the menu (three lines) at the bottom right.', 'Tap “Add page to”, then “Home screen”.', 'Tap “Add”. Open Tap Am from your home screen.'] };
+    if (/android/i.test(ua)) return { title: 'Install on Android', steps: ['Tap the menu (three dots) at the top right of Chrome.', 'Tap “Install app” or “Add to Home screen”.', 'Tap “Install”. Tap Am shows up with your other apps.'] };
+    if (/firefox/i.test(ua)) return { title: 'Install on computer', steps: ['Firefox can’t install web apps. Open www.tapammm.live in Chrome or Edge.', 'Click the install icon at the right end of the address bar.', 'Click “Install”. Tap Am opens in its own window.'] };
+    return { title: 'Install on computer', steps: ['Look at the right end of the address bar (Chrome or Edge).', 'Click the install icon (a screen with a down arrow), or open the browser menu and choose “Install Tap Am”.', 'Click “Install”. Tap Am opens in its own window and stays in your apps.'] };
+  }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; showInstallButtons(); });
   window.addEventListener('appinstalled', function () { deferred = null; $$('[data-install]').forEach(function (b) { b.hidden = true; }); });
   function install() {
-    if (deferred) { deferred.prompt(); deferred.userChoice.finally(function () { deferred = null; }); return; }
-    TA.toast(isIOS ? 'On iPhone: tap Share in Safari, then “Add to Home Screen”.' : 'Open your browser menu and choose “Install app” or “Add to Home screen”.');
+    var info = installSteps();
+    var d = dialog('<h3></h3><p>Put Tap Am on your home screen: it opens fast, full screen, and keeps you logged in.</p><ol class="isteps"></ol><div class="actions">' + (deferred ? '<button type="button" class="btn btn--green" data-yes>Install now</button>' : '') + '<button type="button" class="btn btn--soft" data-no>Close</button></div>', function (e, close) {
+      if (!e) return;
+      if (e.target.closest('[data-yes]') && deferred) { close(); deferred.prompt(); deferred.userChoice.finally(function () { deferred = null; }); }
+      else if (e.target.closest('[data-no]')) close();
+    });
+    d.querySelector('h3').textContent = info.title;
+    info.steps.forEach(function (t) { var li = document.createElement('li'); li.textContent = t; d.querySelector('.isteps').appendChild(li); });
   }
 
   /* ── service worker ──────────────────────────────────────────────── */
@@ -483,6 +501,24 @@
     e.preventDefault(); e.stopImmediatePropagation(); goBack(b.getAttribute('href') || b.getAttribute('data-back') || '/');
   }, true);
 
+  /* ── "just won" toasts (landing + sign-up): real recent winners, one at a time ── */
+  function winners() {
+    if (!document.querySelector('[data-winners]') || winners.on) return; winners.on = true;
+    fetch('/api/winners', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      var list = (j && j.winners) || []; if (!list.length) return;
+      var i = 0, el = document.createElement('div'); el.className = 'wtoast'; el.setAttribute('role', 'status'); el.hidden = true; document.body.appendChild(el);
+      function show() {
+        if (document.hidden) return;
+        var w = list[i++ % list.length];
+        el.innerHTML = '<span class="wt-ic" aria-hidden="true">\u20A6</span><span><b></b> just won <b class="wt-amt"></b><small></small></span>';
+        el.querySelector('b').textContent = w.who; el.querySelector('.wt-amt').textContent = TA.naira(w.amount); el.querySelector('small').textContent = 'in ' + w.pool;
+        el.hidden = false; el.classList.remove('out'); void el.offsetWidth; el.classList.add('in');
+        setTimeout(function () { el.classList.add('out'); setTimeout(function () { el.hidden = true; }, 400); }, 4500);
+      }
+      setTimeout(show, 3000); setInterval(show, 11000);
+    }).catch(function () {});
+  }
+
   /* ── GET forms that reload on change (year / month pickers) ── */
   document.addEventListener('change', function (e) {
     var f = e.target.form; if (!f || !f.hasAttribute('data-autosubmit')) return;
@@ -502,13 +538,14 @@
 
   /* ── start ───────────────────────────────────────────────────────── */
   function ready(swapped) {
-    rankCheck();
+    rankCheck(); winners();
     $$('[data-seg]').forEach(function (el) { TA.seg(el, el.getAttribute('data-seg')); });
     startCountdowns();
     initSlides(document);
     $$('form').forEach(syncShow);
-    if (isIOS && !standalone) showInstallButtons();
-    if (deferred) showInstallButtons();
+    showInstallButtons();
+    // keep the selected tab in view (Pools: Results, Top tappers, admin tabs…)
+    $$('.tabs [aria-current="page"], .doc-tabs [aria-current="page"], .fbar [aria-pressed="true"]').forEach(function (a) { var p = a.parentNode; if (p.scrollWidth > p.clientWidth) p.scrollLeft = a.offsetLeft - p.offsetLeft - (p.clientWidth - a.offsetWidth) / 2; });
     if (!swapped && !TA.isOnline()) showNet(false);
     showFlash();
   }

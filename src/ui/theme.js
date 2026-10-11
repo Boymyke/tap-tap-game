@@ -147,6 +147,10 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 .toast .msg{padding-right:6px}
 @keyframes toast-in{from{opacity:0;transform:translate(-50%,10px) scale(.96)}}
 @media (min-width:900px){.toast{bottom:28px}}
+.wtoast{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:90;display:flex;align-items:center;gap:10px;max-width:min(340px,calc(100% - 24px));padding:9px 14px 9px 9px;border-radius:var(--r-sm);background:#fff;color:var(--ink);font:600 13.5px/1.3 var(--body);box-shadow:0 10px 28px rgba(0,0,0,.4);transform:translateY(20px);opacity:0;transition:transform .35s cubic-bezier(.2,1.3,.4,1),opacity .3s;pointer-events:none}
+.wtoast.in{transform:none;opacity:1}.wtoast.out{transform:translateY(20px);opacity:0}
+.wtoast .wt-ic{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:var(--r-in);background:var(--green);color:var(--ink);font:900 20px var(--display)}
+.wtoast .wt-amt{color:#0A9B4A}.wtoast small{display:block;font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 .dlg{position:fixed;inset:0;z-index:95;display:grid;place-items:center;padding:16px;background:rgba(10,0,40,.62);animation:fade .15s}
 @keyframes fade{from{opacity:0}}
 .dlg-in{width:100%;max-width:420px;padding:22px 20px 18px;border-radius:var(--r);background:#fff;color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:pop .22s cubic-bezier(.2,1.4,.4,1)}
@@ -156,6 +160,9 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 .dlg .dlg-art{display:grid;place-items:center;margin:-60px auto 6px;width:96px;height:96px}
 .dlg .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
 .dlg .actions .btn{flex:1}
+.isteps{margin:0 0 6px;padding:0;list-style:none;counter-reset:s;display:grid;gap:10px}
+.isteps li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;gap:10px;align-items:start;font-size:15px;line-height:1.45;color:var(--ink)}
+.isteps li::before{content:counter(s);display:grid;place-items:center;width:32px;height:32px;border-radius:var(--r-in);background:var(--ink);color:var(--green);font:900 17px var(--display)}
 .cele{position:fixed;inset:0;z-index:120;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(255,210,63,.4),rgba(21,11,51,.95) 62%)}
 .cele-rays{position:absolute;left:50%;top:50%;width:220vmax;height:220vmax;margin:-110vmax 0 0 -110vmax;background:repeating-conic-gradient(from 0deg,rgba(255,236,140,.16) 0 8deg,transparent 8deg 22deg);animation:spin 14s linear infinite}
 .cele-in{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;text-align:center;animation:cele-pop .6s cubic-bezier(.2,1.6,.4,1)}
@@ -273,10 +280,14 @@ select.ta-input:invalid{color:#9A8FC2}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
 `;
 
-// Main logo: "TAP" + green "AM" box. On dark backgrounds the white-TAP version is used.
-export const LOGO_IMG = (w = 150, light = false) => `<img src="/assets/brand/${light ? 'logo' : 'logo-white'}.svg" width="${w}" height="${Math.round(w * 24.53 / 119.79)}" alt="tap am">`;
-export function logoBlock({ tagline = true } = {}) {
-  return `<a class="ta-logo" href="/" aria-label="${BRAND} home">${LOGO_IMG()}</a>${tagline ? `<p class="ta-tagline">${esc(TAGLINE)}</p>` : ''}`;
+// Main logo: "TAP" (white on dark backgrounds, black on light) + the "AM" box: purple by default,
+// green on the landing page, blue on login / sign-up. Files are made by scripts/brand.mjs.
+export const LOGO_IMG = (w = 150, { dark = false, box = 'purple' } = {}) => {
+  const name = (dark ? 'logo' : 'logo-white') + (box === 'green' ? '-green' : box === 'blue' ? '-blue' : '');
+  return `<img src="/assets/brand/${name}.svg" width="${w}" height="${Math.round(w * 26.7 / 113.9)}" alt="tap am">`;
+};
+export function logoBlock({ tagline = true, box = 'blue' } = {}) {
+  return `<a class="ta-logo" href="/" aria-label="${BRAND} home">${LOGO_IMG(150, { box })}</a>${tagline ? `<p class="ta-tagline">${esc(TAGLINE)}</p>` : ''}`;
 }
 export const poweredBy = () => `<p class="ta-powered">Powered by <a href="${FERRN_URL}" target="_blank" rel="noopener">Ferrn Agency</a></p>`;
 
@@ -312,7 +323,7 @@ export function menuSheet(user) {
     <a class="tcard tcard--flat c-teal" href="/rules">Rules<small>Fair play and policies</small></a>
     <a class="tcard tcard--flat c-purple" href="/merch">Merch<small>Wear the tap</small></a>
     <a class="tcard tcard--flat c-sky" href="/faq">FAQ<small>Questions wey people dey ask</small></a>
-    <button type="button" class="tcard tcard--flat c-green" data-install hidden>Install app<small>Put Tap Am on your home screen</small></button>
+    <button type="button" class="tcard tcard--flat c-green" data-install hidden>Install app<small>Steps for your phone or computer</small></button>
   </nav>
   <div class="sheet-foot"><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/fair-play">Fair play</a><a href="/prizes">Prizes &amp; withdrawals</a><a href="/disclaimer">Disclaimer</a><a href="/suggest">Suggest something</a><a href="${FERRN_URL}" target="_blank" rel="noopener">Ferrn Agency</a></div>
 </div>`;

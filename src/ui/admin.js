@@ -54,7 +54,8 @@ export function adminHome(ctx) {
   <div class="sgrp"><h3>Players and site</h3>
     <div class="two">${field({ label: 'Starter boosters', name: 'starter_boosters', type: 'number', value: v('starter_boosters', 3), attrs: 'min="0"' })}${field({ label: 'Sign-ups per referral booster', name: 'referral_batch', type: 'number', value: v('referral_batch', 10), attrs: 'min="1"' })}</div>
     <div class="two">${field({ label: 'Voice: minimum rank', name: 'voice_min_rank', type: 'number', value: v('voice_min_rank', 56), attrs: 'min="1"' })}${field({ label: 'Voice: top N', name: 'voice_top_n', type: 'number', value: v('voice_top_n', 5), attrs: 'min="1"' })}</div>
-    ${field({ label: 'Alert emails (comma separated)', name: 'alert_email', type: 'email', value: st.alert_email || '', placeholder: 'you@yourcompany.com', hint: 'System health alerts go here.' })}</div>`, { submit: 'Save settings' })}</div>
+    ${field({ label: 'Alert emails (comma separated)', name: 'alert_email', type: 'email', value: st.alert_email || '', placeholder: 'you@yourcompany.com', hint: 'System health alerts go here.' })}
+    ${check({ name: 'landing_demo_pools', label: 'Show sample sponsored pools on the landing page (turn off once real sponsors are live)', checked: st.landing_demo_pools === '1' })}</div>`, { submit: 'Save settings' })}</div>
 <h2 class="h2">Recent admin actions</h2>${audit.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>${audit.map(a => `<tr><td>${esc(lagos(a.created_at))}</td><td>${esc(a.action)}</td><td class="small" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.detail || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nothing yet.</div>'}`;
   return page(ctx, 'Admin', '/admin', body, { css: ADMIN_CSS });
 }

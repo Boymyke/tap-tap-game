@@ -103,6 +103,11 @@ body.is-landing::before{display:none}
 .dots{display:flex;gap:6px;justify-content:center;margin-top:8px}
 .dots button{width:8px;height:8px;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer}
 .dots button[aria-current="true"]{width:20px;border-radius:5px;background:var(--green)}
+.teach{margin:4px 0 6px;padding:0;list-style:none;counter-reset:t;display:grid;gap:12px}
+.teach li{counter-increment:t;display:grid;grid-template-columns:40px 1fr;column-gap:12px;align-items:start}
+.teach li::before{content:counter(t);grid-row:1/3;display:grid;place-items:center;width:40px;height:40px;border-radius:var(--r-in);background:var(--green);color:var(--ink);font:900 22px var(--display)}
+.teach b{font:900 21px/1.1 var(--display);color:var(--ink)}
+.teach span{font-size:14.5px;line-height:1.45;color:var(--ink-soft)}
 
 /* small phones */
 @media (max-height:700px) and (orientation:portrait){.pad{padding:16px 16px 14px}.pad-tag{display:none}.deck{height:112px}.pc-name,.pc-prize{font-size:23px}.pc-vs .code{font-size:27px}.lp-cta .btn{height:48px}}
@@ -135,6 +140,7 @@ body.is-landing::before{display:none}
   .lp-hello{display:block}
   .pad-tag{display:none}
   .lp-hello h1{margin:0;font:900 italic clamp(50px,5vw,78px)/.92 var(--display);color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.35);letter-spacing:-.5px}
+  .lp-hello .money{color:var(--green)}
   .lp-hello p{margin:16px 0 0;max-width:38ch;font:600 20px/1.45 var(--body);color:#fff;text-shadow:var(--ts)}
   .lp-side{gap:22px}
   .lp-cta .btn{height:58px;font-size:23px}
@@ -162,10 +168,10 @@ function poolCard(p, i) {
 export function landingPage({ user, pools, stats, look = pickLanding() }) {
   const playHref = user ? (user.role === 'ADMIN' ? '/admin' : user.role === 'SPONSOR' ? '/sponsor' : '/dashboard') : '/signup';
   const anySponsored = pools.some(p => p.kind === 'SPONSORED');
-  const body = `<div class="lp-bg" aria-hidden="true"><video id="lp-video" muted loop playsinline preload="none" disablepictureinpicture></video></div>
+  const body = `<div data-winners hidden></div><div class="lp-bg" aria-hidden="true"><video id="lp-video" muted loop playsinline preload="none" disablepictureinpicture></video></div>
 <div class="lp">
 <header class="lp-bar">
-  <a class="ta-logo" href="/" aria-label="Tap Am home">${LOGO_IMG()}</a>
+  <a class="ta-logo" href="/" aria-label="Tap Am home">${LOGO_IMG(150, { box: 'green' })}</a>
   <div class="lp-stats">
     <div class="segbox" title="People online now"><span class="live-dot" aria-hidden="true"></span><span class="seg" id="st-online" data-seg="${pad(stats.online, 4)}" data-label="People online"></span></div>
     <div class="segbox" title="Total visits"><span class="seglabel">visits</span><span class="seg" id="st-visits" data-seg="${pad(stats.visits, 6)}" data-label="Total visits"></span></div>
@@ -189,10 +195,10 @@ export function landingPage({ user, pools, stats, look = pickLanding() }) {
     </div>
   </section>
   <aside class="lp-side">
-    <div class="lp-hello"><h1>Tap amm make you chop big moneyyy</h1><p>Tap and win big prizes. Free to start.</p></div>
+    <div class="lp-hello"><h1>Tap amm make you chop big <span class="money">moneyyy</span></h1><p>Tap and win big money. Free to start.</p></div>
     <div class="lp-cta">
       <a class="btn btn--green btn--shine" href="${playHref}">${user ? 'Go play' : 'Oya, join a pool'}</a>
-      <a class="btn btn--white" href="/how-to-play">Teach me</a>
+      <a class="btn btn--white" href="/how-to-play" data-teach>Teach me</a>
     </div>
     ${pools.length ? `<section class="pools" aria-label="${anySponsored ? 'Sponsored pools' : 'Pools to join'}" aria-roledescription="carousel">
       <div class="pools-head"><h2>${anySponsored ? 'Sponsored pools' : 'Pools to join'}</h2></div>
@@ -225,6 +231,7 @@ var padEl=$('pad'),fx=$('fx'),tapsEl=$('taps'),timeEl=$('time'),comboEl=$('combo
 var DUR=10000,state='idle',taps=0,combo=0,lastTap=0,t0=0,raf=0,lastShown='';
 var best=+(store.get('ta-best')||0);if(best)bestEl.textContent='Your best: '+best;
 var COLORS=['#ffffff','#00FF6E','#FFD23F','#FF4FA3','#2E8BFF','#FF8A2A'];
+var FUN=['+1','\u20A6','\uD83D\uDE1B','+1','\u20A6\u20A6'];   /* during combos: +1, naira signs and the tongue-out face */
 function make(cls,n){var a=[];for(var i=0;i<n;i++){var e=document.createElement('span');e.className=cls;fx.appendChild(e);a.push(e);}return a;}
 var pluses=make('fx-plus',36),rings=make('fx-ring',8),bits=make('fx-bit',30),comboEl2=make('fx-combo',1)[0];
 var pi=0,ri=0,bi=0;
@@ -254,7 +261,7 @@ function hit(x,y){
   var now=performance.now();combo=(now-lastTap<260)?combo+1:1;lastTap=now;taps++;
   seg(tapsEl,('000'+taps).slice(-4));comboEl.textContent=combo;
   padEl.animate([{transform:'scale(.985)'},{transform:'scale(1)'}],{duration:110});
-  if(!reduce){shootPlus(x,y);if(combo>15&&Math.random()<.5)shootPlus(x,y,combo>30?'+1':'+1');ring(x,y);}
+  if(!reduce){shootPlus(x,y,combo>4?FUN[(Math.random()*FUN.length)|0]:'+1');if(combo>15&&Math.random()<.5)shootPlus(x,y,FUN[(Math.random()*FUN.length)|0]);ring(x,y);}
   blip(220+Math.min(combo,40)*18,.05);
   if(combo>0&&combo%10===0){banner('COMBO x'+combo);kick('shake');buzz(30);blip(660,.12,'sawtooth');if(!reduce)confetti(x,y,10);}
   if(taps===25||taps===50||taps===75||taps===100||taps===150){var r=padEl.getBoundingClientRect();banner(taps+' TAPS!');kick('flash');buzz([30,40,30]);blip(880,.18,'triangle');if(!reduce)confetti(r.width/2,r.height/2,30);}
@@ -323,6 +330,12 @@ tickCd();setInterval(tickCd,1000);
   document.addEventListener('visibilitychange',function(){if(!v.src)return;if(document.hidden)v.pause();else{var p=v.play();if(p&&p.catch)p.catch(function(){});}});
 })();
 
+/* ── "Teach me": three quick steps ── */
+var teach=document.querySelector('[data-teach]');
+if(teach)teach.addEventListener('click',function(e){if(!window.TA||!TA.dialog)return;e.preventDefault();
+  var d=TA.dialog('<h3>How you go chop money</h3><ol class="teach"><li><b>Join a pool</b><span>Free pools to start, paid and sponsored pools for bigger money.</span></li><li><b>Tap pass everybody</b><span>The fastest fingers climb the live board. Boosters push you higher.</span></li><li><b>Win mega money</b><span>Top tappers share the prize pool. Sponsored pools go up to millions.</span></li></ol><div class="actions"><a class="btn btn--green btn--shine" href="'+playHref+'">'+(signedIn?'Go play':'Oya, start now')+'</a><a class="btn btn--soft" href="/how-to-play">Full rules</a></div>');
+});
+
 /* ── online + visits ── */
 var vid=store.get('ta-vid');if(!vid){vid=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));store.set('ta-vid',vid);}
 function ping(){if(document.hidden)return;fetch('/api/presence',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({vid:vid})}).then(function(r){return r.ok?r.json():null}).then(function(j){if(!j)return;seg($('st-online'),('000'+j.online).slice(-4));seg($('st-visits'),('00000'+j.visits).slice(-6));}).catch(function(){if(window.TA&&window.TA.netFailed)window.TA.netFailed();});}
@@ -330,5 +343,16 @@ ping();setInterval(ping,45000);document.addEventListener('visibilitychange',func
 })();`;
 
   const head = '<link rel="preload" as="image" href="/assets/landing/poster-m.webp" media="(orientation: portrait) and (max-width: 899px)"><link rel="preload" as="image" href="/assets/landing/poster-d.webp" media="(orientation: landscape), (min-width: 900px)">';
-  return themeShell({ title: 'Tap amm make you chop big moneyyy', description: 'Tap amm make you chop big moneyyy. Tap and win big prizes, free to start. Live tapping games on Tap Am.', body, script, css: CSS, bodyClass: 'is-landing', theme: look.theme, noZoom: true, head });
+  return themeShell({ title: 'Tap amm make you chop big moneyyy', description: 'Tap amm make you chop big moneyyy. Tap and win big money, free to start. Live tapping games on Tap Am.', body, script, css: CSS, bodyClass: 'is-landing', theme: look.theme, noZoom: true, head });
+}
+
+// Sample sponsored pools for the landing page, shown when the admin switch "landing_demo_pools" is on.
+export function demoPools(now = Date.now()) {
+  const inMin = m => new Date(now + m * 60000).toISOString();
+  return [
+    { name: 'Team Jollof vs Team Fried Rice', sponsor: 'Mama Put Kitchen', vs: ['JOL', 'FRD'], prize: 50000, players: 1284, endsAt: inMin(134), color: 'orange', kind: 'SPONSORED' },
+    { name: 'Friday Night Tap', sponsor: 'Chop Life Drinks', prize: 100000, players: 842, endsAt: inMin(302), color: 'gold', kind: 'SPONSORED' },
+    { name: 'Lagos vs Abuja', sponsor: 'Eko Data', vs: ['LAG', 'ABJ'], prize: 75000, players: 2310, endsAt: inMin(47), color: 'green', kind: 'SPONSORED' },
+    { name: 'Lapo babies only', sponsor: 'Kampe Fintech', tier: 'Lapo only', prize: 20000, players: 356, endsAt: inMin(90), color: 'mustard', kind: 'SPONSORED' }
+  ];
 }

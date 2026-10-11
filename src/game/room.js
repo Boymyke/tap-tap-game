@@ -59,11 +59,12 @@ export class GameRoom extends DurableObject {
     switch (url.pathname) {
       case '/init': {
         const p = body.pool;
-        const meta = { id: p.id, startsAt: Date.parse(p.starts_at), endsAt: Date.parse(p.ends_at), boosters: !!p.boosters_allowed, sideA: p.side_a || null, sideB: p.side_b || null };
-        if (!this.meta || this.meta.endsAt !== meta.endsAt || this.meta.startsAt !== meta.startsAt) {
+        const meta = { id: p.id, startsAt: Date.parse(p.starts_at), endsAt: Date.parse(p.ends_at), boosters: !!p.boosters_allowed, sideA: p.side_a || null, sideB: p.side_b || null, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED' };
+        const changed = !this.meta || this.meta.endsAt !== meta.endsAt || this.meta.startsAt !== meta.startsAt;
+        if (changed || this.meta.lapoRules !== meta.lapoRules || this.meta.paused !== meta.paused) {
           this.meta = { ...(this.meta || {}), ...meta };
           await this.ctx.storage.put('meta', this.meta);
-          await this.ctx.storage.setAlarm(meta.endsAt + 1500);
+          if (changed && !meta.paused) await this.ctx.storage.setAlarm(meta.endsAt + 1500);
         }
         return j({ ok: true });
       }
@@ -89,7 +90,10 @@ export class GameRoom extends DurableObject {
         if (!this.meta || !p) return j({ error: 'Join the pool first.' }, 403);
         if (now < this.meta.startsAt) return j({ error: 'The pool never start.', code: 'NOT_STARTED' }, 409);
         if (now >= this.meta.endsAt) return j({ error: 'This pool don end.', code: 'ENDED' }, 409);
-        const rate = Math.max(5, Math.min(60, Number(body.rate) || DEFAULT_RATE));
+        if (this.meta.paused) return j({ error: 'This pool is paused. Your money and boosters for it are coming back.', code: 'PAUSED' }, 409);
+        // Lapo-rules pools: everybody plays at the Lapo speed, and the pool can't share taps with other pools.
+        if (this.meta.lapoRules && Number(body.count) > 1) return j({ error: 'This pool uses Lapo baby rules. Tap in it on its own.', code: 'SOLO' }, 409);
+        const rate = Math.max(5, Math.min(60, Math.min(Number(body.rate) || DEFAULT_RATE, this.meta.lapoRules ? Number(body.lapoRate) || DEFAULT_RATE : 60)));
         const taps = Math.max(0, Math.floor(Number(body.taps) || 0));
         // token bucket: refills at the tier's speed, holds a small burst; extra taps are dropped
         const since = p.lastAt ? (now - p.lastAt) / 1000 : 1;
@@ -146,6 +150,13 @@ export class GameRoom extends DurableObject {
       }
       case '/snapshot': return j({ ranked: this.ranked().map(p => ({ uid: p.uid, score: p.score, raw: p.raw, reachedAt: p.reachedAt, side: p.side, boosts: p.boosts || 0, flagged: p.flagged || 0 })) });
       case '/settle': { const r = await this.settle(body.id); return j(r); }
+      // Server overload: every player's boosters used in this pool (to give them back), then wipe the room.
+      case '/used': return j({ players: [...this.players.values()].map(p => ({ uid: p.uid, used: p.used || {} })) });
+      case '/reset': {
+        await this.ctx.storage.deleteAll(); await this.ctx.storage.deleteAlarm();
+        this.players = new Map(); this.meta = null; this.sorted = null;
+        return j({ ok: true });
+      }
     }
     return j({ error: 'Not found' }, 404);
   }
@@ -153,6 +164,7 @@ export class GameRoom extends DurableObject {
   async settle(poolId) {
     await this.load();
     if (!this.meta) return poolId ? settlePool(this.env, poolId, []) : { skipped: true };   // pool from before game rooms: close it
+    if (this.meta.paused) return { skipped: true, reason: 'paused' };
     if (Date.now() < this.meta.endsAt) { await this.ctx.storage.setAlarm(this.meta.endsAt + 1500); return { skipped: true, reason: 'not ended' }; }
     const ranked = this.ranked().map(p => ({ uid: p.uid, score: p.score, raw: p.raw, reachedAt: p.reachedAt, side: p.side, boosts: p.boosts || 0, flagged: p.flagged || 0 }));
     return settlePool(this.env, this.meta.id, ranked);

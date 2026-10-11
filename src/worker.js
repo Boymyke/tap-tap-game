@@ -2,7 +2,7 @@
 // and runs health checks on a schedule.
 import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
-import { landingPage } from './ui/landing.js';
+import { landingPage, demoPools } from './ui/landing.js';
 import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
 import { dashboardPage, poolsPage, poolPage, createPoolPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
@@ -67,8 +67,9 @@ async function siteStats(env) {
   const r = await env.DB.prepare('SELECT (SELECT COUNT(*) FROM visitors WHERE last_seen>?) AS online,(SELECT COUNT(*) FROM visitors) AS visits').bind(since).first();
   return { online: Math.max(1, Number(r?.online || 0)), visits: Number(r?.visits || 0) };
 }
-// Real pools only (no demo pools). Sponsored first.
+// Real pools first (sponsored first). When the admin switch is on, sample sponsored pools fill the deck.
 async function featuredPools(env, user) {
+  const s = await settings(env);
   const real = (await env.DB.prepare(`SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p
     WHERE p.ends_at>? AND p.status!='CANCELLED' AND p.is_private=0 ORDER BY CASE p.kind WHEN 'SPONSORED' THEN 0 WHEN 'PAID' THEN 1 ELSE 2 END, p.starts_at ASC LIMIT 6`).bind(nowIso()).all()).results;
   const colors = ['green', 'orange', 'gold', 'mustard'];
@@ -78,11 +79,28 @@ async function featuredPools(env, user) {
     tier: { NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo only' }[p.audience] || '', color: p.kind === 'SPONSORED' ? 'orange' : p.kind === 'PAID' ? 'gold' : colors[i % 4],
     kind: p.kind, href: user ? `/pool/${p.id}` : '/signup'
   }));
-  return mapped;
+  if (s.landing_demo_pools !== '1') return mapped;
+  const href = user ? homeFor(user) : '/signup';
+  return [...mapped, ...demoPools().map(p => ({ ...p, href }))].slice(0, 6);
 }
 
 // ── site API: presence, merch, suggestions, logout, first admin ─────────────
+// Recent real winners for the "just won" toasts (landing + sign-up). Names are partly hidden, and
+// players who hide their profile show as "A player". Cached for a minute per isolate.
+let winCache = null, winAt = 0;
+const maskName = n => String(n).slice(0, 3) + '***';
+async function recentWinners(env) {
+  if (winCache && Date.now() - winAt < 60000) return winCache;
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const rows = (await env.DB.prepare(`SELECT u.username, u.prefs, pe.prize_kobo, p.name FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
+    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>? ORDER BY p.settled_at DESC LIMIT 20`).bind(since).all()).results;
+  winCache = rows.map(r => ({ who: parseJson(r.prefs, {}).hideProfile ? 'A player' : maskName(r.username), amount: Number(r.prize_kobo), pool: r.name }));
+  winAt = Date.now();
+  return winCache;
+}
+
 async function handleSiteApi(req, env, path) {
+  if (path === '/api/winners' && req.method === 'GET') return json({ winners: await recentWinners(env) }, 200, { 'cache-control': 'public, max-age=60' });
   if (path === '/api/presence' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
     const vid = String(data.vid || '');
@@ -135,7 +153,7 @@ async function handleSiteApi(req, env, path) {
 // ── scheduled jobs ──────────────────────────────────────────────────────────
 async function sweep(env, cron) {
   const cutoff = new Date(Date.now() - 20000).toISOString();
-  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status!='CANCELLED' AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
+  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
   for (const p of due) { try { await roomCall(env, p.id, '/settle', { id: p.id }); } catch (e) { console.error('sweep settle', p.id, e?.message); } }
   const now = nowIso();
   const res = await env.DB.batch([
