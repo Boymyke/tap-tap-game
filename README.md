@@ -45,7 +45,10 @@ Payments are one-off (no auto-renew); members get reminders before their time en
 
 | Name | What it does |
 | --- | --- |
-| `PAYSTACK_SECRET_KEY` (secret) | Real card payments, bank lookup and transfers. Without it the preview simulates payments (`PAYMENTS_TEST_MODE=1`). |
+| `BACHS_SECRET_KEY` (secret) | Payments and payouts through Bachs (bachs.io). `sk_live_…` uses the live API, any other key the sandbox. Bachs is used first when set. |
+| `BACHS_WEBHOOK_SECRET` (secret) | Signing secret of the Bachs webhook destination `https://<your domain>/api/bachs/webhook` (events: `collection.succeeded`, payout events). |
+| `SEED_KEY` (secret) | Encrypts the backup copy of recovery phrases (needed for the admin CSV). Never change it once players exist. |
+| `PAYSTACK_SECRET_KEY` (secret) | Older option: Paystack card payments, bank lookup and transfers. Without it the preview simulates payments (`PAYMENTS_TEST_MODE=1`). |
 | `RESEND_API_KEY` + `EMAIL_FROM`, or Cloudflare Email (`EMAIL`) | Sign-up codes and health alert emails (alert addresses are set in admin → Settings). Without it the preview shows codes on screen (`OTP_DEV_MODE=1`) and alerts are only logged. |
 | `CALLS_APP_ID`, `CALLS_APP_TOKEN` (secrets) | Live voice in games (Cloudflare Realtime). The mic button only shows once these are set. |
 | `ADMIN_SETUP_KEY` (secret) | Lets you create the first super admin at `/admin/setup`. |

@@ -3,7 +3,8 @@
 // "nak-am" Worker are never touched.
 //   npx wrangler deploy -c wrangler.live.jsonc
 // Secrets (set in the Cloudflare dashboard → tapammm-live → Settings → Variables and Secrets):
-//   PAYSTACK_SECRET_KEY  live secret key from Paystack (Settings → API Keys & Webhooks)
+//   BACHS_SECRET_KEY     live secret key from Bachs (starts sk_live_)
+//   BACHS_WEBHOOK_SECRET signing secret of the Bachs webhook destination https://tapammm.live/api/bachs/webhook
 //   SEED_KEY             long random text; encrypts the recovery-phrase backup copies
 //   OTP_PEPPER           long random text; signs email codes and unsubscribe links
 //   ADMIN_SETUP_KEY      long random text; used once to create the super admin
