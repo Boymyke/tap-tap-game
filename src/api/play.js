@@ -3,13 +3,13 @@ import { isPattern } from '../ui/patterns.js';
 import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie } from '../lib.js';
 import { tierOf, isNepo, isPaid, requireRole, debit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
 import { perks, THEMES, SOUNDS } from '../tiers.js';
-import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall } from '../game/pools.js';
+import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool } from '../game/pools.js';
 import { allRanks, rankInfo } from '../game/ranks.js';
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 export async function handlePlayApi(req, env, path, user) {
-  const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost))?$/);
+  const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost|topup))?$/);
 
   // ── pools ──
   if (path === '/api/pools' && req.method === 'GET') {
@@ -30,6 +30,13 @@ export async function handlePlayApi(req, env, path, user) {
     const p = await env.DB.prepare('SELECT id FROM pools WHERE hashtag=?').bind(code).first();
     if (!p) return json({ error: 'We no see any pool with that code. Check the letters and try again.', field: 'code' }, 404);
     return json({ redirect: `/pool/${p.id}` });
+  }
+  if (m && m[2] === 'topup' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'topup:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const pool = await getPool(env, m[1], user); if (!pool) return json({ error: 'Pool not found.' }, 404);
+    return topUpPool(env, await loadUser(env, user.id), pool, data);
   }
   if (m && m[2] === 'join' && req.method === 'POST') {
     const deny = requireRole(user, ['USER']); if (deny) return deny;

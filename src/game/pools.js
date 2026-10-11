@@ -1,7 +1,7 @@
 // Pool creation, joining and listing — shared by players (Mapo/Nepo), sponsors and the super admin.
 import { uid, nowIso, json } from '../lib.js';
 import { isPattern } from '../ui/patterns.js';
-import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
+import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, giveItem, notify, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 export const MAX_WINNERS = 100;
@@ -125,10 +125,18 @@ export async function createPool(env, user, d) {
     promoId = ad.id;
   }
 
+  // Sponsors: Tap Am emails the pool to players who said yes to pool news (paid from the wallet).
+  const blastAud = sponsor && ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(d.email_blast) ? d.email_blast : null;
+  const blastPrice = blastAud ? num(s, 'email_blast_kobo', 2500000) : 0;
   const id = uid();
+  if (blastAud && !await debit(env, user.id, blastPrice, { type: 'EMAIL_BLAST', reference: id, note: `Email: ${name}` }))
+    return json({ error: `Emailing players costs ${naira(blastPrice)}. Add money to your wallet first.`, field: 'email_blast', code: 'FUNDS', redirect: '/wallet', go: 'Fund wallet' }, 402);
   if (prize > 0 && !admin) {
     const ok = await debit(env, user.id, prize, { type: 'POOL_PRIZE', reference: id, note: name });
-    if (!ok) return json({ error: `You need ${naira(prize)} in your wallet to fund this prize.`, field: 'prize', code: 'FUNDS', redirect: '/wallet', go: 'Fund wallet' }, 402);
+    if (!ok) {
+      if (blastAud) await credit(env, user.id, blastPrice, { type: 'REFUND', reference: id, note: 'Email not sent: pool not created' });
+      return json({ error: `You need ${naira(prize)} in your wallet to fund this prize.`, field: 'prize', code: 'FUNDS', redirect: '/wallet', go: 'Fund wallet' }, 402);
+    }
   }
   let code; for (let i = 0; i < 5; i++) { code = 'TAP' + randomCode(5); if (!await env.DB.prepare('SELECT 1 FROM pools WHERE hashtag=?').bind(code).first()) break; }
   const password = isPrivate ? poolPassword() : null;
@@ -143,7 +151,8 @@ export async function createPool(env, user, d) {
   const cols = Object.keys(pool);
   await env.DB.prepare(`INSERT INTO pools(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')})`).bind(...cols.map(c => pool[c])).run();
   await initRoom(env, pool);
-  return json({ message: 'Pool created', id, code, password, redirect: `/pool/${id}` });
+  if (blastAud) await env.DB.prepare('INSERT INTO email_blasts(id,pool_id,sponsor_id,audience,price_kobo) VALUES(?,?,?,?,?)').bind(uid(), id, user.id, blastAud, blastPrice).run();
+  return json({ message: blastAud ? 'Pool created. Tap Am will email it to players in the next few minutes.' : 'Pool created', id, code, password, redirect: `/pool/${id}` });
 }
 
 // ── list ────────────────────────────────────────────────────────────────────
@@ -180,6 +189,7 @@ export async function joinPool(env, user, pool, d) {
   if (block) return block.need ? upgradeError(block.why, block.need) : json({ error: block.why }, 403);
   const state = poolState(pool);
   if (state === 'ended' || state === 'cancelled') return json({ error: 'This pool don close.' }, 409);
+  if (pool.status === 'PAUSED') return json({ error: 'This pool is paused for now. It will restart soon — join then.' }, 409);
   if (pool.joined) return json({ message: 'You don already join', redirect: `/pool/${pool.id}` });
   if (pool.is_private) {
     const given = String(d.password || '').trim().toUpperCase();
@@ -203,7 +213,7 @@ export async function joinPool(env, user, pool, d) {
   // pool or slip in after it ended (when the fee would miss the payout).
   const ins = await env.DB.prepare(`INSERT OR IGNORE INTO pool_entries(pool_id,user_id,side_choice,paid_kobo)
     SELECT ?,?,?,? WHERE (SELECT COUNT(*) FROM pool_entries WHERE pool_id=?) < ?
-    AND EXISTS (SELECT 1 FROM pools WHERE id=? AND settled_at IS NULL AND status!='CANCELLED' AND ends_at>?)`)
+    AND EXISTS (SELECT 1 FROM pools WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?)`)
     .bind(pool.id, user.id, side, fee, pool.id, Number(pool.max_players) || NO_LIMIT, pool.id, nowIso()).run();
   if (!ins.meta.changes) {
     if (fee > 0) await credit(env, user.id, fee, { balance: paidFrom, type: 'REFUND', reference: pool.id, note: 'Join did not go through' });
@@ -235,4 +245,69 @@ export async function computeSidePots(env, p) {
   for (const r of rows) if (fees[r.s] !== undefined) fees[r.s] = Number(r.f);
   const seed = Math.max(0, Number(p.prize_kobo || 0) - fees[p.side_a] - fees[p.side_b]);
   return { [p.side_a]: fees[p.side_a] + Math.floor(seed / 2), [p.side_b]: fees[p.side_b] + Math.ceil(seed / 2) };
+}
+
+// ── add money to a pool's prize (paid pools: anybody; any pool: its creator) ──
+export async function topUpPool(env, user, pool, d) {
+  const amount = clampInt(toKobo(d.amount), 0, 1000000000, 0);
+  if (amount < 10000) return json({ error: 'Add at least ₦100.', field: 'amount' }, 400);
+  if (pool.kind !== 'PAID' && pool.created_by !== user.id) return json({ error: 'Only paid pools take extra prize money.' }, 403);
+  const state = poolState(pool);
+  if (state === 'ended' || state === 'cancelled' || pool.status === 'PAUSED') return json({ error: 'This pool no dey take money now.' }, 409);
+  if (user.role === 'USER' && !user.adult_confirmed_at) { if (d.adult !== true) return adultError(); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
+  const from = d.from === 'WINNINGS' && user.role === 'USER' ? 'WINNINGS' : 'WALLET';
+  if (!await debit(env, user.id, amount, { balance: from, type: 'POOL_TOPUP', reference: pool.id, note: pool.name })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
+  // One statement: the prize only grows while the pool is still open; otherwise the money goes back.
+  const r = await env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, nowIso()).run();
+  if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Pool closed before the top-up' }); return json({ error: 'This pool don close. Your money is back.' }, 409); }
+  await env.DB.prepare('INSERT INTO pool_topups(id,pool_id,user_id,amount_kobo,balance) VALUES(?,?,?,?,?)').bind(uid(), pool.id, user.id, amount, from).run();
+  return json({ message: `You added ${naira(amount)} to the prize!`, reload: true });
+}
+
+// Money that came from players (entry fees + top-ups), to give back when a pool is cancelled or paused.
+async function playerMoney(env, pool) {
+  const fees = (await env.DB.prepare("SELECT e.user_id, e.paid_kobo AS amount, COALESCE((SELECT t.balance FROM wallet_transactions t WHERE t.user_id=e.user_id AND t.reference=e.pool_id AND t.type='ENTRY_FEE' ORDER BY t.created_at DESC LIMIT 1), 'WALLET') AS src FROM pool_entries e WHERE e.pool_id=? AND e.paid_kobo>0").bind(pool.id).all()).results;
+  const tops = (await env.DB.prepare('SELECT user_id, amount_kobo AS amount, balance AS src FROM pool_topups WHERE pool_id=?').bind(pool.id).all()).results;
+  return { fees, tops, total: [...fees, ...tops].reduce((a, x) => a + Number(x.amount), 0) };
+}
+export async function refundPlayers(env, pool, why) {
+  const { fees, tops, total } = await playerMoney(env, pool);
+  for (const e of [...fees.map(x => ({ ...x, kind: 'entry' })), ...tops.map(x => ({ ...x, kind: 'prize top-up' }))]) {
+    const bal = e.src === 'WINNINGS' ? 'WINNINGS' : 'WALLET';
+    await credit(env, e.user_id, Number(e.amount), { balance: bal, type: 'REFUND', reference: pool.id, note: `${why}: ${pool.name}` });
+  }
+  return total;
+}
+
+// ── server overload: pause a pool, give back money + boosters, restart later ──
+export async function pausePool(env, pool, reason = 'Server overload') {
+  const claim = await env.DB.prepare("UPDATE pools SET status='PAUSED' WHERE id=? AND settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED')").bind(pool.id).run();
+  if (!claim.meta.changes) return { skipped: true };
+  await roomCall(env, pool.id, '/init', { pool: { ...pool, status: 'PAUSED' } }).catch(() => {});   // taps stop now
+  const used = (await roomCall(env, pool.id, '/used').catch(() => ({ data: { players: [] } }))).data.players || [];
+  const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(pool.id).all()).results.map(r => r.user_id);
+  const total = await refundPlayers(env, pool, 'Pool paused');
+  let boosters = 0;
+  for (const p of used) for (const [item, n] of Object.entries(p.used || {})) if (n > 0) { await giveItem(env, p.uid, item, n, { gift: true, note: 'Pool paused' }); boosters += n; }
+  const boostersBy = Object.fromEntries(used.map(p => [p.uid, Object.values(p.used || {}).reduce((a, n) => a + n, 0)]));
+  // the prize goes back to what the creator put in; players join again when it restarts
+  await env.DB.batch([
+    env.DB.prepare('UPDATE pools SET prize_kobo=MAX(0, prize_kobo-?), paused_players=? WHERE id=?').bind(total, JSON.stringify(players.slice(0, 5000)), pool.id),
+    env.DB.prepare('DELETE FROM pool_entries WHERE pool_id=?').bind(pool.id),
+    env.DB.prepare('DELETE FROM pool_topups WHERE pool_id=?').bind(pool.id)]);
+  await roomCall(env, pool.id, '/reset').catch(() => {});
+  for (const u of players) await notify(env, u, `${reason}: “${pool.name}” is paused. Any money you paid into it and ${boostersBy[u] ? boostersBy[u] + ' booster' + (boostersBy[u] === 1 ? '' : 's') : 'your boosters'} are back with you. The pool will restart soon — join again then.`, `/pool/${pool.id}`);
+  return { paused: true, players: players.length, refunded: total, boosters };
+}
+export async function restartPool(env, pool, minutes = 10) {
+  if (pool.status !== 'PAUSED') return { skipped: true };
+  const len = Math.max(MIN_POOL_SECONDS * 1000, Date.parse(pool.ends_at) - Date.parse(pool.starts_at));
+  const start = Date.now() + Math.max(1, Math.min(1440, minutes)) * 60000;
+  const p = { ...pool, status: 'SCHEDULED', starts_at: new Date(start).toISOString(), ends_at: new Date(start + len).toISOString() };
+  const r = await env.DB.prepare("UPDATE pools SET status='SCHEDULED', starts_at=?, ends_at=?, paused_players=NULL WHERE id=? AND status='PAUSED'").bind(p.starts_at, p.ends_at, pool.id).run();
+  if (!r.meta.changes) return { skipped: true };
+  await initRoom(env, p);
+  const players = parseJson(pool.paused_players, []);
+  for (const u of players) await notify(env, u, `“${pool.name}” is back! It starts at ${new Date(start + 3600000).toISOString().slice(11, 16)} (Lagos). Join again to play.`, `/pool/${pool.id}`);
+  return { restarted: true, startsAt: p.starts_at, notified: players.length };
 }

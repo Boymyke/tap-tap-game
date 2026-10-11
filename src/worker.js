@@ -25,6 +25,7 @@ import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
 import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots } from './game/pools.js';
 import { awardBadges } from './game/badges.js';
+import { processEmailBlasts } from './game/blasts.js';
 import { runChecks, healthSweep } from './health.js';
 
 export { GameRoom, TapMeter } from './game/room.js';
@@ -175,6 +176,7 @@ async function sweep(env, cron) {
   for (const u of soon) await env.DB.prepare('INSERT INTO notifications(id,user_id,text,link) VALUES(?,?,?,?)').bind(uid(), u.id, `Your ${u.tier === 'NEPO' ? 'Nepo' : 'Mapo'} ends on ${u.tier_until.slice(0, 10)}. Renew to keep your perks.`, '/plans').run();
   try { await autoPayouts(env); } catch (e) { console.error('auto payouts', e?.message); }
   try { await awardBadges(env); } catch (e) { console.error('badges', e?.message); }
+  try { await processEmailBlasts(env, env.PUBLIC_URL || 'https://www.tapammm.live'); } catch (e) { console.error('blasts', e?.message); }
   const minute = new Date().getUTCMinutes();
   if (minute % 15 < 5) { try { await healthSweep(env); } catch (e) { console.error('health', e?.message); } }
   return due.length;
