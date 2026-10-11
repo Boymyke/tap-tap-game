@@ -128,7 +128,7 @@ export async function handleMoneyApi(req, env, path, user) {
     return json({ ok: true });
   }
 
-  if (!path.startsWith('/api/wallet') && !path.startsWith('/api/plans') && !path.startsWith('/api/nepo') && !path.startsWith('/api/withdraw') && path !== '/api/bank/resolve') return null;
+  if (!path.startsWith('/api/wallet') && !path.startsWith('/api/plans') && !path.startsWith('/api/nepo') && !path.startsWith('/api/withdraw') && path !== '/api/bank/resolve' && path !== '/api/codes/redeem') return null;
   const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
   const me = await loadUser(env, user.id);
   const s = await settings(env);
