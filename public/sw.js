@@ -1,6 +1,6 @@
 /* Tap Am service worker: makes the app installable, loads fast, and shows a friendly
    offline page when the internet is down. API calls are never cached. */
-const VERSION = 'tapam-v8';
+const VERSION = 'tapam-v9';
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const FONTS = 'tapam-fonts';
@@ -58,15 +58,19 @@ self.addEventListener('fetch', event => {
   // Pages: network first (fresh data), fall back to the last copy, then the offline page.
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
+      // Slow networks are normal: only give up early when a saved copy exists to show instead.
+      // With no saved copy, wait for the network and show the offline page only if it really fails.
+      const net = fetch(req);
+      const saved = PUBLIC_PAGES.includes(url.pathname) ? await caches.match(url.pathname) : null;
       try {
-        const res = await timeout(6000, fetch(req));
+        const res = saved ? await timeout(8000, net) : await net;
         if (res.ok && PUBLIC_PAGES.includes(url.pathname)) {
           const copy = res.clone();
           caches.open(PAGES).then(c => c.put(url.pathname, copy));
         }
         return res;
       } catch {
-        return (await caches.match(url.pathname)) || (await caches.match('/offline'));
+        return saved || (await caches.match('/offline'));
       }
     })());
   }
