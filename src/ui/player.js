@@ -45,15 +45,17 @@ export function dashboardPage(ctx) {
   const { user, tier, rank, wallet, slides, sponsored, live, upcoming, mine, perk, origin, theme, bgCss } = ctx;
   const refUrl = `${origin}/signup?ref=${user.referral_code || ''}`;
   // Slides made by the super admin: either a picture (with just the button on it) or a colour with words.
-  const slideHtml = slides.map((s, i) => {
-    const href = `/s/${esc(s.id)}`, cta = esc(s.cta || 'Check am');
-    if (s.image_url) return `<a class="slide img-only" href="${href}" data-no-swap aria-label="${esc(s.title)}"><img class="full" src="${esc(s.image_url)}" alt="${esc(s.title)}" loading="${i ? 'lazy' : 'eager'}"><span class="btn btn--white btn--sm cta">${cta}</span></a>`;
-    return `<a class="slide" href="${href}" style="background:${esc(/^#[0-9a-fA-F]{6}$/.test(s.color || '') ? s.color : '#2E8BFF')}" data-no-swap aria-label="${esc(s.title)}">
-      <div><span class="tag">${s.sponsor ? 'Sponsored · ' + esc(s.sponsor) : 'Tap Am'}</span><h3>${esc(s.title)}</h3>${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}<span class="btn btn--white btn--sm">${cta}</span></div></a>`;
+  // Until the admin adds any, the Tap Am cards show.
+  const shown = slides.length ? slides : defaultSlides(perk);
+  const slideHtml = shown.map((s, i) => {
+    const href = s.demo ? esc(s.link) : `/s/${esc(s.id)}`, cta = esc(s.cta || 'Check am'), noSwap = s.demo ? '' : 'data-no-swap';
+    if (s.image_url) return `<a class="slide img-only" href="${href}" ${noSwap} aria-label="${esc(s.title)}"><img class="full" src="${esc(s.image_url)}" alt="${esc(s.title)}" loading="${i ? 'lazy' : 'eager'}"><span class="btn btn--white btn--sm cta">${cta}</span></a>`;
+    return `<a class="slide" href="${href}" style="background:${esc(/^#[0-9a-fA-F]{6}$/.test(s.color || '') ? s.color : '#2E8BFF')}" ${noSwap} aria-label="${esc(s.title)}">
+      <div><span class="tag">${s.sponsor ? 'Sponsored · ' + esc(s.sponsor) : esc(s.tag || 'Tap Am')}</span><h3>${esc(s.title)}</h3>${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}<span class="btn btn--white btn--sm">${cta}</span></div></a>`;
   }).join('');
-  const count = slides.length;
+  const count = shown.length;
   const section = (title, list, href, empty) => `<h2 class="h2">${title}${href ? ` <a href="${href}">See all</a>` : ''}</h2>${list.length ? `<div class="hscroll">${list.map(poolCard).join('')}</div>` : `<div class="empty">${empty}</div>`}`;
-  const body = `
+  const body = `${ctx.s?.overload === '1' ? '<div class="panel" style="margin-bottom:14px;box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>Our servers dey overloaded.</b><p class="muted" style="margin:6px 0 0">We paused the games for now and gave everybody back the money and boosters they spent on them. The pools will restart soon — check your notifications.</p></div>' : ''}
 ${count ? `<section class="slides" data-slides aria-roledescription="carousel" aria-label="Featured">
   <div class="slides-track">${slideHtml}</div>
   ${count > 1 ? `<div class="slides-dots">${Array.from({ length: count }, (_, i) => `<button type="button" aria-label="Slide ${i + 1}" aria-current="${i === 0}"></button>`).join('')}</div>` : ''}
@@ -76,7 +78,7 @@ ${perk.create ? '<a class="btn btn--white btn--shine bigcreate" href="/pools/new
 
 ${section('Sponsored pools', sponsored, '/pools?scope=sponsored', 'No sponsored pool right now. Brands dey come!')}
 ${section('Live pools', live, '/pools?scope=live', sponsored.length ? 'No other pool dey live now. The sponsored ones above dey run.' : 'No pool dey live now. Check the ones coming up.')}
-${section('Coming up from Nepo babies', upcoming, '/pools?scope=players-soon', perk.create ? 'Nothing coming up. <a href="/pools/new">Create the first one</a>.' : 'Nothing coming up yet.')}
+${section('Coming up from players', upcoming, '/pools?scope=players-soon', perk.create ? 'Nothing coming up. <a href="/pools/new">Create the first one</a>.' : 'Nothing coming up yet.')}
 ${mine.length ? section('You don join', mine, '/pools?scope=mine', '') : ''}
 ${mine.filter(p => p.state === 'live').length > 1 ? `<div class="actions">${perk.pools > 1 ? `<a class="btn btn--green btn--shine btn--block" href="/play?pools=${mine.filter(p => p.state === 'live').map(p => p.id).slice(0, perk.pools).join(',')}" data-no-swap>Tap in ${Math.min(perk.pools, mine.filter(p => p.state === 'live').length)} live pools at once</a>` : `<button type="button" class="btn btn--white btn--block" ${upgradeAttrs('MAPO', 'Tapping in many pools at once')}>${ICONS.lock} Tap in all your live pools at once</button>`}</div>` : ''}
 
@@ -87,6 +89,17 @@ ${mine.filter(p => p.state === 'live').length > 1 ? `<div class="actions">${perk
   <div class="row" style="gap:8px"><button type="button" class="btn btn--white btn--sm" style="flex:1" data-share-url="${esc(refUrl)}" data-share-text="Come play Tap Am with me! Use my link:">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" style="flex:1" ${shareCardAttr({ url: refUrl, title: `${user.username} dey call you!`, line: 'Join Tap Am, tap fast and win prizes.', kind: 'invite', color: '#2E8BFF', display: 'www.tapammm.live' })}>${ICONS.qr} QR card</button></div>
 </section>`;
   return appPage({ user, title: 'Home', active: '/dashboard', body, wallet, css: HOME_CSS, theme, bgCss });
+}
+
+function defaultSlides(perk) {
+  return [
+    { demo: true, title: 'Tap fast, chop prize', subtitle: 'Join a live pool and tap pass everybody.', link: '/pools', color: '#FF8A2A', cta: 'See pools', tag: 'Tap Am' },
+    perk.tier === 'NEPO'
+      ? { demo: true, title: 'Play 10 pools at once', subtitle: 'One tap counts in every pool you joined.', link: '/pools?scope=mine', color: '#FF4FA3', cta: 'My pools', tag: 'Nepo perk' }
+      : { demo: true, title: 'Go Mapo or Nepo', subtitle: 'More fingers, more pools, bigger boosters.', link: '/plans', color: '#FF4FA3', cta: 'Compare plans', tag: 'Upgrade' },
+    { demo: true, title: 'Mystery boxes dey!', subtitle: 'Open one for boosters, skins or wallet money.', link: '/store?tab=BOX', color: '#9161FF', cta: 'Open a box', tag: 'Store' },
+    { demo: true, title: 'Who be tapper of the day?', subtitle: 'Top tappers get badges every day, week, month and year.', link: '/top', color: '#21D4C8', cta: 'See the board', tag: 'Leaderboard' }
+  ];
 }
 
 // ── Pools list ──────────────────────────────────────────────────────────────
@@ -126,7 +139,7 @@ export function poolPage(ctx) {
   const url = `${origin}/pool/${p.id}`;
   const vs = p.gameType === 'MATCH' && p.sideA;
   const head = `<section class="tcard phead ${color}" style="${p.theme ? `--c:${esc(p.theme)};--cd:color-mix(in srgb,${esc(p.theme)} 65%,#000)` : ''}">
-  <div class="row wrap" style="justify-content:flex-start;gap:6px">${stateBadge(p.state)}${p.kind === 'SPONSORED' ? `<span class="badge sponsor">Sponsored</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid pool</span>' : '<span class="badge">Free pool</span>'}${p.private ? `<span class="badge">${ICONS.lock.replace('<svg', '<svg width="12" height="12"')}Private</span>` : ''}${p.joined ? '<span class="badge live">Joined</span>' : ''}</div>
+  <div class="row wrap" style="justify-content:flex-start;gap:6px">${stateBadge(p.state)}${p.kind === 'SPONSORED' ? `<span class="badge sponsor">Sponsored</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid pool</span>' : '<span class="badge">Free pool</span>'}${p.private ? `<span class="badge">${ICONS.lock.replace('<svg', '<svg width="12" height="12"')}Private</span>` : ''}${p.lapoRules ? '<span class="badge lapo">Lapo rules</span>' : ''}${p.paused ? '<span class="badge red">Paused</span>' : ''}${p.joined ? '<span class="badge live">Joined</span>' : ''}</div>
   ${vs ? `<div class="vsrow" style="margin-top:12px"><span class="code">${esc(p.sideA)}</span><span class="vs">VS</span><span class="code">${esc(p.sideB)}</span></div>` : ''}
   <h1>${esc(p.name)}</h1>
   ${p.sponsor ? `<p style="margin:0 0 6px;font-weight:700">Sponsored by ${esc(p.sponsor)}</p>` : ''}
@@ -137,7 +150,8 @@ export function poolPage(ctx) {
 </section>`;
 
   let action = '';
-  if (p.state === 'ended' || p.state === 'cancelled') action = '';
+  if (p.paused) action = `<div class="panel" style="margin-top:14px;box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>This pool is paused.</b><p class="muted" style="margin:6px 0 0">Our servers got too busy, so we stopped it and gave everybody back the money and boosters they put in. It will restart soon — join again when it does.</p></div>`;
+  else if (p.state === 'ended' || p.state === 'cancelled') action = '';
   else if (!p.joined && user?.role === 'USER') {
     if (joinBlock) action = `<div class="panel" style="margin-top:14px"><p style="margin:0 0 4px;font-weight:700">${esc(joinBlock.why)}</p>${joinBlock.need ? `<div class="actions"><a class="btn btn--green" href="/plans">See plans</a></div>` : ''}</div>`;
     else action = `<div class="panel" style="margin-top:14px">${form(`/api/pools/${p.id}/join`, `
@@ -153,6 +167,9 @@ export function poolPage(ctx) {
     </div>`;
   }
 
+  // Paid pools: anybody can add money to the prize. The creator can add to any of their pools.
+  const canTop = !p.paused && (p.state === 'soon' || p.state === 'live') && (p.kind === 'PAID' || isCreator) && (user?.role === 'USER' || (user?.role === 'SPONSOR' && isCreator));
+  if (canTop) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Make the prize bigger</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Add money from your wallet to the prize pool. It goes to the winners and is not refunded once the pool starts (unless the pool is cancelled or paused).</p>${form(`/api/pools/${p.id}/topup`, `${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}`, { submit: 'Add to prize', btn: 'btn--gold' })}</div>`;
   const sp = p.split, tie = p.tie === 'SPLIT' ? 'Ties: tied players split the prize.' : 'Ties: whoever reached the score first wins.';
   const aud = { ALL: 'Everybody fit join.', LAPO: 'Lapo babies only.', MAPO: 'Mapo and Nepo babies only.', NEPO: 'Nepo babies only.' }[p.audience] || '';
   const instr = `<section class="panel instr" style="margin-top:14px"><h2>Pool instructions</h2><ul>
@@ -160,6 +177,7 @@ export function poolPage(ctx) {
     ${vs && p.vsSplit ? `<li>VS pool: pick ${esc(p.sideA)} or ${esc(p.sideB)}. Each side has its own pot — its players’ entry fees plus half of any starting prize${sidePots ? ` (${esc(p.sideA)} ${esc(naira(sidePots[p.sideA] || 0))} · ${esc(p.sideB)} ${esc(naira(sidePots[p.sideB] || 0))})` : ''}. The top tappers on each side share their side’s pot.</li>` : ''}
     <li>${esc(tie)}</li><li>${esc(aud)}</li>
     <li>${p.boosters ? 'Boosters allowed — you fit use many, one after the other.' : 'No boosters in this pool.'}</li>
+    ${p.lapoRules ? '<li><b>Lapo baby rules:</b> everybody taps with one finger at the Lapo speed and only everybody-boosters work. A fair fight.</li>' : ''}
     <li>Taps only count while the pool is live. The server score is the official score.</li>
     ${p.entryFee ? '<li>Entry fees go into the prize and are not refunded once the pool starts (unless the pool is cancelled or nobody taps).</li>' : ''}
     ${p.houseCut > 0 ? `<li>Tap Am keeps ${p.houseCut}% of the prize pot as a service fee.</li>` : ''}
@@ -208,14 +226,14 @@ const CREATE_CSS = `
 @media (max-width:560px){.cp .two{grid-template-columns:1fr}.cp .group{padding:12px}}
 `;
 export function createPoolPage(ctx) {
-  const { user, wallet, role, tierKey, ads, theme, bgCss } = ctx;
+  const { user, wallet, role, tierKey, ads, theme, bgCss, blast = null, lapoLeft = null } = ctx;
   const admin = role === 'ADMIN', sponsor = role === 'SPONSOR';
-  const canColour = admin || sponsor || tierKey === 'NEPO';
+  const canColour = admin || sponsor;   // pool colours, background and tap area: sponsors and the admin only
   const now = new Date(Date.now() + 10 * 60000), later = new Date(Date.now() + 70 * 60000);
   const local = d => new Date(d.getTime() + 60 * 60000).toISOString().slice(0, 16);   // shown in Lagos time (UTC+1); the browser converts back
   const kinds = admin ? [['FREE', 'Free'], ['PAID', 'Paid'], ['SPONSORED', 'Sponsored']] : [['FREE', 'Free'], ['PAID', 'Paid']];
   const approved = (ads || []).filter(a => a.approved && a.active);
-  const body = `<h1 class="h1">Create a pool</h1><p class="sub">${sponsor ? 'You fund the prize from your wallet; players join free.' : admin ? 'As super admin you can create any type of pool.' : 'A free pool for fun, or a paid pool where every entry fee joins the prize.'}</p>
+  const body = `<h1 class="h1">Create a pool</h1><p class="sub">${sponsor ? 'You fund the prize from your wallet; players join free.' : admin ? 'As super admin you can create any type of pool.' : 'A free pool for fun, or a paid pool where every entry fee joins the prize.'}${lapoLeft !== null ? ` <b style="color:#fff">Lapo babies create ${lapoLeft.max} pools a day: you have ${lapoLeft.left} left today.</b>` : ''}</p>
 <div class="panel cp">${form('/api/pools', `
   ${field({ label: 'Pool name', name: 'name', placeholder: 'Friday Night Tap', attrs: 'maxlength="60" required autocomplete="off"' })}
   <div class="ta-field"><label class="ta-label" for="f-description">Description <small>(optional)</small></label><textarea class="ta-input" id="f-description" name="description" maxlength="300" placeholder="Anything players should know"></textarea><p class="ta-error" data-err="description"></p></div>
@@ -224,7 +242,7 @@ export function createPoolPage(ctx) {
     <div class="two">${moneyField({ label: 'Entry fee (₦)', name: 'entry_fee', placeholder: '500', tip: 'What each player pays to join. Every entry fee goes into the prize pot, so the prize grows as more people join.' })}
     ${moneyField({ label: 'Starting prize (₦)', name: 'prize', placeholder: '0', tip: 'Optional money you add from your wallet so the pot starts bigger. It is locked into the pool once you create it.' })}</div>
   </div>
-  ${sponsor || admin ? `<div class="group" data-show="kind=SPONSORED">${moneyField({ label: 'Prize (₦)', name: 'prize', id: 'f-prize-sp', placeholder: '50,000', tip: admin ? 'Funded by Tap Am. Players join free.' : 'The prize you fund from your wallet. Players join free.' })}</div>` : ''}
+  ${sponsor || admin ? `<div class="group" data-show="kind=SPONSORED">${moneyField({ label: admin ? 'Prize (₦)' : 'Prize (₦, at least ₦10,000)', name: 'prize', id: 'f-prize-sp', placeholder: '50,000', tip: admin ? 'Funded by Tap Am. Players join free.' : 'The prize you fund from your wallet. Players join free.' })}</div>` : ''}
   <div class="two">${field({ label: 'Starts', name: 'starts_at', type: 'datetime-local', value: local(now), attrs: 'required' })}${field({ label: 'Ends', name: 'ends_at', type: 'datetime-local', value: local(later), attrs: 'required' })}</div>
   <p class="ta-hint" style="margin-top:-8px">A pool runs at least 60 seconds.</p>
   ${choice({ label: 'Who fit join', name: 'audience', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo only'], ['MAPO', 'Mapo + Nepo'], ['NEPO', 'Nepo only']], value: 'ALL', cls: 'wrap4' })}
@@ -236,7 +254,8 @@ export function createPoolPage(ctx) {
   ${select({ label: 'Share it', name: 'split_style', options: [['TOP', 'Bigger for top places'], ['EQUAL', 'Equal shares']], value: 'TOP', attrs: 'data-split' })}</div>
   <div class="preview" data-split-preview>Winner takes all.</div>
   ${choice({ label: 'If players tie', name: 'tie_rule', options: [['FIRST', 'First to reach wins'], ['SPLIT', 'Split the prize']], value: 'FIRST' })}
-  ${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.' })}
+  ${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.', tip: 'The most people that can join. When the pool is full, nobody else can join. Leave it empty to let everybody in.' })}
+  <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'lapo_rules', label: '<b>Use Lapo baby rules</b> (level the game)' })}<button type="button" class="tip" data-tip="Everybody in this pool plays like a Lapo baby: one finger at a time, the Lapo tap speed, and only the boosters every player can use. Mapo and Nepo perks are switched off here, so it is a fair fight." aria-label="More info">i</button></div>
   ${canColour ? `${check({ name: 'custom_pad', label: `Set the tap area for this pool${sponsor ? ' (your brand colours)' : ''}` })}
   <div class="group" data-show="custom_pad=true">
     <div class="padprev tcard" data-padprev style="background:${patternBg('waves', '#2E8BFF')}">TAP AM</div>
@@ -249,7 +268,11 @@ export function createPoolPage(ctx) {
     <p class="ta-hint" style="margin:-8px 0 0">If you leave this off, everybody taps on your tap area in this pool.</p>
   </div>
   <div class="ta-field"><label class="ta-label" for="bgc">Pool background</label><input class="color-in" id="bgc" type="color" name="bg_color" value="#4B1FD8"></div>`
-    : `<button type="button" class="lockrow" ${upgradeAttrs('NEPO', 'Custom tap area and background colours')}><span>Tap area + background</span>${ICONS.lock}</button>`}
+    : ''}
+  ${sponsor && blast ? `<div class="group">
+    ${choice({ label: 'Let Tap Am email this pool to players?', name: 'email_blast', options: [['NO', 'No'], ['ALL', 'Everybody'], ['LAPO', 'Lapo'], ['MAPO', 'Mapo'], ['NEPO', 'Nepo']], value: 'NO', cls: 'wrap4', tip: 'We email your pool to players who said yes to pool news, the moment it is created. You pay once from your wallet.' })}
+    <p class="ta-hint" style="margin:-6px 0 0">Costs <b>${esc(naira(blast.price))}</b> from your wallet. Players who get it now: everybody ${short(blast.counts.ALL)} · Lapo ${short(blast.counts.LAPO)} · Mapo ${short(blast.counts.MAPO)} · Nepo ${short(blast.counts.NEPO)}.</p>
+  </div>` : ''}
   ${sponsor || admin ? `${choice({ label: 'Show your ad in this pool?', name: 'with_ad', options: [['NO', 'Without ad'], ['YES', 'With ad']], value: 'NO', tip: 'With ad: your ad pops up when players open the game, in the lobby and before results.' })}
   <div class="group" data-show="with_ad=YES">${approved.length ? select({ label: 'Pick your ad', name: 'promo_id', options: approved.map(a => [a.id, a.title]) }) : `<div class="note" style="margin:0">You don’t have an approved ad yet. <a href="${sponsor ? '/sponsor/ads' : '/admin/ads'}"><b>Create an ad first</b></a></div>`}</div>` : ''}
   ${check({ name: 'is_private', label: 'Private pool — Tap Am makes a password you share' })}

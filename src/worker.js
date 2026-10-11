@@ -296,7 +296,19 @@ async function route(req, env, url, path, user) {
     case '/pools/new': {
       if (user.role === 'USER' && !b.perk?.create) return go(req, '/plans');
       const ads = user.role === 'SPONSOR' || user.role === 'ADMIN' ? (await env.DB.prepare(user.role === 'ADMIN' ? 'SELECT id,title,approved,active FROM promos WHERE approved=1 ORDER BY created_at DESC LIMIT 100' : 'SELECT id,title,approved,active FROM promos WHERE owner_id=? ORDER BY created_at DESC').bind(...(user.role === 'ADMIN' ? [] : [user.id])).all()).results : [];
-      return html(createPoolPage({ ...b, role: user.role, ads }));
+      let blast = null, lapoLeft = null;
+      if (user.role === 'SPONSOR') {   // price + how many players would get the email, per tier
+        const now = nowIso();
+        const c = await env.DB.prepare(`SELECT COUNT(*) a, SUM(CASE WHEN tier='LAPO' OR tier_until<=? THEN 1 ELSE 0 END) l, SUM(CASE WHEN tier='MAPO' AND (tier_until IS NULL OR tier_until>?) THEN 1 ELSE 0 END) m, SUM(CASE WHEN tier='NEPO' AND (tier_until IS NULL OR tier_until>?) THEN 1 ELSE 0 END) n FROM users WHERE role='USER' AND status='ACTIVE' AND email_news=1`).bind(now, now, now).first();
+        blast = { price: num(b.s, 'email_blast_kobo', 2500000), counts: { ALL: Number(c?.a || 0), LAPO: Number(c?.l || 0), MAPO: Number(c?.m || 0), NEPO: Number(c?.n || 0) } };
+      }
+      if (user.role === 'USER' && b.tierKey === 'LAPO') {
+        const max = num(b.s, 'lapo_pools_per_day', 3);
+        const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19);
+        const made = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pools WHERE created_by=? AND created_at>=?').bind(user.id, dayStart).first())?.n || 0);
+        lapoLeft = { max, left: Math.max(0, max - made) };
+      }
+      return html(createPoolPage({ ...b, role: user.role, ads, blast, lapoLeft }));
     }
     case '/play': return playRoute(req, env, url, user, b);
     case '/store': {
@@ -415,14 +427,16 @@ async function playRoute(req, env, url, user, b) {
   if (!ids.length) return go(req, '/pools?scope=mine');
   const pk = b.perk;
   const found = (await Promise.all(ids.map(id => getPool(env, id, user)))).filter(Boolean);
-  const joined = found.filter(p => p.joined).slice(0, pk.pools);
+  let joined = found.filter(p => p.joined && p.status !== 'PAUSED').slice(0, pk.pools);
+  // Lapo-rules pools are played on their own (no one-tap-counts-in-many).
+  if (joined.length > 1) { const normal = joined.filter(p => !p.lapo_rules); joined = normal.length ? normal : joined.slice(0, 1); }
   if (!joined.length) return go(req, found[0] ? `/pool/${found[0].id}` : '/pools');
-  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg }; });
+  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg, lapoRules: x.lapoRules }; });
   const prefs = parseJson(user.prefs, {});
   const [skinRow, items] = await env.DB.batch([
     env.DB.prepare("SELECT config FROM store_items WHERE id=? AND kind='SKIN'").bind(user.equipped_skin || 'skin-boy'),
     env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS quantity FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.kind='BOOSTER' AND s.active=1 ORDER BY s.sort").bind(user.id)]);
-  const boosters = items.results.filter(x => x.quantity > 0 || itemLock(x, user)).map(x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, color: parseJson(x.config, {}).color || '#2E8BFF', lock: lock ? { why: lock.why, need: lock.need } : null }; });
+  const boosters = items.results.filter(x => x.quantity > 0 || itemLock(x, user)).map(x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, everybody: x.audience === 'ALL', color: parseJson(x.config, {}).color || '#2E8BFF', lock: lock ? { why: lock.why, need: lock.need } : null }; });
   const voice = { enabled: !!(env.CALLS_APP_ID && env.CALLS_APP_TOKEN), topN: num(b.s, 'voice_top_n', 5), minRank: num(b.s, 'voice_min_rank', 56) };
   const me = { name: user.username, tier: b.tierKey, fingers: pk.fingers, rate: pk.rate, sound: soundFor(user, prefs), muted: !!prefs.muted, vibrate: prefs.vibrate !== false, calc: !!pk.calc, rank: user.rank_level || 1, emoji: user.emoji || null };
   return html(playPage({ user, pools, boosters, skin: parseJson(skinRow.results[0]?.config, { bg: '#2E8BFF', pattern: 'waves' }), prefs, voice, serverNow: nowIso(), me, paid: b.tierKey !== 'LAPO', theme: b.theme, bgCss: b.bgCss }));

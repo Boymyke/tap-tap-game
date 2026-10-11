@@ -13,7 +13,7 @@
     var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
     var fmtN = function (n) { return TA.short(n); };
 
-    var pools = D.pools.map(function (p) { return { id: p.id, name: p.name, starts: Date.parse(p.startsAt), ends: Date.parse(p.endsAt), boosters: p.boosters, sideA: p.sideA, sideB: p.sideB, side: p.side, prize: p.prize, sponsor: p.sponsor, kind: p.kind, score: 0, rank: 0, total: 0, mult: 1, multUntil: 0, queued: 0, used: {}, ended: p.state === 'ended' || p.state === 'cancelled', seenTop: 999, top: [], near: [] }; });
+    var pools = D.pools.map(function (p) { return { id: p.id, name: p.name, starts: Date.parse(p.startsAt), ends: Date.parse(p.endsAt), boosters: p.boosters, sideA: p.sideA, sideB: p.sideB, side: p.side, prize: p.prize, sponsor: p.sponsor, kind: p.kind, lapoRules: !!p.lapoRules, score: 0, rank: 0, total: 0, mult: 1, multUntil: 0, queued: 0, used: {}, ended: p.state === 'ended' || p.state === 'cancelled', seenTop: 999, top: [], near: [] }; });
     var byId = {}; pools.forEach(function (p) { byId[p.id] = p; });
     var focus = pools[0];
     var boosters = D.boosters || [];
@@ -91,8 +91,9 @@
     pad.addEventListener('pointerdown', function (e) {
       if (endEl.contains(e.target)) return;
       e.preventDefault();
-      if (ME.fingers > 0 && activeCount >= ME.fingers) {
-        if (!fingerHint) { fingerHint = true; TA.toast(ME.fingers === 1 ? 'Lapo babies tap with one finger at a time. Mapo gets 3, Nepo unlimited.' : 'Mapo babies tap with 3 fingers. Nepo babies get unlimited.', 'err', '/plans', 'See plans'); }
+      var fingers = focus.lapoRules ? 1 : ME.fingers;   // Lapo-rules pools: one finger for everybody
+      if (fingers > 0 && activeCount >= fingers) {
+        if (!fingerHint) { fingerHint = true; TA.toast(focus.lapoRules ? 'This pool uses Lapo baby rules: one finger at a time for everybody.' : ME.fingers === 1 ? 'Lapo babies tap with one finger at a time. Mapo gets 3, Nepo unlimited.' : 'Mapo babies tap with 3 fingers. Nepo babies get unlimited.', 'err', '/plans', 'See plans'); }
         return;
       }
       active[e.pointerId] = 1; activeCount++;
@@ -123,6 +124,7 @@
         Object.keys(j.results || {}).forEach(function (id) {
           var r = j.results[id], p = byId[id]; if (!p || !r) return;
           if (r.code === 'ENDED') { p.ended = true; return; }
+          if (r.code === 'PAUSED' || r.code === 'SOLO') { if (r.code === 'PAUSED') { p.ended = true; p._endShown = true; } TA.toast(r.error, 'err'); msg.textContent = r.error; return; }
           if (typeof r.score === 'number') { p.score = r.score; p.rank = r.rank; p.total = r.total; p.mult = r.mult || 1; p.multUntil = r.multUntil || 0; p.queued = r.queued || 0; p.above = r.above; }
           if (r.rejected > 0 && r.rejected >= r.accepted) slow = true;
           checkPosition(p);
@@ -247,7 +249,7 @@
 
     /* ── boosters (button bottom left) ── */
     var boostBtn = $('boost-btn');
-    function usable(b) { return !b.lock && b.qty > 0 && !(b.perGame && (focus.used[b.id] || 0) >= b.perGame); }
+    function usable(b) { return !b.lock && b.qty > 0 && !(focus.lapoRules && !b.everybody) && !(b.perGame && (focus.used[b.id] || 0) >= b.perGame); }
     function boosterTotal() { return boosters.reduce(function (s, b) { return s + (usable(b) ? b.qty : 0); }, 0); }
     function paintBoostBtn() {
       var st = stateOf(focus), n = boosterTotal();
