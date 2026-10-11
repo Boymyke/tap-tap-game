@@ -1,5 +1,5 @@
 // Me, settings, booster calculator, notifications, top tappers, ranks, suggest a pool.
-import { appPage, anyPage, esc, naira, short, lagos, lagosDate, tierBadge, field, select, check, form, postBtn, upgradeAttrs, icon, nameTag, copyRow } from './kit.js';
+import { appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, tierBadge, field, select, check, form, postBtn, upgradeAttrs, icon, nameTag, copyRow, pager } from './kit.js';
 import { ICONS } from './theme.js';
 import { rankAvatar, avatarSvg, avatarFor, badgeSvg, RANK_LOOKS, STICKERS } from './avatar.js';
 import { THEMES, SOUNDS, backgroundCss } from '../tiers.js';
@@ -69,7 +69,10 @@ ${taps ? tapsSection(taps) : ''}
   ${tile('/settings', 'Settings', 'Password, privacy, sounds', 'c-ink')}
   ${tile('/bag', 'My bag', 'Boosters and skins', 'c-orange')}
   ${tile('/ranks', 'Ranks', 'What every rank unlocks', 'c-pink')}
-  ${tile('/top', 'Top tappers', 'Day, week, month, year', 'c-sky')}
+  ${tile(`/u/${encodeURIComponent(user.username)}`, 'My profile', 'See it like others do, and share it', 'c-sky')}
+  ${tile('/top', 'Top tappers', 'All time, day, week, month, year', 'c-sky')}
+  ${tile('/winners', 'Top winners', 'Who don chop the most', 'c-teal')}
+  ${tile('/players', 'Find a player', 'Search any nickname', 'c-orange')}
   ${tile('/plans', 'Plans', 'Lapo vs Mapo vs Nepo', 'c-sunny')}
   ${tile('/calc', 'Booster calculator', 'Where your booster hits hardest', 'c-teal', perk.calc ? null : 'MAPO')}
   ${tile('/suggest-pool', 'Suggest a pool', 'Tell us the pool you want', 'c-purple')}
@@ -243,18 +246,68 @@ const TOP_CSS = `.podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;align
 .podium .p1{padding-top:18px}
 .mini-ava{flex:none;width:40px;height:40px}`;
 export function topPage(ctx) {
-  const { user, period, rows, me, label, wallet, theme, bgCss, badgeKind } = ctx;
-  const tabs = [['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year'], ['ALL', 'All time']];
+  const { user, period, rows, me, label, theme, bgCss, badgeKind, page = 1, hasNext = false, term = '' } = ctx;
+  const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
+  const podium = page === 1 && !term && rows.length >= 3;
   const [a, b, c] = rows;
-  const pod = (r, cls, place) => r ? `<div class="tcard ${cls} ${place === 1 ? 'p1' : ''}">${avatarSvg(avatarFor(r.username), { size: place === 1 ? 74 : 58 })}<div class="n">${esc(r.username)}</div><div class="s">${short(r.taps)} taps</div></div>` : '<div></div>';
-  const body = `<h1 class="h1">Top tappers</h1><p class="sub">Whoever taps the most ${label} wins the <b style="color:#fff">Tapper of the ${badgeKind.toLowerCase()}</b> badge. Taps count when a pool ends.</p>
+  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" style="text-decoration:none">${avatarSvg(avatarFor(r.username), { size: place === 1 ? 74 : 58 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${short(r.taps)} taps</div></a>` : '<div></div>';
+  const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b style="min-width:44px;font:900 18px var(--display);color:var(--ink-soft)">#${short(r.pos)}</b><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt">${short(r.taps)}</b></a>`;
+  const qs = `/top?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`;
+  const body = `<h1 class="h1">Top tappers</h1><p class="sub">Every player, from the fastest finger down. Whoever taps the most ${label} ${period === 'ALL' ? 'sits on top' : `wins the <b style="color:#fff">Tapper of the ${badgeKind.toLowerCase()}</b> badge`}. Taps count when a pool ends.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/top?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
-${rows.length ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>
-<div class="list">${rows.slice(3).map((r, i) => `<div class="item ${user && r.id === user.id ? 'me' : ''}"><b style="width:38px;font:900 18px var(--display);color:var(--ink-soft)">#${i + 4}</b><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${esc(r.username)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt">${short(r.taps)}</b></div>`).join('')}</div>
-${me && me.pos > rows.length ? `<div class="item me" style="margin-top:12px"><b style="width:38px;font:900 18px var(--display)">#${me.pos}</b><div class="grow"><div class="t">You</div></div><b class="amt">${short(me.taps)}</b></div>` : ''}` : `<div class="empty">No taps counted ${label} yet. ${user ? '<a href="/pools">Go tap!</a>' : '<a href="/signup">Join and tap!</a>'}</div>`}
-<div class="panel" style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">${['DAY', 'WEEK', 'MONTH', 'YEAR'].map(k => badgeSvg(k, { size: 44 })).join('')}<p style="margin:0;flex:1;min-width:180px" class="small">Badges are given when each day, week, month and year ends. They show on your profile forever.</p></div>`;
-  return anyPage({ user, title: 'Top tappers', active: '/me', body, css: TOP_CSS, theme, bgCss, description: 'The fastest fingers on Tap Am today, this week, month and year.' });
+<form class="row" method="get" action="/top" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
+${rows.length ? `${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
+<div class="list">${(podium ? rows.slice(3) : rows).map(row).join('')}</div>
+${me && me.pos > (page * 50) ? `<div class="item me" style="margin-top:12px"><b style="min-width:44px;font:900 18px var(--display)">#${short(me.pos)}</b><div class="grow"><div class="t">You</div></div><b class="amt">${short(me.taps)}</b></div>` : ''}
+${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No player with that nickname here.' : `No taps counted ${label} yet. ${user ? '<a href="/pools">Go tap!</a>' : '<a href="/signup">Join and tap!</a>'}`}</div>`}
+<div class="actions"><a class="btn btn--white btn--sm" href="/winners">Top winners</a><a class="btn btn--ghost btn--sm" href="/players">Find a player</a></div>`;
+  return anyPage({ user, title: 'Top tappers', active: '/me', body, css: TOP_CSS, theme, bgCss, description: 'The fastest fingers on Tap Am: all time, today, this week, month and year.' });
 }
+
+// ── Top winners ─────────────────────────────────────────────────────────────
+export function winnersPage(ctx) {
+  const { user, period, rows, page, hasNext, term, theme, bgCss } = ctx;
+  const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
+  const nm = r => r.hide_profile && r.id !== user?.id ? 'Hidden player' : nameTag(r.username, r.emoji);
+  const body = `<h1 class="h1">Top winners</h1><p class="sub">Who don chop the most prize money. Players who hide their profile show as “Hidden player”.</p>
+<nav class="tabs">${tabs.map(([k, l]) => `<a href="/winners?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+<form class="row" method="get" action="/winners" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
+${rows.length ? `<div class="list">${rows.map(r => `<${r.hide_profile && r.id !== user?.id ? 'div' : `a href="/u/${esc(r.username)}"`} class="item ${user && r.id === user.id ? 'me' : ''}"><b style="min-width:44px;font:900 18px var(--display);color:var(--ink-soft)">#${short(r.pos)}</b><div class="grow"><div class="t">${nm(r)}</div><div class="s">${short(r.prizes)} prize${r.prizes == 1 ? '' : 's'}</div></div><b class="amt pos">${esc(nairaShort(r.won))}</b></${r.hide_profile && r.id !== user?.id ? 'div' : 'a'}>`).join('')}</div>${pager(`/winners?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`, page, hasNext)}` : '<div class="empty">No winners here yet.</div>'}`;
+  return anyPage({ user, title: 'Top winners', active: '/me', body, theme, bgCss, description: 'The players who have won the most prize money on Tap Am.' });
+}
+
+// ── Find a player ───────────────────────────────────────────────────────────
+export function playersPage(ctx) {
+  const { user, term, rows, theme, bgCss } = ctx;
+  const body = `<h1 class="h1">Find a player</h1><p class="sub">Search any nickname to see their rank, badges and winnings (unless they hide them).</p>
+<form class="row" method="get" action="/players" style="gap:8px;margin:0 0 14px"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Type a nickname" aria-label="Nickname" autocapitalize="none" minlength="2" autofocus><button class="btn btn--green" type="submit">Search</button></form>
+${term ? (rows.length ? `<div class="list">${rows.map(r => `<a class="item" href="/u/${esc(r.username)}"><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name)} · ${esc(r.tierName)}</div></div><b class="amt">${short(r.lifetime_taps)}</b></a>`).join('')}</div>` : '<div class="empty">No player with that nickname.</div>') : ''}`;
+  return anyPage({ user, title: 'Find a player', active: '/me', body, css: TOP_CSS, theme, bgCss });
+}
+
+// ── Public profile (and share card) ─────────────────────────────────────────
+export function profilePage(ctx) {
+  const { user, p, own, hidden, won, prizes, badges, rank, origin, theme, bgCss } = ctx;
+  const url = `${origin}/u/${p.username}`;
+  const joined = lagosDate(p.created_at.includes('T') ? p.created_at : p.created_at.replace(' ', 'T') + 'Z');
+  const card = { url, kind: 'profile', title: p.username, line: `${rank.current.name} · Rank ${rank.current.level}`, color: '#9161FF', display: 'www.tapammm.live',
+    stats: [`${short(p.lifetime_taps)} all-time taps`, `${p.tierName}`, ...(hidden || won === null ? [] : [`${nairaShort(won)} won`, `${badges.length} badge${badges.length === 1 ? '' : 's'}`]), `Joined ${joined}`] };
+  const body = `<section class="tcard prof c-purple">${rankAvatar(rank.current.level, { size: 92, title: rank.current.name })}
+  <div style="min-width:0"><h1>${nameTag(p.username, p.emoji, own ? user.emoji_meaning : null)}</h1><div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">${tierBadge(p.tierName)}<span class="small" style="font-weight:700">Joined ${esc(joined)}</span></div></div>
+  <div style="grid-column:1/-1;font:800 15px var(--body)">${esc(rank.current.name)} · Rank ${rank.current.level}/100</div>
+</section>
+<div class="grid" style="margin-top:14px;grid-template-columns:repeat(${hidden ? 3 : 4},minmax(0,1fr))">
+  <div class="panel stat"><span class="k">All-time taps</span><span class="v">${short(p.lifetime_taps)}</span></div>
+  <div class="panel stat"><span class="k">Games</span><span class="v">${short(p.games_played)}</span></div>
+  <div class="panel stat"><span class="k">Wins</span><span class="v">${short(p.wins)}</span></div>
+  ${hidden ? '' : `<div class="panel stat"><span class="k">Won</span><span class="v" style="font-size:22px">${esc(nairaShort(won || 0))}</span></div>`}
+</div>
+${hidden ? '<div class="empty" style="margin-top:14px">This player keeps their winnings and badges private.</div>' : badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
+${own ? `<p class="small muted" style="margin:14px 2px 0">${p.hide_profile ? 'Your winnings and badges are hidden from others.' : 'Everybody can see your winnings and badges.'} <a href="/settings" style="color:#fff;font-weight:800">Change in Settings</a></p>` : ''}
+<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share ${own ? 'my' : 'this'} profile</button>${copyRowLite(url)}</div>`;
+  return anyPage({ user, title: p.username, active: '/me', body, css: ME_CSS, theme, bgCss, description: `${p.username} on Tap Am: ${rank.current.name}, ${short(p.lifetime_taps)} taps.` });
+}
+const copyRowLite = url => `<button type="button" class="btn btn--white" data-copy="${esc(url)}">${ICONS.copy}<span>Copy link</span></button>`;
 
 // ── Ranks: what every rank offers ───────────────────────────────────────────
 const RANKS_CSS = `.rgrid{display:grid;gap:14px}

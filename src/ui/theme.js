@@ -319,7 +319,9 @@ export function menuSheet(user) {
     <a class="tcard tcard--flat c-orange" href="/how-to-play">How to play<small>Rules of the tap</small></a>
     <a class="tcard tcard--flat c-sunny" href="/plans">Lapo, Mapo, Nepo<small>Compare the tiers</small></a>
     <a class="tcard tcard--flat c-pink" href="/ranks">Ranks<small>What every rank unlocks</small></a>
-    <a class="tcard tcard--flat c-sky" href="/top">Top tappers<small>Day, week, month, year</small></a>
+    <a class="tcard tcard--flat c-sky" href="/top">Top tappers<small>All time, day, week, month, year</small></a>
+    <a class="tcard tcard--flat c-teal" href="/winners">Top winners<small>Who don chop the most</small></a>
+    <a class="tcard tcard--flat c-orange" href="/players">Find a player<small>Rank, badges, winnings</small></a>
     <a class="tcard tcard--flat c-teal" href="/rules">Rules<small>Fair play and policies</small></a>
     <a class="tcard tcard--flat c-purple" href="/merch">Merch<small>Wear the tap</small></a>
     <a class="tcard tcard--flat c-sky" href="/faq">FAQ<small>Questions wey people dey ask</small></a>

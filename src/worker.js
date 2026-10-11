@@ -6,7 +6,7 @@ import { landingPage, demoPools } from './ui/landing.js';
 import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage } from './ui/pages.js';
 import { dashboardPage, poolsPage, poolPage, createPoolPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
-import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage } from './ui/profile.js';
+import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage, winnersPage, playersPage, profilePage } from './ui/profile.js';
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
@@ -252,6 +252,8 @@ async function route(req, env, url, path, user) {
       return html(ranksPage({ user, ranks: await allRanks(env), myLevel: user?.role === 'USER' ? user.rank_level : 0, theme: b.theme, bgCss: b.bgCss }));
     }
     case '/top': return topRoute(env, q, user);
+    case '/winners': return winnersRoute(env, q, user);
+    case '/players': return playersRoute(env, q, user);
   }
   const goM = path.match(/^\/go\/([0-9a-f-]{36})$/);
   if (goM) { const t = await promoClick(env, goM[1], clientIp(req)); return t ? Response.redirect(t, 302) : go(req, '/'); }
@@ -262,6 +264,8 @@ async function route(req, env, url, path, user) {
     const link = sl?.link || '/pools';
     return /^\/(?!\/)[a-z0-9/_?=&.-]*$/i.test(link) || /^https:\/\//i.test(link) ? Response.redirect(new URL(link, req.url).href, 302) : go(req, '/pools');
   }
+  const uM = path.match(/^\/u\/([A-Za-z0-9_]{3,24})$/);
+  if (uM) return profileRoute(env, url, uM[1], user);
   const resM = path.match(/^\/results\/([^/]+)$/);
   if (resM) return go(req, `/pool/${resM[1]}`);
   if (LEGAL_PATHS.includes(path.slice(1))) return html(legalPage(path.slice(1), user));
@@ -381,25 +385,74 @@ async function route(req, env, url, path, user) {
   return html(errorPage(404, { user }), 404);
 }
 
+// Top tappers: every player in order (50 a page), with a nickname search. All time comes first.
 async function topRoute(env, q, user) {
-  const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'DAY';
+  const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
+  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24), pg = pageNum(q);
   const ranks = await allRanks(env);
   const name = lvl => ranks.find(r => r.level === lvl)?.name || '';
+  const like = term ? term + '%' : '';
   let rows, me = null;
   if (period === 'ALL') {
-    rows = (await env.DB.prepare("SELECT id,username,rank_level,lifetime_taps AS taps FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0 ORDER BY lifetime_taps DESC LIMIT 50").all()).results;
-    if (user?.role === 'USER' && !rows.some(r => r.id === user.id) && user.lifetime_taps > 0) me = { taps: user.lifetime_taps, pos: 1 + Number((await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>?").bind(user.lifetime_taps).first())?.n || 0) };
+    rows = (await env.DB.prepare(`SELECT * FROM (SELECT id,username,rank_level,emoji,lifetime_taps AS taps, ROW_NUMBER() OVER (ORDER BY lifetime_taps DESC, created_at) AS pos FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0) WHERE (?='' OR username LIKE ?) ORDER BY pos LIMIT 51 OFFSET ?`).bind(like, like, (pg - 1) * 50).all()).results;
+    if (user?.role === 'USER' && !term && user.lifetime_taps > 0 && !rows.some(r => r.id === user.id)) me = { taps: user.lifetime_taps, pos: 1 + Number((await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>?").bind(user.lifetime_taps).first())?.n || 0) };
   } else {
     const key = periodKeys()[period];
-    rows = (await env.DB.prepare("SELECT u.id,u.username,u.rank_level,t.taps FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE' ORDER BY t.taps DESC LIMIT 50").bind(key).all()).results;
-    if (user?.role === 'USER' && !rows.some(r => r.id === user.id)) {
+    rows = (await env.DB.prepare(`SELECT * FROM (SELECT u.id,u.username,u.rank_level,u.emoji,t.taps, ROW_NUMBER() OVER (ORDER BY t.taps DESC, u.created_at) AS pos FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE') WHERE (?='' OR username LIKE ?) ORDER BY pos LIMIT 51 OFFSET ?`).bind(key, like, like, (pg - 1) * 50).all()).results;
+    if (user?.role === 'USER' && !term && !rows.some(r => r.id === user.id)) {
       const mine = await env.DB.prepare('SELECT taps FROM tap_stats WHERE period=? AND user_id=?').bind(key, user.id).first();
       if (mine) me = { taps: mine.taps, pos: 1 + Number((await env.DB.prepare('SELECT COUNT(*) n FROM tap_stats WHERE period=? AND taps>?').bind(key, mine.taps).first())?.n || 0) };
     }
   }
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
   const label = { DAY: 'today', WEEK: 'this week', MONTH: 'this month', YEAR: 'this year', ALL: 'of all time' }[period];
-  return html(topPage({ user, period, rows: rows.map(r => ({ ...r, rank_name: name(r.rank_level) })), me, label, badgeKind: period === 'ALL' ? 'DAY' : period, theme: b.theme, bgCss: b.bgCss }));
+  return html(topPage({ user, period, rows: rows.slice(0, 50).map(r => ({ ...r, rank_name: name(r.rank_level) })), hasNext: rows.length > 50, page: pg, term, me, label, badgeKind: period === 'ALL' ? 'DAY' : period, theme: b.theme, bgCss: b.bgCss }));
+}
+
+// Period start (Lagos time) for winner boards.
+function periodStart(period) {
+  const now = Date.now(), l = new Date(now + 3600000);
+  const day = Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate()) - 3600000;
+  if (period === 'DAY') return new Date(day).toISOString();
+  if (period === 'WEEK') { const dow = (l.getUTCDay() + 6) % 7; return new Date(day - dow * 86400000).toISOString(); }
+  if (period === 'MONTH') return new Date(Date.UTC(l.getUTCFullYear(), l.getUTCMonth(), 1) - 3600000).toISOString();
+  if (period === 'YEAR') return new Date(Date.UTC(l.getUTCFullYear(), 0, 1) - 3600000).toISOString();
+  return '0000';
+}
+// Top winners: prize money won per player (from settled pools). Hidden profiles show as "Hidden player".
+async function topWinners(env, period, { limit = 50, offset = 0, term = '' } = {}) {
+  const like = term ? term + '%' : '';
+  return (await env.DB.prepare(`SELECT * FROM (SELECT u.id, u.username, u.emoji, u.rank_level, u.hide_profile, SUM(pe.prize_kobo) AS won, COUNT(*) AS prizes, ROW_NUMBER() OVER (ORDER BY SUM(pe.prize_kobo) DESC) AS pos
+    FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
+    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>=? AND u.status='ACTIVE' GROUP BY u.id) WHERE (?='' OR (username LIKE ? AND hide_profile=0)) ORDER BY pos LIMIT ? OFFSET ?`).bind(periodStart(period), like, like, limit + 1, offset).all()).results;
+}
+async function winnersRoute(env, q, user) {
+  const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
+  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24), pg = pageNum(q);
+  const rows = await topWinners(env, period, { offset: (pg - 1) * 50, term });
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(winnersPage({ user, period, term, page: pg, hasNext: rows.length > 50, rows: rows.slice(0, 50), theme: b.theme, bgCss: b.bgCss }));
+}
+
+// Player search + public profiles. Players can hide their winnings and badges.
+async function playersRoute(env, q, user) {
+  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24);
+  const rows = term.length >= 2 ? (await env.DB.prepare("SELECT username, emoji, rank_level, tier, tier_until, lifetime_taps FROM users WHERE role='USER' AND status='ACTIVE' AND username LIKE ? ORDER BY lifetime_taps DESC LIMIT 30").bind(term + '%').all()).results : [];
+  const ranks = await allRanks(env);
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(playersPage({ user, term, rows: rows.map(r => ({ ...r, rank_name: ranks.find(x => x.level === r.rank_level)?.name || '', tierName: tierLabel(r) })), theme: b.theme, bgCss: b.bgCss }));
+}
+async function profileRoute(env, url, nick, user) {
+  const p = await env.DB.prepare("SELECT id, username, emoji, rank_level, tier, tier_until, lifetime_taps, games_played, wins, hide_profile, created_at, role, status FROM users WHERE username=?").bind(nick).first();
+  if (!p || p.role !== 'USER' || p.status !== 'ACTIVE') return html(errorPage(404, { user }), 404);
+  const own = user?.id === p.id;
+  const hidden = !!p.hide_profile && !own;
+  const [won, badges] = hidden ? [null, { results: [] }] : await Promise.all([
+    env.DB.prepare('SELECT COALESCE(SUM(prize_kobo),0) n, COUNT(*) c FROM pool_entries WHERE user_id=? AND prize_kobo>0').bind(p.id).first(),
+    env.DB.prepare("SELECT b.kind,b.period,b.taps,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all()]);
+  const ranks = await allRanks(env);
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(profilePage({ user, p: { ...p, tierName: tierLabel(p) }, own, hidden, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
 }
 
 async function poolRoute(req, env, id, user, b, origin) {
