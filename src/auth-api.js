@@ -1,8 +1,9 @@
-// Sign-up (with email code), login and password reset API.
+// Sign-up (with a 12-word recovery phrase, no email code), login, password reset and change.
 import {
   json, uid, nowIso, hashPassword, sha256Hex, safeEqual, createSession, sessionCookie,
-  clientIp, readJson, allow, clearLimit, PBKDF2_ITERATIONS, LEGACY_PBKDF2_ITERATIONS
+  clientIp, readJson, allow, clearLimit, PBKDF2_ITERATIONS, LEGACY_PBKDF2_ITERATIONS, currentUser
 } from './lib.js';
+import { newPhrase, normPhrase, phraseMatches, phraseColumns, decryptPhrase, logAuth } from './phrase.js';
 import { nicknameProblem, emailProblem, passwordProblem, genderProblem, countryProblem, TERMS_VERSION } from './auth-rules.js';
 import { sendCodeEmail, maskEmail, testMode } from './email.js';
 import { randomCode, giveItem, notify, settings, num } from './core.js';
@@ -101,14 +102,15 @@ export async function handleAuthApi(req, env, path) {
   if (req.method !== 'POST') return null;
   const ip = clientIp(req);
 
-  // ── Sign up, step 1: check details and email a code ──────────────────────
+  // ── Sign up: check details, create the account, hand back the recovery phrase ──
+  // No email code. The 12-word phrase is shown once; it resets the password later.
   if (path === '/api/signup/start' || path === '/api/signup') {
     const { data, response } = await readJson(req); if (response) return response;
-    if (!await allow(env, 'signup-ip:' + ip, 20, 3600)) return tooMany('Too many sign-up tries from this network. Try again later.');
+    if (!await allow(env, 'signup-ip:' + ip, 10, 3600)) return tooMany('Too many sign-ups from this network. Try again later.');
     const nickname = String(data.nickname ?? data.username ?? '').trim();
     const email = normEmail(data.email), password = String(data.password ?? '');
-    const sponsorType = data.accountType === 'SPONSOR';
-    const gender = sponsorType ? 'NA' : String(data.gender ?? ''), country = String(data.country ?? '').toUpperCase();
+    const sponsor = data.accountType === 'SPONSOR';
+    const gender = sponsor ? 'NA' : String(data.gender ?? ''), country = String(data.country ?? '').toUpperCase();
     let p;
     if ((p = nicknameProblem(nickname))) return fieldError('nickname', p);
     if ((p = emailProblem(email))) return fieldError('email', p);
@@ -116,56 +118,99 @@ export async function handleAuthApi(req, env, path) {
     if ((p = genderProblem(gender))) return fieldError('gender', p);
     if ((p = countryProblem(country))) return fieldError('country', p);
     if (data.agree !== true) return fieldError('agree', 'Tick the box to agree before you continue.');
-    const sponsor = data.accountType === 'SPONSOR';
     const company = sponsor ? String(data.company || '').trim() : '';
     if (sponsor && (company.length < 2 || company.length > 60)) return fieldError('company', 'Enter your company or brand name (2–60 characters).');
     const ref = String(data.ref || '').trim().toUpperCase();
-    const refOk = /^[A-Z0-9]{4,12}$/.test(ref) ? ref : null;
+    const refOk = !sponsor && /^[A-Z0-9]{4,12}$/.test(ref) ? ref : null;
     if (await env.DB.prepare('SELECT 1 FROM users WHERE username=?').bind(nickname).first()) return fieldError('nickname', 'That nickname don already dey. Try another one.', 409);
     if (await env.DB.prepare('SELECT 1 FROM users WHERE email=?').bind(email).first()) return fieldError('email', 'That email don already get account. Try Login instead.', 409);
-    await cleanup(env);
     const hp = await hashPassword(password);
-    const issued = await issueCode(env, 'signup', email, JSON.stringify({ nickname, hash: hp.hash, salt: hp.salt, iterations: hp.iterations, gender, country, role: sponsor ? 'SPONSOR' : 'USER', company, ref: sponsor ? null : refOk }));
-    if (issued.wait) return json({ error: `We just send code to this email. Wait ${issued.wait}s before you ask for another one.`, retryAfter: issued.wait, field: 'email' }, 429);
-    if (issued.tooMany) return tooMany('Too many codes for this email. Try again in one hour.');
-    const sent = await deliver(env, 'signup', email, issued.code);
-    if (!sent) return json({ error: 'We no fit send the email now. Try again small time.' }, 502);
-    return json(codeSentBody(env, 'Code sent', email, issued.code, sent));
-  }
-
-  // ── Sign up, step 2: confirm the code and create the account ─────────────
-  if (path === '/api/signup/verify') {
-    const { data, response } = await readJson(req); if (response) return response;
-    if (!await allow(env, 'verify-ip:' + ip, 60, 3600)) return tooMany();
-    const email = normEmail(data.email), code = String(data.code ?? '').trim();
-    if (emailProblem(email)) return json({ error: 'Start the sign-up again.' }, 400);
-    if (!/^\d{6}$/.test(code)) return fieldError('code', 'Enter the 6-digit code from your email.');
-    const checked = await checkCode(env, 'signup', email, code); if (checked.response) return checked.response;
-    const pending = JSON.parse(checked.row.payload || '{}');
-    if (await env.DB.prepare('SELECT 1 FROM users WHERE username=? OR email=?').bind(pending.nickname, email).first()) {
-      await env.DB.prepare("DELETE FROM email_codes WHERE purpose='signup' AND email=?").bind(email).run();
-      return json({ error: 'Somebody don take that nickname or email. Start again with another one.' }, 409);
-    }
+    const phrase = newPhrase(), ph = await phraseColumns(env, phrase);
     const id = uid(), now = nowIso();
-    const role = pending.role === 'SPONSOR' ? 'SPONSOR' : 'USER';
-    const referrer = role === 'USER' && pending.ref ? await env.DB.prepare("SELECT id,username,role FROM users WHERE referral_code=? AND role IN ('USER','SPONSOR') AND status='ACTIVE'").bind(pending.ref).first() : null;
+    const role = sponsor ? 'SPONSOR' : 'USER';
+    const referrer = refOk ? await env.DB.prepare("SELECT id,username,role FROM users WHERE referral_code=? AND role IN ('USER','SPONSOR') AND status='ACTIVE'").bind(refOk).first() : null;
     let myCode = null;
     for (let i = 0; i < 5; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
     try {
       await env.DB.batch([
-        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,gender,country,terms_accepted_at,terms_version,email_verified_at,role,tier,referral_code,referred_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-          .bind(id, pending.nickname, email, pending.hash, pending.salt, pending.iterations, pending.gender || null, pending.country || null, now, TERMS_VERSION, now, role, 'LAPO', myCode, referrer?.id || null),
+        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,gender,country,terms_accepted_at,terms_version,role,tier,referral_code,referred_by,email_news,seed_hash,seed_salt,seed_enc,seed_set_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+          .bind(id, nickname, email, hp.hash, hp.salt, hp.iterations, gender || null, country || null, now, TERMS_VERSION, role, 'LAPO', myCode, referrer?.id || null, data.email_news === true ? 1 : 0, ph.seed_hash, ph.seed_salt, ph.seed_enc, ph.seed_set_at),
         env.DB.prepare('INSERT INTO wallets(user_id,balance_kobo) VALUES(?,0)').bind(id),
-        env.DB.prepare("DELETE FROM email_codes WHERE purpose='signup' AND email=?").bind(email),
-        ...(role === 'SPONSOR' ? [env.DB.prepare('INSERT INTO sponsor_profiles(user_id,company) VALUES(?,?)').bind(id, pending.company)] : [])
+        ...(sponsor ? [env.DB.prepare('INSERT INTO sponsor_profiles(user_id,company) VALUES(?,?)').bind(id, company)] : [])
       ]);
     } catch (e) {
-      console.error('signup verify insert', e);
-      return json({ error: 'Somebody don take that nickname or email. Start again with another one.' }, 409);
+      console.error('signup insert', e?.message);
+      return json({ error: 'Somebody don take that nickname or email. Try another one.' }, 409);
     }
     if (role === 'USER') await welcomePlayer(env, id, referrer);
+    await logAuth(env, id, 'SIGNUP', req);
     const sid = await createSession(id, env);
-    return json({ message: 'Account created', role, redirect: role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
+    return json({ message: 'Account created', role, phrase, redirect: role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
+  }
+  if (path === '/api/signup/verify') return json({ error: 'Sign-up no longer needs an email code. Start again on the sign-up page.' }, 410);
+
+  // ── Forgot password: nickname or email + recovery phrase + new password ──
+  if (path === '/api/password/recover') {
+    const { data, response } = await readJson(req); if (response) return response;
+    const identifier = String(data.identifier ?? '').trim();
+    if (!await allow(env, 'recover-ip:' + ip, 10, 3600) || !await allow(env, 'recover-id:' + identifier.toLowerCase(), 5, 3600)) return tooMany('Too many tries. Wait one hour and try again.');
+    if (!identifier) return fieldError('identifier', 'Enter your nickname or email.');
+    const phrase = normPhrase(data.phrase);
+    if (!phrase) return fieldError('phrase', 'Type all 12 words of your recovery phrase, with spaces between them.');
+    const user = identifier.includes('@')
+      ? await env.DB.prepare('SELECT * FROM users WHERE email=?').bind(identifier.toLowerCase()).first()
+      : await env.DB.prepare('SELECT * FROM users WHERE username=?').bind(identifier).first();
+    const wrong = () => json({ error: 'That nickname/email and phrase don’t match.', field: 'phrase' }, 401);
+    if (!user || user.role === 'ADMIN' || !await phraseMatches(user, phrase)) return wrong();
+    let p;
+    if ((p = passwordProblem(String(data.password ?? ''), user.username))) return fieldError('password', p);
+    if (user.status === 'SUSPENDED') return json({ error: 'This account is suspended. Contact Tap Am through the Suggest page.' }, 403);
+    const hp = await hashPassword(String(data.password));
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET password_hash=?,password_salt=?,password_iter=? WHERE id=?').bind(hp.hash, hp.salt, hp.iterations, user.id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id)]);
+    await clearLimit(env, 'login-id:' + identifier.toLowerCase());
+    await logAuth(env, user.id, 'PASSWORD_RESET', req);
+    await notify(env, user.id, 'Your password was changed with your recovery phrase. If this was not you, change it again now.', '/settings');
+    const sid = await createSession(user.id, env);
+    return json({ message: 'Password changed. You are logged in.', redirect: user.role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
+  }
+
+  // ── Signed-in: change password (needs the recovery phrase), make / show the phrase ──
+  if (path === '/api/password/change' || path === '/api/phrase/create' || path === '/api/phrase/show') {
+    const me0 = await currentUser(req, env);
+    if (!me0 || me0.role === 'ADMIN') return json({ error: 'Log in first.' }, 401);
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'acct:' + me0.id, 10, 3600)) return tooMany('Too many tries. Wait one hour.');
+    const me = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(me0.id).first();
+    if (path === '/api/password/change') {
+      if (!me.seed_hash) return json({ error: 'Make your recovery phrase first (below), then change your password with it.', field: 'phrase' }, 409);
+      const phrase = normPhrase(data.phrase);
+      if (!phrase || !await phraseMatches(me, phrase)) return fieldError('phrase', 'That recovery phrase is not correct.', 401);
+      let p;
+      if ((p = passwordProblem(String(data.password ?? ''), me.username))) return fieldError('password', p);
+      const hp = await hashPassword(String(data.password));
+      await env.DB.batch([
+        env.DB.prepare('UPDATE users SET password_hash=?,password_salt=?,password_iter=? WHERE id=?').bind(hp.hash, hp.salt, hp.iterations, me.id),
+        env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(me.id)]);
+      await logAuth(env, me.id, 'PASSWORD_CHANGE', req);
+      const sid = await createSession(me.id, env);
+      return json({ message: 'Password changed. Other devices were logged out.', reload: true }, 200, { 'set-cookie': sessionCookie(sid) });
+    }
+    // both phrase actions need the current password
+    const hp = await hashPassword(String(data.password ?? ''), me.password_salt, me.password_iter || LEGACY_PBKDF2_ITERATIONS);
+    if (!safeEqual(hp.hash, me.password_hash)) return fieldError('password', 'Wrong password.', 401);
+    if (path === '/api/phrase/create') {
+      if (me.seed_hash && data.replace !== true) return json({ error: 'You already have a recovery phrase. Tick “make a new one” to replace it.', field: 'replace' }, 409);
+      const phrase = newPhrase(), ph = await phraseColumns(env, phrase);
+      await env.DB.prepare('UPDATE users SET seed_hash=?,seed_salt=?,seed_enc=?,seed_set_at=? WHERE id=?').bind(ph.seed_hash, ph.seed_salt, ph.seed_enc, ph.seed_set_at, me.id).run();
+      await logAuth(env, me.id, 'PHRASE_NEW', req);
+      return json({ message: 'New recovery phrase made. Write it down now.', phrase });
+    }
+    const phrase = await decryptPhrase(env, me.seed_enc);
+    if (!phrase) return json({ error: 'We don’t keep a copy we can show. Make a new phrase instead.' }, 404);
+    await logAuth(env, me.id, 'PHRASE_VIEW', req);
+    return json({ phrase });
   }
 
   // ── Send a fresh code (sign-up or reset) ─────────────────────────────────
@@ -220,6 +265,7 @@ export async function handleAuthApi(req, env, path) {
       await env.DB.prepare('UPDATE users SET password_hash=?,password_salt=?,password_iter=? WHERE id=?').bind(up.hash, up.salt, up.iterations, user.id).run();
     }
     const sid = await createSession(user.id, env);
+    await logAuth(env, user.id, 'LOGIN', req);
     return json({ message: restored ? 'Welcome back! Your account is active again.' : 'Logged in', restored, role: user.role, redirect: user.role === 'ADMIN' ? '/admin' : user.role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
   }
 

@@ -1,5 +1,6 @@
 // Login + Sign up screen (one page) built from the Tap Am Figma reference.
-// Views: login, signup, verify (email code), forgot (ask for reset code), reset (new password).
+// Views: login, signup, phrase (the 12 recovery words, shown once after sign-up), forgot (phrase + new
+// password), and for older accounts without a phrase: forgot-email (ask for a code) and reset.
 import { themeShell, logoBlock, poweredBy } from './theme.js';
 import { COMMON_PASSWORDS, RESERVED_NICKNAMES, PASSWORD_MIN, PASSWORD_MAX, EMAIL_MAX, GENDERS, COUNTRIES } from '../auth-rules.js';
 
@@ -81,30 +82,50 @@ ${logoBlock()}
       <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a>, <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/rules" target="_blank" rel="noopener">Game Rules</a>. Tap Am stores my nickname, email, gender and country and game activity to run my account. If I’m under 18, a parent or guardian agrees.</span>
     </label>
     ${err('e-su-agree')}
+    <label class="ta-check" style="margin-top:8px"><input type="checkbox" id="su-news" name="email_news"><span>Email me about new pools and offers (optional). Turn it off any time in Settings.</span></label>
     <div class="ta-msg" role="alert"></div>
     <button class="ta-btn ta-btn--shine" type="submit" data-label="Oya, create my account">Oya, create my account</button>
     ${sponsor ? '' : '<p class="ta-note" style="margin:10px 0 0;text-align:center">Be a brand? <a href="/signup?type=sponsor">Sign up as a sponsor</a></p>'}
   </form>
 
-  <form class="ta-form ta-step" id="v-verify" novalidate hidden>
-    ${back('Change my details', 'signup')}
-    <h2>Check your email</h2>
-    <p class="ta-sub">We don send 6-digit code to <b data-email></b>. E go expire in 10 minutes.</p>
-    <p class="ta-testcode" data-test hidden></p>
-    <div class="ta-field">
-      <label class="ta-label" for="vf-code">Code</label>
-      <input class="ta-input ta-otp" id="vf-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required aria-describedby="e-vf-code">
-      ${err('e-vf-code')}
-    </div>
+  <form class="ta-form ta-step" id="v-phrase" novalidate hidden>
+    <h2>Your recovery phrase</h2>
+    <p class="ta-sub">These 12 words are the <b>only way</b> to get back in if you forget your password, and you need them to change your password. Write them down in order and keep them secret. Anybody with these words can take your account.</p>
+    <ol class="phrase" data-phrase aria-label="Your 12 recovery words"></ol>
+    <div class="phrase-acts"><button class="ta-btn-ghost" type="button" data-copy-phrase>Copy words</button><button class="ta-btn-ghost" type="button" data-save-phrase>Save as file</button></div>
+    <label class="ta-check" style="margin-top:12px"><input type="checkbox" id="ph-ok"><span>I don write my 12 words down and keep them safe.</span></label>
     <div class="ta-msg" role="alert"></div>
-    <button class="ta-btn ta-btn--shine" type="submit" data-label="Confirm code">Confirm code</button>
-    <button class="ta-btn-ghost" type="button" data-resend="signup">Send new code</button>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Enter Tap Am" disabled>Enter Tap Am</button>
   </form>
 
   <form class="ta-form ta-step" id="v-forgot" novalidate hidden>
     ${back('Back to login', 'login')}
     <h2>You don forget password?</h2>
-    <p class="ta-sub">No wahala. Enter the email wey you take sign up and we go send you code.</p>
+    <p class="ta-sub">No wahala. Use the 12-word recovery phrase you got when you signed up.</p>
+    <div class="ta-field">
+      <label class="ta-label" for="fg-id">Nickname or Email</label>
+      <input class="ta-input" id="fg-id" name="identifier" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" placeholder="your nickname or email" required aria-describedby="e-fg-id">
+      ${err('e-fg-id')}
+    </div>
+    <div class="ta-field">
+      <label class="ta-label" for="fg-phrase">Recovery phrase (12 words)</label>
+      <textarea class="ta-input" id="fg-phrase" name="phrase" rows="3" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="word word word …" required aria-describedby="e-fg-phrase"></textarea>
+      ${err('e-fg-phrase')}
+    </div>
+    <div class="ta-field">
+      <label class="ta-label" for="fg-pw">New password</label>
+      <div class="ta-pw"><input class="ta-input" id="fg-pw" name="password" type="password" autocomplete="new-password" minlength="${PASSWORD_MIN}" maxlength="${PASSWORD_MAX}" placeholder="make am strong o" required aria-describedby="e-fg-pw">${eyeButton('fg-pw')}</div>
+      ${err('e-fg-pw')}
+    </div>
+    <div class="ta-msg" role="alert"></div>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Save new password">Save new password</button>
+    <button class="ta-btn-ghost" type="button" data-go="forgot-email">Old account with no phrase? Use an email code</button>
+  </form>
+
+  <form class="ta-form ta-step" id="v-forgot-email" novalidate hidden>
+    ${back('Use my recovery phrase', 'forgot')}
+    <h2>Email code</h2>
+    <p class="ta-sub">Only for accounts made before recovery phrases. Enter your email and we go send you a code.</p>
     <div class="ta-field">
       <label class="ta-label" for="fg-email">Email</label>
       <input class="ta-input" id="fg-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="${EMAIL_MAX}" placeholder="you@example.com" required aria-describedby="e-fg-email">
@@ -115,7 +136,7 @@ ${logoBlock()}
   </form>
 
   <form class="ta-form ta-step" id="v-reset" novalidate hidden>
-    ${back('Use another email', 'forgot')}
+    ${back('Use another email', 'forgot-email')}
     <h2>Set new password</h2>
     <p class="ta-sub">If account dey for <b data-email></b>, we don send 6-digit code there. Enter am with your new password.</p>
     <p class="ta-testcode" data-test hidden></p>
@@ -144,7 +165,7 @@ ${poweredBy()}
 var COMMON=${JSON.stringify(COMMON_PASSWORDS)},RESERVED=${JSON.stringify(RESERVED_NICKNAMES)},PMIN=${PASSWORD_MIN},PMAX=${PASSWORD_MAX},EMAX=${EMAIL_MAX};
 var EMAIL_RE=/^[^\\s@<>()[\\]\\\\,;:"]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.[A-Za-z]{2,}$/;
 var $=function(id){return document.getElementById(id)};
-var views={login:$('v-login'),signup:$('v-signup'),verify:$('v-verify'),forgot:$('v-forgot'),reset:$('v-reset')};
+var views={login:$('v-login'),signup:$('v-signup'),phrase:$('v-phrase'),forgot:$('v-forgot'),'forgot-email':$('v-forgot-email'),reset:$('v-reset')};
 var tabs={login:$('tab-login'),signup:$('tab-signup')},tabBar=$('tabs');
 var state={email:'',purpose:'signup',timer:null};
 
@@ -153,7 +174,7 @@ function show(name){
   var isTab=name==='login'||name==='signup';
   tabBar.hidden=!isTab;
   if(isTab){for(var t in tabs)tabs[t].setAttribute('aria-selected',t===name);if(location.pathname!=='/'+name)history.replaceState(null,'','/'+name);}
-  document.title=({login:'Login',signup:'Sign up',verify:'Confirm email',forgot:'Forgot password',reset:'New password'})[name]+' | Tap Am';
+  document.title=({login:'Login',signup:'Sign up',phrase:'Recovery phrase',forgot:'Forgot password','forgot-email':'Email code',reset:'New password'})[name]+' | Tap Am';
   var first=views[name].querySelector('input:not([type=checkbox])');if(first&&name!=='login'&&name!=='signup')setTimeout(function(){first.focus()},30);
 }
 tabs.login.addEventListener('click',function(e){e.preventDefault();show('login')});
@@ -214,9 +235,9 @@ su.addEventListener('submit',function(e){e.preventDefault();msg(su);
   order.forEach(function(k){touched[k]=1;if(!suChecks[k]()&&!firstBad)firstBad=k});
   if(firstBad){suFieldEl[firstBad].focus();return;}
   var email=$('su-email').value.trim().toLowerCase();
-  post(su,'/api/signup/start',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,
-    gender:genderVal(),country:$('su-country').value,agree:true,accountType:su.getAttribute('data-type'),company:$('su-company')?$('su-company').value.trim():'',ref:su.getAttribute('data-ref')},function(j){
-      state.email=email;state.purpose='signup';openCodeView('verify',j);
+  post(su,'/api/signup',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,
+    gender:genderVal(),country:$('su-country').value,agree:true,email_news:$('su-news').checked,accountType:su.getAttribute('data-type'),company:$('su-company')?$('su-company').value.trim():'',ref:su.getAttribute('data-ref')},function(j){
+      showPhrase(j.phrase,j.redirect);
     },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',gender:'e-su-gender',country:'e-su-country',agree:'e-su-agree',company:'e-su-company'};
       if(j.field&&ids[j.field]&&suFieldEl[j.field]){setErr(j.field==='gender'?su.querySelectorAll('input[name=gender]'):suFieldEl[j.field],ids[j.field],j.error);suFieldEl[j.field].focus();return true;}});
 });
@@ -247,14 +268,27 @@ document.querySelectorAll('[data-resend]').forEach(function(b){b.addEventListene
   },function(j){if(j.retryAfter){startCooldown(v,j.retryAfter);}},b);
 })});
 
-views.verify.addEventListener('submit',function(e){e.preventDefault();var v=views.verify,c=$('vf-code');msg(v);
-  if(!/^\\d{6}$/.test(c.value)){setErr(c,'e-vf-code','Enter the 6-digit code from your email.');c.focus();return;}
-  post(v,'/api/signup/verify',{email:state.email,code:c.value},function(j){msg(v,'ok','Account don ready! Taking you in…');setTimeout(function(){location.href=j.redirect||'/dashboard'},500)},
-    function(j){if(j.field==='code'){setErr(c,'e-vf-code',j.error);c.select();return true;}});
-});
+// ── recovery phrase (after sign-up) ──
+var phraseText='',goTo='/dashboard';
+function showPhrase(p,redirect){phraseText=p||'';goTo=redirect||'/dashboard';var ol=views.phrase.querySelector('[data-phrase]');ol.textContent='';
+  phraseText.split(' ').forEach(function(w){var li=document.createElement('li');li.textContent=w;ol.appendChild(li);});show('phrase');}
+views.phrase.querySelector('[data-copy-phrase]').addEventListener('click',function(){var b=this;(navigator.clipboard?navigator.clipboard.writeText(phraseText):Promise.reject()).then(function(){b.textContent='Copied';},function(){b.textContent='Copy failed: write them down';});});
+views.phrase.querySelector('[data-save-phrase]').addEventListener('click',function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['Tap Am recovery phrase\n\n'+phraseText.split(' ').map(function(w,i){return (i+1)+'. '+w}).join('\n')+'\n\nKeep this secret. Anybody with these words can take your account.\n'],{type:'text/plain'}));a.download='tap-am-recovery-phrase.txt';document.body.appendChild(a);a.click();a.remove();});
+$('ph-ok').addEventListener('change',function(){views.phrase.querySelector('button[type=submit]').disabled=!this.checked;});
+views.phrase.addEventListener('submit',function(e){e.preventDefault();if(!$('ph-ok').checked)return;location.href=goTo;});
+window.addEventListener('beforeunload',function(e){if(!views.phrase.hidden&&!$('ph-ok').checked){e.preventDefault();e.returnValue='';}});
 
 // ── forgot / reset ──
-views.forgot.addEventListener('submit',function(e){e.preventDefault();var v=views.forgot,i=$('fg-email');msg(v);
+views.forgot.addEventListener('submit',function(e){e.preventDefault();var v=views.forgot,id=$('fg-id'),ph=$('fg-phrase'),pw=$('fg-pw');msg(v);
+  var words=ph.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  var ok1=setErr(id,'e-fg-id',id.value.trim()?'':'Enter your nickname or email.');
+  var ok2=setErr(ph,'e-fg-phrase',words.length===12?'':'Type all 12 words, with spaces between them.');
+  var ok3=setErr(pw,'e-fg-pw',pwProblem(pw.value,''));
+  if(!ok1){id.focus();return}if(!ok2){ph.focus();return}if(!ok3){pw.focus();return}
+  post(v,'/api/password/recover',{identifier:id.value.trim(),phrase:words.join(' '),password:pw.value},function(j){msg(v,'ok','Password don change! Taking you in…');setTimeout(function(){location.href=j.redirect||'/dashboard'},500)},
+    function(j){var m={identifier:[id,'e-fg-id'],phrase:[ph,'e-fg-phrase'],password:[pw,'e-fg-pw']}[j.field];if(m){setErr(m[0],m[1],j.error);m[0].focus();return true;}});
+});
+views['forgot-email'].addEventListener('submit',function(e){e.preventDefault();var v=views['forgot-email'],i=$('fg-email');msg(v);
   if(!setErr(i,'e-fg-email',emailProblem(i.value))){i.focus();return;}
   var email=i.value.trim().toLowerCase();
   post(v,'/api/password/forgot',{email:email},function(j){state.email=email;state.purpose='reset';openCodeView('reset',j)},
@@ -293,5 +327,10 @@ async function post(form,url,payload,onOk,onErr,button){
 }
 })();`;
 
-  return themeShell({ title: signup ? 'Sign up' : 'Login', body: body + (signup ? '<div data-winners hidden></div>' : ''), script, bodyClass: 'bg-anim' });
+  const css = `.phrase{margin:4px 0 10px;padding:0;list-style:none;counter-reset:w;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.phrase li{counter-increment:w;display:flex;align-items:center;gap:6px;min-width:0;padding:8px 8px;border-radius:var(--r-in);background:var(--cloud);font:800 15px var(--body);color:var(--ink);user-select:text;-webkit-user-select:text}
+.phrase li::before{content:counter(w);font:800 11px var(--body);color:var(--ink-soft);min-width:14px}
+.phrase-acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.phrase-acts .ta-btn-ghost{margin:0}
+@media (max-width:340px){.phrase{grid-template-columns:repeat(2,minmax(0,1fr))}}`;
+  return themeShell({ title: signup ? 'Sign up' : 'Login', body: body + (signup ? '<div data-winners hidden></div>' : ''), script, css, bodyClass: 'bg-anim' });
 }

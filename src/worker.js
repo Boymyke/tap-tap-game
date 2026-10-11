@@ -26,6 +26,7 @@ import { allRanks, rankInfo } from './game/ranks.js';
 import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots } from './game/pools.js';
 import { awardBadges } from './game/badges.js';
 import { processEmailBlasts } from './game/blasts.js';
+import { logAuth, decryptPhrase, canKeepCopies } from './phrase.js';
 import { runChecks, healthSweep } from './health.js';
 
 export { GameRoom, TapMeter } from './game/room.js';
@@ -122,6 +123,8 @@ async function handleSiteApi(req, env, path) {
     return json({ message: 'Saved' });
   }
   if (path === '/api/logout' && req.method === 'POST') {
+    const who = await currentUser(req, env);
+    if (who) await logAuth(env, who.id, 'LOGOUT', req);
     await destroySession(req, env);
     return json({ message: 'Logged out' }, 200, { 'set-cookie': sessionCookie('', 0) });
   }
