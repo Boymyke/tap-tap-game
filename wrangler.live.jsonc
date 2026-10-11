@@ -20,10 +20,10 @@
   "observability": { "enabled": true },
   "vars": { "PUBLIC_URL": "https://tapammm.live" },
   // tapammm.live must be added to this Cloudflare account first (nameservers moved from Namecheap).
-  // "routes": [
-  //   { "pattern": "tapammm.live", "custom_domain": true },
-  //   { "pattern": "www.tapammm.live", "custom_domain": true }
-  // ],
+  "routes": [
+    { "pattern": "tapammm.live", "custom_domain": true },
+    { "pattern": "www.tapammm.live", "custom_domain": true }
+  ],
   // Every 5 minutes: settle any ended pool whose room alarm didn't run, send email blasts, tidy old rows.
   "triggers": { "crons": ["*/5 * * * *"] },
   "placement": { "mode": "smart" },
