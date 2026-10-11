@@ -1,15 +1,15 @@
 // Player API: pools, taps, boosters, store, inventory, gifts, settings, calculator, ads, leads, account.
 import { isPattern } from '../ui/patterns.js';
-import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie } from '../lib.js';
-import { tierOf, isNepo, isPaid, requireRole, debit, credit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
+import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie, likeEsc } from '../lib.js';
+import { tierOf, tierLabel, isNepo, isPaid, requireRole, debit, credit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
 import { perks, THEMES, SOUNDS } from '../tiers.js';
-import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool } from '../game/pools.js';
+import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool, addInvites } from '../game/pools.js';
 import { allRanks, rankInfo } from '../game/ranks.js';
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 export async function handlePlayApi(req, env, path, user) {
-  const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost|topup))?$/);
+  const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost|topup|invite|state))?$/);
 
   // ── pools ──
   if (path === '/api/pools' && req.method === 'GET') {
@@ -30,6 +30,35 @@ export async function handlePlayApi(req, env, path, user) {
     const p = await env.DB.prepare('SELECT id FROM pools WHERE hashtag=?').bind(code).first();
     if (!p) return json({ error: 'We no see any pool with that code. Check the letters and try again.', field: 'code' }, 404);
     return json({ redirect: `/pool/${p.id}` });
+  }
+  // Player search for invites: names that start with what was typed ("_" and "%" are matched as typed).
+  if (path === '/api/players/search' && req.method === 'GET') {
+    const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
+    if (!await allow(env, 'psearch:' + user.id, 120, 600)) return json({ error: 'Too many searches. Wait small.' }, 429);
+    const q = String(new URL(req.url).searchParams.get('q') || '').trim().replace(/^@/, '').slice(0, 24);
+    if (!q) return json({ players: [] });
+    const rows = (await env.DB.prepare("SELECT username, emoji, role, tier, tier_until, rank_level FROM users WHERE role='USER' AND status='ACTIVE' AND id!=? AND username LIKE ? ESCAPE '\\' ORDER BY CASE WHEN username=? THEN 0 ELSE 1 END, lifetime_taps DESC LIMIT 8")
+      .bind(user.id, likeEsc(q) + '%', q).all()).results;
+    return json({ players: rows.map(r => ({ name: r.username, emoji: r.emoji || null, tier: tierLabel(r), rank: r.rank_level || 1 })) });
+  }
+  // Pool status for the "waiting for players" screen (instant matches).
+  if (m && m[2] === 'state' && req.method === 'GET') {
+    const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
+    const p = await env.DB.prepare('SELECT status, starts_at, ends_at, settled_at, max_players, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=pools.id) AS players FROM pools WHERE id=?').bind(m[1]).first();
+    if (!p) return json({ error: 'Pool not found.' }, 404);
+    return json({ state: poolState(p), players: Number(p.players), maxPlayers: Number(p.max_players), startsAt: p.starts_at, endsAt: p.ends_at });
+  }
+  // The creator (or the super admin) invites more players after the pool is made.
+  if (m && m[2] === 'invite' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'invite:' + user.id, 30, 3600)) return json({ error: 'Too many invites. Wait small.' }, 429);
+    const pool = await getPool(env, m[1], user); if (!pool) return json({ error: 'Pool not found.' }, 404);
+    if (pool.created_by !== user.id && user.role !== 'ADMIN') return json({ error: 'Only the person who made this pool can invite players.' }, 403);
+    if (!['soon', 'live', 'waiting'].includes(poolState(pool)) || pool.status === 'PAUSED') return json({ error: 'This pool no dey take players now.' }, 409);
+    const n = await addInvites(env, user, pool, data.invites);
+    if (!n) return json({ error: 'Pick players to invite (people you already invited are skipped).', field: 'invites' }, 400);
+    return json({ message: `${n} player${n === 1 ? '' : 's'} invited. They got a notification.`, reload: true });
   }
   if (m && m[2] === 'topup' && req.method === 'POST') {
     const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
@@ -57,6 +86,7 @@ export async function handlePlayApi(req, env, path, user) {
     const pool = await getPool(env, m[1], user); if (!pool || !pool.joined) return json({ error: 'Join the pool first.', redirect: `/pool/${m[1]}`, go: 'Open pool' }, 403);
     if (!pool.boosters_allowed) return json({ error: 'Boosters are off for this pool.' }, 409);
     if (poolState(pool) === 'ended') return json({ error: 'This pool don end.' }, 409);
+    if (pool.status === 'WAITING') return json({ error: 'Boosters work once the match starts.' }, 409);
     const item = await env.DB.prepare("SELECT * FROM store_items WHERE id=? AND kind='BOOSTER'").bind(String(data.item || '')).first();
     if (!item) return json({ error: 'Pick a booster.' }, 400);
     if (pool.status === 'PAUSED') return json({ error: 'This pool is paused.' }, 409);

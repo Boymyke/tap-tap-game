@@ -7,6 +7,8 @@ export const PBKDF2_ITERATIONS = 100000;         // Workers' PBKDF2 maximum
 export const MAX_BODY_BYTES = 10_000;
 
 export const uid = () => crypto.randomUUID();
+// Escapes LIKE wildcards so a search for "mike_" matches the underscore itself (use with ESCAPE '\\').
+export const likeEsc = t => String(t).replace(/[\\%_]/g, c => '\\' + c);
 export const nowIso = () => new Date().toISOString();
 export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

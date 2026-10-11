@@ -232,6 +232,12 @@
         if (p !== focus) return;
         if (j.me) { if (!sending && !pending) p.score = j.me.score; p.rank = j.me.rank; p.mult = j.me.mult || 1; p.multUntil = j.me.multUntil || 0; p.queued = j.me.queued || 0; p.used = j.me.used || {}; }
         p.total = j.total; p.top = j.top || []; p.near = j.near || [];
+        // The server's times win: the super admin may add time, and an instant match gets its real start.
+        if (j.startsAt && j.endsAt && (j.startsAt !== p.starts || j.endsAt !== p.ends)) {
+          var added = p.ends && stateOf(p) !== 'ended' ? j.endsAt - p.ends : 0;
+          p.starts = j.startsAt; p.ends = j.endsAt;
+          if (added >= 30000) TA.toast('Extra time! +' + TA.fmtFull(added) + ' added to ' + p.name + '.');
+        }
         renderBoard(stripRows(p).filter(function (r) { return !r.gap; }), $('board-side'));
         var teams = $('teams');
         if (p.sideA && j.teams) { var a = j.teams[p.sideA] || 0, b = j.teams[p.sideB] || 0, sum = a + b || 1; teams.hidden = false; teams.children[0].style.flexGrow = Math.max(0.15, a / sum); teams.children[1].style.flexGrow = Math.max(0.15, b / sum); teams.children[0].textContent = p.sideA + ' ' + fmtN(a); teams.children[1].textContent = fmtN(b) + ' ' + p.sideB; }

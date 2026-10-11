@@ -6,6 +6,16 @@ export { esc, short };
 export const naira = k => '₦' + (Number(k || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
 export const nairaShort = k => { const n = Number(k || 0) / 100; return '₦' + (Math.abs(n) >= 1e6 ? short(n) : n.toLocaleString('en-NG', { maximumFractionDigits: 2 })); };
 export const lagos = (iso, opts = {}) => { try { return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', ...opts }).format(new Date(iso)); } catch { return iso; } };
+// "1 min", "45 sec", "1 hour", "1h 30m", "2 days"
+export const fmtDur = sec => {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  if (sec < 60) return sec + ' sec';
+  if (sec % 86400 === 0) return sec / 86400 + (sec === 86400 ? ' day' : ' days');
+  if (sec % 3600 === 0) return sec / 3600 + (sec === 3600 ? ' hour' : ' hours');
+  if (sec < 3600) return Math.round(sec / 60) + ' min';
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${m}m`;
+};
 export const lagosDate = iso => lagos(iso, { hour: undefined, minute: undefined, year: 'numeric' });
 
 const I = {
@@ -90,6 +100,11 @@ html,body{min-height:100%}
 .when{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;background:var(--ink);color:var(--green);font:800 13px/1 var(--body);white-space:nowrap;text-shadow:none;font-variant-numeric:tabular-nums}
 .when::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(0,255,110,.25)}
 .when.ended{color:#C9BDF5}.when.ended::before{background:#C9BDF5;box-shadow:none}
+.when.waiting{color:var(--sunny)}.when.waiting::before{background:var(--sunny);box-shadow:0 0 0 3px rgba(255,214,0,.25);animation:wpulse 1.2s ease-in-out infinite}
+@keyframes wpulse{50%{transform:scale(.6)}}
+.badge.waiting{background:var(--sunny);color:var(--ink)}
+.badge.instant{background:var(--ink);color:var(--green)}
+.panel .badge.waiting{background:var(--sunny)}.panel .badge.instant{background:var(--ink);color:var(--green)}
 .bar-progress{height:14px;border-radius:999px;background:rgba(0,0,0,.28);overflow:hidden;box-shadow:inset 0 2px 0 rgba(0,0,0,.2)}
 .bar-progress i{display:block;height:100%;border-radius:999px;background:var(--green);box-shadow:inset 0 -3px 0 rgba(0,0,0,.15)}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -163,6 +178,19 @@ html,body{min-height:100%}
 .locked-overlay{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border-radius:inherit;background:rgba(21,11,51,.55);color:#fff;font:800 14px var(--body);text-align:center;padding:10px}
 .locked-overlay svg{width:30px;height:30px}
 .is-locked{filter:grayscale(.55)}
+/* player picker (search names, pick several) */
+.picker-box{position:relative}
+.picked{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.picked:empty{display:none}
+.pchip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 5px 5px 12px;border-radius:999px;background:var(--ink);color:#fff;font:800 14px var(--body)}
+.pchip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pchip button{flex:none;display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:50%;background:rgba(255,255,255,.22);color:#fff;font:900 15px/1 var(--body);cursor:pointer}
+.picker-res{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:25;max-height:290px;overflow-y:auto;padding:6px;border-radius:var(--r-sm);background:#fff;box-shadow:0 14px 34px rgba(21,11,51,.32),0 0 0 2px var(--line)}
+.picker-res button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:46px;padding:8px 10px;border:0;border-radius:var(--r-in);background:transparent;color:var(--ink);font:800 15px var(--body);text-align:left;cursor:pointer}
+.picker-res button:hover,.picker-res button[aria-selected="true"]{background:var(--cloud)}
+.picker-res .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picker-res .tg{flex:none;font:700 12px var(--body);color:var(--ink-soft)}
+.picker-res .none{padding:10px;color:var(--ink-soft);font-size:14px}
 /* name emoji (given by the super admin) */
 .nemoji{display:inline-grid;place-items:center;min-width:1.4em;height:1.4em;margin-left:2px;padding:0;border:0;border-radius:var(--r-tag);background:transparent;font-size:.95em;line-height:1;vertical-align:-.15em;cursor:default}
 button.nemoji{cursor:pointer;background:rgba(255,255,255,.18);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35)}
@@ -194,14 +222,16 @@ export function appPage({ user, title, active = '', body, script = '', css = '',
 }
 
 export const tierBadge = label => `<span class="badge ${{ 'Nepo baby': 'nepo', 'Mapo baby': 'mapo', 'Lapo baby': 'lapo', Sponsor: 'sponsor', 'Super admin': 'red' }[label] || 'lapo'}">${esc(label)}</span>`;
-export const stateBadge = s => `<span class="badge ${s}">${{ live: 'Live now', soon: 'Coming up', ended: 'Ended', cancelled: 'Cancelled' }[s] || s}</span>`;
+export const stateBadge = s => `<span class="badge ${s}">${{ live: 'Live now', soon: 'Coming up', ended: 'Ended', cancelled: 'Cancelled', waiting: 'Filling up' }[s] || s}</span>`;
 // A player's name plus the emoji the super admin gave them. Only the owner gets a button that shows
 // the meaning (pass `meaning` only for the signed-in user's own name); everyone else just sees the emoji.
 export const nameTag = (name, emoji, meaning = null) => `${esc(name)}${emoji ? (meaning
   ? ` <button type="button" class="nemoji" data-emoji-meaning="${esc(meaning)}" data-emoji="${esc(emoji)}" aria-label="What your emoji means">${esc(emoji)}</button>`
   : ` <span class="nemoji" aria-hidden="true">${esc(emoji)}</span>`) : ''}`;
 // Live countdown pill: "Starts in 2h 03m 10s" / "Ends in 14m 09s" (updated by app.js).
-export const whenPill = p => p.state === 'ended' || p.state === 'cancelled'
+export const whenPill = p => p.state === 'waiting'
+  ? `<span class="when waiting" data-waiting>${short(p.players || 0)}/${short(p.maxPlayers)} joined · starts when full</span>`
+  : p.state === 'ended' || p.state === 'cancelled'
   ? `<span class="when ended">${p.state === 'cancelled' ? 'Cancelled' : 'Ended ' + esc(lagos(p.endsAt))}</span>`
   : `<span class="when" data-when="${esc(p.state === 'soon' ? p.startsAt : p.endsAt)}" data-label="${p.state === 'soon' ? 'Starts in' : 'Ends in'}">${p.state === 'soon' ? 'Starts in' : 'Ends in'} …</span>`;
 
@@ -213,13 +243,13 @@ export function poolCard(p, i = 0) {
   const head = p.gameType === 'MATCH' && p.sideA
     ? `<div class="vsrow"><span class="code">${esc(p.sideA.slice(0, 3))}</span><span class="vs">VS</span><span class="code">${esc(p.sideB.slice(0, 3))}</span></div><div class="t" style="font-size:17px">${esc(p.name)}</div>`
     : `<div class="t">${esc(p.name)}</div>`;
-  const tags = [p.kind === 'SPONSORED' ? `<span class="badge sponsor">${esc(p.sponsor || 'Sponsored')}</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid</span>' : '<span class="badge">Free</span>',
+  const tags = [p.instant ? '<span class="badge instant">⚡ Instant</span>' : '', p.kind === 'SPONSORED' ? `<span class="badge sponsor">${esc(p.sponsor || 'Sponsored')}</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid</span>' : '<span class="badge">Free</span>',
     p.audience !== 'ALL' ? `<span class="badge ${p.audience === 'NEPO' ? 'nepo' : p.audience === 'MAPO' ? 'mapo' : 'lapo'}">${{ NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo only' }[p.audience]}</span>` : '',
     p.private ? `<span class="badge">${LOCK}Private</span>` : '', p.joined ? '<span class="badge live">Joined</span>' : ''].join('');
   return `<a class="tcard pc ${color}" href="/pool/${esc(p.id)}" style="${p.theme ? `--c:${esc(p.theme)};--cd:color-mix(in srgb,${esc(p.theme)} 65%,#000)` : ''}">
   <div class="tags">${tags}</div>
   ${head}
-  <div class="meta"><span>${PEOPLE}${short(p.players || 0)} ${Number(p.players) === 1 ? 'player' : 'players'}</span><span>${p.entryFee ? esc(naira(p.entryFee)) + ' entry' : 'Free entry'}</span></div>
+  <div class="meta"><span>${PEOPLE}${short(p.players || 0)}${p.instant ? '/' + short(p.maxPlayers) : ''} ${Number(p.players) === 1 && !p.instant ? 'player' : 'players'}</span><span>${p.entryFee ? esc(naira(p.entryFee)) + ' entry' : 'Free entry'}</span>${p.duration ? `<span>⏱ ${esc(fmtDur(p.duration))}</span>` : ''}</div>
   <div class="foot"><span class="prize"><small>Prize pool</small>${p.prize ? esc(nairaShort(p.prize)) : 'Akara'}</span>${whenPill(p)}</div>
 </a>`;
 }
@@ -240,6 +270,14 @@ export const choice = ({ label, name, options, value, tip = '', cls = '' }) => `
 export const check = ({ name, label, checked = false }) => `<label class="ta-check"><input type="checkbox" name="${name}" ${checked ? 'checked' : ''}><span>${label}</span></label><p class="ta-error" data-err="${name}"></p>`;
 export const upload = ({ label, name, value = '' }) => `<div class="ta-field"><span class="ta-label">${label}</span><div class="upl"><img data-preview="${name}" src="${esc(value || 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27M4 17l5-5 4 4 3-3 4 4%27 fill=%27none%27 stroke=%27%239161FF%27 stroke-width=%272%27/%3E%3C/svg%3E')}" alt=""><input type="hidden" name="${name}" value="${esc(value)}"><label class="btn btn--soft btn--sm" style="cursor:pointer">Choose image<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-upload="${name}" hidden></label></div><p class="ta-error" data-err="${name}"></p></div>`;
 export const form = (api, inner, { ok = '', submit = 'Save', cls = '', shine = false, btn = 'btn--green' } = {}) => `<form method="post" class="form ${cls}" data-api="${api}" ${ok ? `data-ok="${ok}"` : ''} novalidate>${inner}<div class="ta-msg" role="alert"></div><button class="btn ${btn} btn--block ${shine ? 'btn--shine' : ''}" type="submit">${submit}</button></form>`;
+// Search players by name and pick several; the picked names go to the form as a comma list in `name`.
+export const playerPicker = ({ name = 'invites', label = 'Invite players', hint = '', id = 'f-pick' } = {}) => `<div class="ta-field" data-field="${name}">
+  <label class="ta-label" for="${id}">${label}</label>
+  <div class="picker" data-picker><div class="picked" data-picked aria-live="polite"></div>
+    <div class="picker-box"><input class="ta-input" id="${id}" type="search" placeholder="Search a player’s name" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="24" enterkeyhint="search" data-picker-q role="combobox" aria-expanded="false" aria-controls="${id}-res" aria-autocomplete="list">
+    <div class="picker-res" id="${id}-res" role="listbox" data-picker-res hidden></div></div>
+    <input type="hidden" name="${name}" value="" data-picker-val></div>
+  ${hint ? `<p class="ta-hint">${hint}</p>` : ''}<p class="ta-error" data-err="${name}" aria-live="polite"></p></div>`;
 export const postBtn = (api, label, { body = {}, confirm = '', cls = 'btn--soft btn--sm', ok = '' } = {}) => `<button type="button" class="btn ${cls}" data-post="${api}" data-body='${esc(JSON.stringify(body))}' ${confirm ? `data-confirm="${esc(confirm)}"` : ''} ${ok ? `data-ok="${ok}"` : ''}>${label}</button>`;
 export const copyRow = (value, label = 'Copy') => `<div class="copyrow"><code>${esc(value)}</code><button type="button" class="copybtn" data-copy="${esc(value)}">${ICONS.copy}<span>${label}</span></button></div>`;
 export const copyBtn = (value, label = 'Copy') => `<button type="button" class="copybtn" data-copy="${esc(value)}">${ICONS.copy}<span>${label}</span></button>`;

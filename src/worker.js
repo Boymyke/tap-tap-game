@@ -18,12 +18,12 @@ import { handleMoneyApi, payCallback, gateway, testPayments, banksFor, autoPayou
 import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
-import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex } from './lib.js';
+import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex, likeEsc } from './lib.js';
 import { PATTERNS } from './ui/patterns.js';
 import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay } from './core.js';
 import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
-import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots } from './game/pools.js';
+import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots, expireWaiting } from './game/pools.js';
 import { awardBadges } from './game/badges.js';
 import { processEmailBlasts, unsubOk } from './game/blasts.js';
 import { logAuth, decryptPhrase, canKeepCopies } from './phrase.js';
@@ -36,6 +36,7 @@ const go = (req, path, status = 302) => Response.redirect(new URL(path, req.url)
 const homeFor = u => (u?.role === 'ADMIN' ? '/admin' : u?.role === 'SPONSOR' ? '/sponsor' : '/dashboard');
 const loginFirst = (req, url) => go(req, '/login?next=' + encodeURIComponent(url.pathname + url.search));
 const payMode = env => gateway(env) || (testPayments(env) ? 'test' : 'off');
+// LIKE search that keeps _ and % as normal letters ("mike_addy" finds mike_addy, not mikeXaddy).
 const pageNum = q => Math.max(1, Math.min(1000, parseInt(q.get('page') || '1', 10) || 1));
 const csvCell = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : '') + s.replace(/"/g, '""')}"` : s; };   // also defuses spreadsheet formulas
 const csv = (name, header, rows) => new Response('﻿' + [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n'), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${name}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
@@ -174,8 +175,9 @@ async function handleSiteApi(req, env, path) {
 // ── scheduled jobs ──────────────────────────────────────────────────────────
 async function sweep(env, cron) {
   const cutoff = new Date(Date.now() - 20000).toISOString();
-  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
+  const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED','WAITING') AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
   for (const p of due) { try { await roomCall(env, p.id, '/settle', { id: p.id }); } catch (e) { console.error('sweep settle', p.id, e?.message); } }
+  try { await expireWaiting(env); } catch (e) { console.error('instant expiry', e?.message); }
   const now = nowIso();
   const res = await env.DB.batch([
     env.DB.prepare("INSERT INTO settings(key,value) VALUES('cron_last',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(now),
@@ -448,17 +450,17 @@ async function route(req, env, url, path, user) {
 // Top tappers: every player in order (50 a page), with a nickname search. All time comes first.
 async function topRoute(env, q, user) {
   const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
-  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24), pg = pageNum(q);
+  const term = String(q.get('q') || '').trim().slice(0, 24), pg = pageNum(q);
   const ranks = await allRanks(env);
   const name = lvl => ranks.find(r => r.level === lvl)?.name || '';
-  const like = term ? term + '%' : '';
+  const like = term ? likeEsc(term) + '%' : '';
   let rows, me = null;
   if (period === 'ALL') {
-    rows = (await env.DB.prepare(`SELECT * FROM (SELECT id,username,rank_level,emoji,lifetime_taps AS taps, ROW_NUMBER() OVER (ORDER BY lifetime_taps DESC, created_at) AS pos FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0) WHERE (?='' OR username LIKE ?) ORDER BY pos LIMIT 51 OFFSET ?`).bind(like, like, (pg - 1) * 50).all()).results;
+    rows = (await env.DB.prepare(`SELECT * FROM (SELECT id,username,rank_level,emoji,lifetime_taps AS taps, ROW_NUMBER() OVER (ORDER BY lifetime_taps DESC, created_at) AS pos FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0) WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT 51 OFFSET ?`).bind(like, like, (pg - 1) * 50).all()).results;
     if (user?.role === 'USER' && !term && user.lifetime_taps > 0 && !rows.some(r => r.id === user.id)) me = { taps: user.lifetime_taps, pos: 1 + Number((await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>?").bind(user.lifetime_taps).first())?.n || 0) };
   } else {
     const key = periodKeys()[period];
-    rows = (await env.DB.prepare(`SELECT * FROM (SELECT u.id,u.username,u.rank_level,u.emoji,t.taps, ROW_NUMBER() OVER (ORDER BY t.taps DESC, u.created_at) AS pos FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE') WHERE (?='' OR username LIKE ?) ORDER BY pos LIMIT 51 OFFSET ?`).bind(key, like, like, (pg - 1) * 50).all()).results;
+    rows = (await env.DB.prepare(`SELECT * FROM (SELECT u.id,u.username,u.rank_level,u.emoji,t.taps, ROW_NUMBER() OVER (ORDER BY t.taps DESC, u.created_at) AS pos FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE') WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT 51 OFFSET ?`).bind(key, like, like, (pg - 1) * 50).all()).results;
     if (user?.role === 'USER' && !term && !rows.some(r => r.id === user.id)) {
       const mine = await env.DB.prepare('SELECT taps FROM tap_stats WHERE period=? AND user_id=?').bind(key, user.id).first();
       if (mine) me = { taps: mine.taps, pos: 1 + Number((await env.DB.prepare('SELECT COUNT(*) n FROM tap_stats WHERE period=? AND taps>?').bind(key, mine.taps).first())?.n || 0) };
@@ -481,14 +483,14 @@ function periodStart(period) {
 }
 // Top winners: prize money won per player (from settled pools). Hidden profiles show as "Hidden player".
 async function topWinners(env, period, { limit = 50, offset = 0, term = '' } = {}) {
-  const like = term ? term + '%' : '';
+  const like = term ? likeEsc(term) + '%' : '';
   return (await env.DB.prepare(`SELECT * FROM (SELECT u.id, u.username, u.emoji, u.rank_level, u.hide_profile, SUM(pe.prize_kobo) AS won, COUNT(*) AS prizes, ROW_NUMBER() OVER (ORDER BY SUM(pe.prize_kobo) DESC) AS pos
     FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
-    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>=? AND u.status='ACTIVE' GROUP BY u.id) WHERE (?='' OR (username LIKE ? AND hide_profile=0)) ORDER BY pos LIMIT ? OFFSET ?`).bind(periodStart(period), like, like, limit + 1, offset).all()).results;
+    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>=? AND u.status='ACTIVE' GROUP BY u.id) WHERE (?='' OR (username LIKE ? ESCAPE '\\' AND hide_profile=0)) ORDER BY pos LIMIT ? OFFSET ?`).bind(periodStart(period), like, like, limit + 1, offset).all()).results;
 }
 async function winnersRoute(env, q, user) {
   const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
-  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24), pg = pageNum(q);
+  const term = String(q.get('q') || '').trim().slice(0, 24), pg = pageNum(q);
   const rows = await topWinners(env, period, { offset: (pg - 1) * 50, term });
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
   return html(winnersPage({ user, period, term, page: pg, hasNext: rows.length > 50, rows: rows.slice(0, 50), theme: b.theme, bgCss: b.bgCss }));
@@ -496,8 +498,8 @@ async function winnersRoute(env, q, user) {
 
 // Player search + public profiles. Players can hide their winnings and badges.
 async function playersRoute(env, q, user) {
-  const term = String(q.get('q') || '').trim().replace(/[%_]/g, '').slice(0, 24);
-  const rows = term.length >= 2 ? (await env.DB.prepare("SELECT username, emoji, rank_level, tier, tier_until, lifetime_taps FROM users WHERE role='USER' AND status='ACTIVE' AND username LIKE ? ORDER BY lifetime_taps DESC LIMIT 30").bind(term + '%').all()).results : [];
+  const term = String(q.get('q') || '').trim().slice(0, 24);
+  const rows = term.length >= 2 ? (await env.DB.prepare("SELECT username, emoji, rank_level, tier, tier_until, lifetime_taps FROM users WHERE role='USER' AND status='ACTIVE' AND username LIKE ? ESCAPE '\\' ORDER BY lifetime_taps DESC LIMIT 30").bind(likeEsc(term) + '%').all()).results : [];
   const ranks = await allRanks(env);
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
   return html(playersPage({ user, term, rows: rows.map(r => ({ ...r, rank_name: ranks.find(x => x.level === r.rank_level)?.name || '', tierName: tierLabel(r) })), theme: b.theme, bgCss: b.bgCss }));
@@ -545,7 +547,7 @@ async function playRoute(req, env, url, user, b) {
   if (!ids.length) return go(req, '/pools?scope=mine');
   const pk = b.perk;
   const found = (await Promise.all(ids.map(id => getPool(env, id, user)))).filter(Boolean);
-  let joined = found.filter(p => p.joined && p.status !== 'PAUSED').slice(0, pk.pools);
+  let joined = found.filter(p => p.joined && p.status !== 'PAUSED' && p.status !== 'WAITING').slice(0, pk.pools);   // instant matches still filling wait on their pool page
   // Lapo-rules pools are played on their own (no one-tap-counts-in-many).
   if (joined.length > 1) { const normal = joined.filter(p => !p.lapo_rules); joined = normal.length ? normal : joined.slice(0, 1); }
   if (!joined.length) return go(req, found[0] ? `/pool/${found[0].id}` : '/pools');
@@ -640,7 +642,7 @@ async function adminRoute(req, env, url, path, user) {
   }
   if (path === '/admin/users') {
     const term = String(q.get('q') || '').trim().slice(0, 60), pg = pageNum(q);
-    const users = (await env.DB.prepare(`SELECT u.*, w.balance_kobo, w.winnings_kobo FROM users u LEFT JOIN wallets w ON w.user_id=u.id WHERE (?='' OR u.username LIKE ? OR u.email LIKE ?) ORDER BY u.created_at DESC LIMIT 51 OFFSET ?`).bind(term, `%${term}%`, `%${term}%`, (pg - 1) * 50).all()).results;
+    const users = (await env.DB.prepare(`SELECT u.*, w.balance_kobo, w.winnings_kobo FROM users u LEFT JOIN wallets w ON w.user_id=u.id WHERE (?='' OR u.username LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\') ORDER BY u.created_at DESC LIMIT 51 OFFSET ?`).bind(term, `%${likeEsc(term)}%`, `%${likeEsc(term)}%`, (pg - 1) * 50).all()).results;
     return html(adminUsers({ ...b, users: users.slice(0, 50), q: term, page: pg, hasNext: users.length > 50 }));
   }
   const um = path.match(/^\/admin\/users\/([^/]+)$/);

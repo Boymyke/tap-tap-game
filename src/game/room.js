@@ -59,9 +59,9 @@ export class GameRoom extends DurableObject {
     switch (url.pathname) {
       case '/init': {
         const p = body.pool;
-        const meta = { id: p.id, startsAt: Date.parse(p.starts_at), endsAt: Date.parse(p.ends_at), boosters: !!p.boosters_allowed, sideA: p.side_a || null, sideB: p.side_b || null, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED' };
+        const meta = { id: p.id, startsAt: Date.parse(p.starts_at), endsAt: Date.parse(p.ends_at), boosters: !!p.boosters_allowed, sideA: p.side_a || null, sideB: p.side_b || null, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED', waiting: p.status === 'WAITING' };
         const changed = !this.meta || this.meta.endsAt !== meta.endsAt || this.meta.startsAt !== meta.startsAt;
-        if (changed || this.meta.lapoRules !== meta.lapoRules || this.meta.paused !== meta.paused) {
+        if (changed || this.meta.lapoRules !== meta.lapoRules || this.meta.paused !== meta.paused || !!this.meta.waiting !== meta.waiting) {
           this.meta = { ...(this.meta || {}), ...meta };
           await this.ctx.storage.put('meta', this.meta);
           if (changed && !meta.paused) await this.ctx.storage.setAlarm(meta.endsAt + 1500);
@@ -88,6 +88,7 @@ export class GameRoom extends DurableObject {
       case '/tap': {
         const p = this.players.get(body.uid);
         if (!this.meta || !p) return j({ error: 'Join the pool first.' }, 403);
+        if (this.meta.waiting) return j({ error: 'This match starts when every seat is taken.', code: 'NOT_STARTED' }, 409);
         if (now < this.meta.startsAt) return j({ error: 'The pool never start.', code: 'NOT_STARTED' }, 409);
         if (now >= this.meta.endsAt) return j({ error: 'This pool don end.', code: 'ENDED' }, 409);
         if (this.meta.paused) return j({ error: 'This pool is paused. Your money and boosters for it are coming back.', code: 'PAUSED' }, 409);
@@ -112,6 +113,8 @@ export class GameRoom extends DurableObject {
         const p = this.players.get(body.uid);
         if (!this.meta || !p) return j({ error: 'Join the pool first.' }, 403);
         if (!this.meta.boosters) return j({ error: 'Boosters are off for this pool.' }, 409);
+        // instant match still filling up: its start time isn't known yet, so a booster can't be timed
+        if (this.meta.waiting) return j({ error: 'Boosters work once the match starts.' }, 409);
         if (now >= this.meta.endsAt) return j({ error: 'This pool don end.' }, 409);
         if (now - (p.lastBoost || 0) < BOOST_GAP_MS) return j({ error: 'Easy — one booster at a time.' }, 429);
         const item = String(body.item || ''), limit = Math.max(0, Number(body.limit) || 0);
