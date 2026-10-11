@@ -185,6 +185,37 @@ async function sweep(env, cron) {
   return due.length;
 }
 
+// API dispatch (the API answers' admin links are rewritten by the caller).
+async function apiRoute(req, env, path) {
+  let user = null;
+  const site = await handleSiteApi(req, env, path); if (site) return site;
+  const auth = await handleAuthApi(req, env, path); if (auth) return auth;
+  if (path === '/api/paystack/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
+  user = await currentUser(req, env);
+  const res = (await handlePlayApi(req, env, path, user)) || (await handleMoneyApi(req, env, path, user)) || (await handleAdminApi(req, env, path, user))
+    || (await handleSponsorApi(req, env, path, user)) || (await handleVoiceApi(req, env, path, user)) || json({ error: 'Not found' }, 404);
+  const out = isAdmin(user) ? await hideAdminPath(env, res) : res;
+  if (user?._renewCookie && !out.headers.has('set-cookie')) { const r2 = new Response(out.body, out); r2.headers.append('set-cookie', user._renewCookie); return r2; }
+  return out;
+}
+
+// ── hidden admin address ────────────────────────────────────────────────────
+const adminPath = env => (/^\/[A-Za-z0-9_-]{8,64}$/.test(env.ADMIN_PATH || '') ? env.ADMIN_PATH : '/whotfareyou123456789');
+const ADMIN_LINK = /(["'`(=\s])\/admin(?=[\/"'`?#)\s]|$)/g;
+// Rewrites /admin links (not /api/admin) in a page, a JSON answer and a redirect to the hidden address.
+async function hideAdminPath(env, res) {
+  const AP = adminPath(env);
+  const loc = res.headers.get('location');
+  const type = res.headers.get('content-type') || '';
+  if (!loc && !/text\/html|application\/json/.test(type)) return res;
+  let body = res.body;
+  if (/text\/html|application\/json/.test(type)) { const t = await res.text(); body = t.includes('/admin') ? t.replace(ADMIN_LINK, `$1${AP}`) : t; }
+  const out = new Response(body, res);
+  out.headers.delete('content-length');
+  if (loc) { const u = new URL(loc, 'https://x'); if (/^\/admin(\/|$)/.test(u.pathname)) out.headers.set('location', loc.replace(/\/admin(?=\/|\?|#|$)/, AP)); }
+  return out;
+}
+
 // ── entry ───────────────────────────────────────────────────────────────────
 export default {
   async fetch(req, env, ctx) {
@@ -195,18 +226,21 @@ export default {
       const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : url.pathname;
       if (path.startsWith('/api/')) {
         if (req.method !== 'GET' && path !== '/api/paystack/webhook' && !sameOrigin(req)) return json({ error: 'Request blocked.' }, 403);
-        const site = await handleSiteApi(req, env, path); if (site) return site;
-        const auth = await handleAuthApi(req, env, path); if (auth) return auth;
-        if (path === '/api/paystack/webhook') return (await handleMoneyApi(req, env, path, null)) || json({ error: 'Not found' }, 404);
-        user = await currentUser(req, env);
-        const res = (await handlePlayApi(req, env, path, user)) || (await handleMoneyApi(req, env, path, user)) || (await handleAdminApi(req, env, path, user))
-          || (await handleSponsorApi(req, env, path, user)) || (await handleVoiceApi(req, env, path, user)) || json({ error: 'Not found' }, 404);
-        if (user?._renewCookie && !res.headers.has('set-cookie')) { const r2 = new Response(res.body, res); r2.headers.append('set-cookie', user._renewCookie); return r2; }
-        return res;
+        // Admin links inside API answers point at the hidden admin address — only for the admin's own requests.
+        const res = await apiRoute(req, env, path);
+        return path === '/api/login' || path === '/api/admin/login' || path === '/api/setup-admin' ? hideAdminPath(env, res) : res;
       }
       if (path.startsWith('/media/')) return serveMedia(env, path.slice(7));
+      // The super admin pages live at a hidden address (ADMIN_PATH, default /whotfareyou123456789).
+      // The old /admin pages answer "not found" for everybody, signed in or not.
+      if (/^\/admin(\/|\.|$)/.test(path)) { user = await currentUser(req, env); return html(errorPage(404, { user }), 404, { 'x-robots-tag': 'noindex' }); }
+      const AP = adminPath(env);
+      const secret = path === AP || path.startsWith(AP + '/');
       user = await currentUser(req, env);
-      const res = await route(req, env, url, path, user);
+      const inner = secret ? '/admin' + path.slice(AP.length) : path;
+      let res = await route(req, env, inner === path ? url : Object.assign(new URL(url), { pathname: inner }), inner, user);
+      if (secret || isAdmin(user)) res = await hideAdminPath(env, res);
+      if (secret) { res = new Response(res.body, res); res.headers.set('x-robots-tag', 'noindex, nofollow'); res.headers.set('cache-control', 'no-store'); }
       if (user?._renewCookie && !res.headers.has('set-cookie')) { const r2 = new Response(res.body, res); r2.headers.append('set-cookie', user._renewCookie); return r2; }
       return res;
     } catch (e) {

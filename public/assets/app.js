@@ -77,7 +77,7 @@
     cache = {};
     fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(function () {}).then(function () {
       if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'clear-pages' });
-      setTimeout(function () { location.href = location.pathname.indexOf('/admin') === 0 ? '/admin/login' : '/'; }, 80);
+      setTimeout(function () { location.href = document.body.getAttribute('data-after-logout') || '/'; }, 80);
     });
   }
 
@@ -158,6 +158,26 @@
     return d;
   }
   TA.dialog = dialog;
+
+  /* ── YouTube ads: play by themselves with no YouTube controls; the player can only mute or unmute ── */
+  TA.ytAd = function (id, title) {
+    if (!/^[A-Za-z0-9_-]{11}$/.test(id || '')) return null;
+    var YT = 'https://www.youtube-nocookie.com';
+    var box = document.createElement('div'); box.className = 'yt';
+    var f = document.createElement('iframe');
+    f.src = YT + '/embed/' + id + '?autoplay=1&mute=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=' + id + '&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
+    f.title = title || 'Sponsored video'; f.allow = 'autoplay; encrypted-media'; f.tabIndex = -1;
+    f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    var cover = document.createElement('div'); cover.className = 'yt-cover'; cover.setAttribute('aria-hidden', 'true');
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'yt-mute'; var muted = true;
+    function cmd(func) { try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), YT); } catch (e) {} }
+    function label() { b.textContent = muted ? '🔇 Tap for sound' : '🔊 Sound on'; b.setAttribute('aria-pressed', muted ? 'false' : 'true'); b.setAttribute('aria-label', muted ? 'Turn sound on' : 'Mute'); }
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); muted = !muted; cmd(muted ? 'mute' : 'unMute'); if (!muted) cmd('playVideo'); label(); });
+    // Muted autoplay works on phones; this nudge covers browsers that wait for the player to load.
+    f.addEventListener('load', function () { cmd('playVideo'); setTimeout(function () { cmd('playVideo'); }, 800); });
+    label(); box.appendChild(f); box.appendChild(cover); box.appendChild(b);
+    return box;
+  };
   TA.confirm = function (text, okLabel) {
     return new Promise(function (resolve) {
       var dd = dialog('<h3>Sure?</h3><p></p><div class="actions"><button type="button" class="btn btn--soft" data-no>Cancel</button><button type="button" class="btn btn--green" data-yes></button></div>', function (e, close) {
@@ -415,7 +435,7 @@
     if (!document.body.classList.contains('app-body')) return false;
     var u; try { u = new URL(a.href, location.href); } catch (e) { return false; }
     if (u.origin !== location.origin) return false;
-    if (/^\/(api|go|media|play|pay|admin\/login|login|signup)(\/|$)/.test(u.pathname) || u.pathname === '/') return false;
+    if (/^\/(api|go|media|play|pay|login|signup)(\/|$)/.test(u.pathname) || /\/(login|setup)$/.test(u.pathname) || u.pathname === '/') return false;
     if (u.pathname === location.pathname && u.search === location.search && u.hash) return false;
     return u;
   }

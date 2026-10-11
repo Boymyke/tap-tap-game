@@ -190,7 +190,7 @@ export function appPage({ user, title, active = '', body, script = '', css = '',
 <main class="app-main${narrow ? ' narrow' : ''}" id="main">${body}</main>
 <nav class="bnav" aria-label="Main">${links}</nav>
 </div>${menuSheet(user)}`;
-  return themeShell({ title, body: page, script, css: KIT_CSS + css, bodyClass: ('app-body ' + bodyClass).trim(), scripts, theme, bgCss });
+  return themeShell({ title, body: page, script, css: KIT_CSS + css, bodyClass: ('app-body ' + bodyClass).trim(), scripts, theme, bgCss, bodyAttr: user?.role === 'ADMIN' ? 'data-after-logout="/admin/login"' : '' });
 }
 
 export const tierBadge = label => `<span class="badge ${{ 'Nepo baby': 'nepo', 'Mapo baby': 'mapo', 'Lapo baby': 'lapo', Sponsor: 'sponsor', 'Super admin': 'red' }[label] || 'lapo'}">${esc(label)}</span>`;

@@ -346,11 +346,7 @@
         $('promo-by').textContent = 'Sponsored' + (p.company ? ' · ' + p.company : '');
         var media;
         if (p.kind === 'YOUTUBE' && /^[A-Za-z0-9_-]{11}$/.test(p.video_id || '')) {
-          media = document.createElement('div'); media.className = 'promo-media';
-          var f = document.createElement('iframe'); f.src = 'https://www.youtube-nocookie.com/embed/' + p.video_id + '?autoplay=1&mute=1&playsinline=1&rel=0&loop=1&playlist=' + p.video_id + '&enablejsapi=1&origin=' + encodeURIComponent(location.origin); f.title = p.title || 'Sponsored video'; f.allow = 'autoplay; encrypted-media; picture-in-picture'; f.setAttribute('allowfullscreen', ''); f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
-          // Muted autoplay works on phones; the nudge below covers browsers that wait for the player to load.
-          f.addEventListener('load', function () { try { f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), 'https://www.youtube-nocookie.com'); } catch (e) {} });
-          media.appendChild(f);
+          media = document.createElement('div'); media.className = 'promo-media'; media.appendChild(TA.ytAd(p.video_id, p.title));
         } else if (p.image_url) {
           media = document.createElement(p.target_url ? 'a' : 'div'); media.className = 'promo-media';
           if (p.target_url) { media.href = '/go/' + encodeURIComponent(p.id); media.target = '_blank'; media.rel = 'noopener sponsored'; }

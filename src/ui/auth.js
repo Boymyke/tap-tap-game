@@ -308,7 +308,7 @@ views.login.addEventListener('submit',function(e){e.preventDefault();var v=views
   var ok1=setErr(id,'e-login-id',id.value.trim()?'':'Enter your nickname or email.');
   var ok2=setErr(pw,'e-login-pw',pw.value?'':'Enter your password.');
   if(!ok1){id.focus();return}if(!ok2){pw.focus();return}
-  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok',j.restored?'Welcome back! Your account is active again.':'Correct! Taking you in…');setTimeout(function(){var n=new URLSearchParams(location.search).get('next');location.href=(n&&n.charAt(0)==='/'&&/^[a-z]/.test(n.charAt(1))&&n.indexOf('//')<0)?n:(j.redirect||(j.role==='ADMIN'?'/admin':'/dashboard'))},300)},
+  post(v,'/api/login',{identifier:id.value.trim(),password:pw.value},function(j){msg(v,'ok',j.restored?'Welcome back! Your account is active again.':'Correct! Taking you in…');setTimeout(function(){var n=new URLSearchParams(location.search).get('next');location.href=(n&&n.charAt(0)==='/'&&/^[a-z]/.test(n.charAt(1))&&n.indexOf('//')<0)?n:(j.redirect||'/dashboard')},300)},
     function(j){if(j.field==='identifier'){setErr(id,'e-login-id',j.error);return true;}if(j.field==='password'){setErr(pw,'e-login-pw',j.error);return true;}});
 });
 [$('login-id'),$('login-pw')].forEach(function(i){i.addEventListener('input',function(){setErr(i,i.getAttribute('aria-describedby'),'')})});

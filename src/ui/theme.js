@@ -148,6 +148,10 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 @keyframes toast-in{from{opacity:0;transform:translate(-50%,10px) scale(.96)}}
 @media (min-width:900px){.toast{bottom:28px}}
 .wtoast{position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom) + 14px);z-index:90;display:flex;align-items:center;gap:10px;max-width:min(340px,calc(100% - 24px));padding:9px 14px 9px 9px;border-radius:var(--r-sm);background:#fff;color:var(--ink);font:600 13.5px/1.3 var(--body);box-shadow:0 10px 28px rgba(0,0,0,.4);transform:translateY(20px);opacity:0;transition:transform .35s cubic-bezier(.2,1.3,.4,1),opacity .3s;pointer-events:none}
+.yt{position:relative;width:100%;aspect-ratio:16/9;background:#000;overflow:hidden}
+.yt iframe{position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none}
+.yt-cover{position:absolute;inset:0;background:transparent}
+.yt-mute{position:absolute;right:8px;bottom:8px;z-index:2;min-height:34px;padding:0 12px;border:0;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font:800 13px var(--body);cursor:pointer;text-transform:none;letter-spacing:0}
 .wtoast.in{transform:none;opacity:1}.wtoast.out{transform:translateY(20px);opacity:0}
 .wtoast .wt-ic{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:var(--r-in);background:var(--green);color:var(--ink);font:900 20px var(--display)}
 .wtoast .wt-amt{color:#0A9B4A}.wtoast small{display:block;font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
@@ -344,7 +348,7 @@ export function themeVars(key = 'grape', extra = '') {
   return `--bg-a:${t.a};--bg-b:${t.b};--bg-deep:${t.deep};--accent:${t.accent};${extra}`;
 }
 
-export function themeShell({ title, description = 'Tap amm make you chop big moneyyy. Live tapping games: tap and win big prizes, free to start.', body, script = '', css = '', bodyClass = '', scripts = [], theme = 'grape', bgCss = '', noZoom = false, head = '' }) {
+export function themeShell({ title, description = 'Tap amm make you chop big moneyyy. Live tapping games: tap and win big money, free to start.', body, script = '', css = '', bodyClass = '', scripts = [], theme = 'grape', bgCss = '', noZoom = false, head = '', bodyAttr = '' }) {
   const vars = themeVars(theme, bgCss ? `--bg-custom:${bgCss};` : '');
   const t = THEMES[theme] || THEMES.grape;
   return `<!doctype html><html lang="en" style="${esc(vars)}"><head><meta charset="utf-8">
@@ -363,6 +367,6 @@ export function themeShell({ title, description = 'Tap amm make you chop big mon
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,800;1,900&family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>${CSS}${css}</style>${head}
-<script nonce="__NONCE__" src="/assets/app.js?v=${ASSET_VERSION}" defer></script>${scripts.map(src => `<script nonce="__NONCE__" src="${src}?v=${ASSET_VERSION}" defer></script>`).join('')}</head><body${bodyClass ? ` class="${bodyClass}"` : ''}>${body}<div class="navload" aria-hidden="true"><span class="ring"></span>Small wait…</div>${script ? `<script nonce="__NONCE__" data-page>(window.TAQ=window.TAQ||[]).push(function(){${script}
+<script nonce="__NONCE__" src="/assets/app.js?v=${ASSET_VERSION}" defer></script>${scripts.map(src => `<script nonce="__NONCE__" src="${src}?v=${ASSET_VERSION}" defer></script>`).join('')}</head><body${bodyClass ? ` class="${bodyClass}"` : ''}${bodyAttr ? ' ' + bodyAttr : ''}>${body}<div class="navload" aria-hidden="true"><span class="ring"></span>Small wait…</div>${script ? `<script nonce="__NONCE__" data-page>(window.TAQ=window.TAQ||[]).push(function(){${script}
 });</script>` : ''}</body></html>`;
 }
