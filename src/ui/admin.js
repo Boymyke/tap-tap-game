@@ -6,7 +6,7 @@ import { skinPreview } from './skins.js';
 import { adForm, adList, AD_CSS, AD_JS } from './sponsor.js';
 import { backgroundCss, tierName, tierOf } from '../tiers.js';
 
-const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/suggestions', 'Suggestions']];
+const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/suggestions', 'Suggestions']];
 const tabs = cur => `<nav class="tabs" aria-label="Admin sections">${TABS.map(([h, l]) => `<a href="${h}" ${h === cur ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
 const page = (ctx, title, active, body, extra = {}) => appPage({ user: ctx.user, title, active: TABS.some(t => t[0] === active) && ['/admin', '/admin/users', '/admin/pools', '/admin/ads', '/admin/health'].includes(active) ? active : '', body: tabs(extra.tab || active) + body, ...extra });
 const ADMIN_CSS = `.danger-form .btn{background:var(--danger);box-shadow:0 4px 0 var(--danger-d);color:#fff}
@@ -263,6 +263,18 @@ export function adminMerch(ctx) {
   <p class="small muted" style="margin:4px 0 8px">${m.price_kobo ? esc(naira(m.price_kobo)) : 'No price'} · ${short(m.interested || 0)} want it</p>
   <div class="actions" style="margin-top:0"><a class="btn btn--soft btn--sm" href="/admin/merch?edit=${encodeURIComponent(m.id)}">Edit</a>${postBtn(`/api/admin/merch/${m.id}/toggle`, m.active ? 'Hide' : 'Show')}${postBtn(`/api/admin/merch/${m.id}/delete`, 'Delete', { cls: 'btn--danger btn--sm', confirm: `Delete ${m.name}?` })}</div></div>`).join('')}</div>` : '<div class="empty">No merch yet. The Merch page shows starter ideas until you add items.</div>'}`;
   return page(ctx, 'Merch', '/admin/merch', body, { css: ADMIN_CSS });
+}
+
+// ── promo codes: free Mapo / Nepo for some days ─────────────────────────────
+export function adminCodes(ctx) {
+  const { codes } = ctx;
+  const body = `<h1 class="h1">Promo codes</h1><p class="sub">Make a code that gives a free Mapo or Nepo plan. Players type it on the Plans page. Each player can use a code once.</p>
+<div class="panel">${form('/api/admin/codes', `
+  <div class="two">${field({ label: 'Code (leave empty to make one)', name: 'code', placeholder: 'NEPOFRIDAY', attrs: 'autocapitalize="characters" maxlength="20" autocomplete="off"' })}${select({ label: 'Plan', name: 'tier', options: [['MAPO', 'Mapo'], ['NEPO', 'Nepo']] })}</div>
+  <div class="two">${select({ label: 'How long', name: 'days', options: [['30', '1 month'], ['60', '2 months'], ['90', '3 months'], ['180', '6 months'], ['365', '1 year'], ['7', '1 week']] })}${moneyField({ label: 'How many people can use it', name: 'max_uses', value: '100' })}</div>
+  <div class="two">${field({ label: 'Stops working on (optional)', name: 'expires', type: 'date' })}${field({ label: 'Note for you (optional)', name: 'note', placeholder: 'Instagram giveaway', attrs: 'maxlength="80"' })}</div>`, { submit: 'Make code' })}</div>
+<h2 class="h2">All codes</h2>${codes.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Code</th><th>Gives</th><th>Used</th><th>Ends</th><th>Note</th><th></th></tr></thead><tbody>${codes.map(c => `<tr><td><b style="font:900 17px var(--display);letter-spacing:.5px">${esc(c.code)}</b></td><td>${c.tier === 'NEPO' ? 'Nepo' : 'Mapo'} · ${c.days} days</td><td>${short(c.used)} / ${short(c.max_uses)}</td><td>${c.expires_at ? esc(lagos(c.expires_at, { hour: undefined, minute: undefined })) : '—'}</td><td class="small">${esc(c.note || '')}</td><td>${postBtn(`/api/admin/codes/${c.code}/toggle`, c.active ? 'Turn off' : 'Turn on', { cls: c.active ? 'btn--soft btn--sm' : 'btn--green btn--sm' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No codes yet.</div>'}`;
+  return page(ctx, 'Promo codes', '/admin/codes', body, { css: ADMIN_CSS });
 }
 
 // ── special badges ──────────────────────────────────────────────────────────

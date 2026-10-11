@@ -158,7 +158,7 @@ if(mp){var f=mp.closest('form');function pad(){var c=f.padColor.value,k=(f.query
 }
 
 // ── Wallet ──────────────────────────────────────────────────────────────────
-const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' };
+const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' , GIFT_SENT: 'Sent to a player', GIFT_RECEIVED: 'From a player', CONVERT: 'Winnings to wallet', BOX_REWARD: 'Mystery box', POOL_TOPUP: 'Added to a prize', EMAIL_BLAST: 'Pool email to players' };
 export const txLabel = t => TX[t] || t;
 export function walletPage(ctx) {
   const { user, wallet, tx, page, hasNext, withdrawals, minWithdraw, banks, payMode, flash, perDay, theme, bgCss, tierKey } = ctx;
@@ -170,6 +170,13 @@ ${payMode === 'test' ? '<div class="panel" style="margin-bottom:12px;background:
   <div class="tcard card c-sky"><div class="stat"><span class="k">Wallet${sponsor ? ' (for prizes)' : ''}</span><span class="v">${esc(nairaShort(wallet.balance_kobo))}</span><span class="small">Money you add. Spend only — e no dey withdraw.</span></div></div>
   ${sponsor ? '' : `<div class="tcard card c-green"><div class="stat"><span class="k">Winnings</span><span class="v">${esc(nairaShort(wallet.winnings_kobo))}</span><span class="small">Money you win. Withdraw from ${esc(naira(minWithdraw))}.</span></div></div>`}
 </div>
+${sponsor ? '' : `<h2 class="h2">Send money to a player</h2><div class="panel">${form('/api/wallet/send', `
+  <div class="two">${field({ label: 'Their nickname', name: 'to', placeholder: 'Nickname', attrs: 'autocapitalize="none" autocomplete="off" maxlength="24" required' })}${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}</div>
+  ${field({ label: 'Message (optional)', name: 'note', placeholder: 'Happy birthday!', attrs: 'maxlength="80"' })}
+  <p class="small muted" style="margin:0">Comes from your wallet (not winnings). They can spend it in Tap Am but can’t withdraw it.</p>`, { submit: 'Send money' })}</div>
+<h2 class="h2">Move winnings to your wallet</h2><div class="panel">${form('/api/wallet/convert', `
+  ${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}
+  ${check({ name: 'ack', label: 'I understand money moved to my wallet can’t be withdrawn again.' })}`, { submit: 'Move to wallet' })}</div>`}
 <h2 class="h2">Add money</h2><div class="panel">${form('/api/wallet/fund', `
   ${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '2,000', attrs: 'required' })}
   <div class="note"><b>Important:</b> money you add to your wallet <b>can’t be withdrawn</b>. You spend it inside Tap Am — on pool entries, boosters, skins${sponsor ? ' and sponsored prizes' : ' and plans'}. Only winnings can be withdrawn.</div>
@@ -225,6 +232,7 @@ export function plansPage(ctx) {
   const rows = comparison(s);
   const cell = v => (v === true ? `<span class="yes" aria-label="Yes">${ICONS.check.replace('<svg', '<svg width="18" height="18"')}</span>` : v === false ? '<span class="no" aria-label="No">—</span>' : esc(v));
   const body = `<h1 class="h1">Lapo, Mapo or Nepo?</h1><p class="sub">${user && tierKey !== 'LAPO' && until ? `You are a ${esc(tierName(tierKey))} till <b style="color:#fff">${esc(lagosDate(until))}</b>. Paying again adds more time.` : 'Everybody starts as a Lapo baby — free. Upgrade any time. Plans don’t renew by themselves; we remind you before yours ends.'}</p>
+${user?.role === 'USER' ? `<details class="panel" style="margin-bottom:14px"><summary style="cursor:pointer;font:900 18px var(--display)">Got a promo code?</summary><div style="margin-top:10px">${form('/api/codes/redeem', field({ label: 'Promo code', name: 'code', placeholder: 'TAPXXXXXX', attrs: 'autocapitalize="characters" autocomplete="off" maxlength="20" required' }), { submit: 'Use code' })}</div></details>` : ''}
 <div class="seg-choice billing" role="radiogroup" aria-label="Billing" id="billing"><label><input type="radio" name="bill" value="month" checked><span>Monthly</span></label><label><input type="radio" name="bill" value="year"><span>Yearly · 2 months free</span></label></div>
 <div class="plans">${tiers.map(t => `<section class="tcard plan ${t.c}">
   <div class="row"><h2>${t.name}</h2>${tierKey === t.key ? '<span class="badge live">Your plan</span>' : ''}</div>

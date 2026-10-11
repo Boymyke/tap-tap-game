@@ -1,6 +1,6 @@
 // Wallet funding, Mapo/Nepo subscriptions and withdrawals (Paystack), with a test mode for the preview.
 import { json, readJson, allow, uid, nowIso, hex, safeEqual } from '../lib.js';
-import { tierOf, requireRole, credit, debit, getWallet, giveItem, notify, settings, num, naira, loadUser, clampInt, toKobo, fundsError, adultError, lagosDay, metricStmt } from '../core.js';
+import { tierOf, requireRole, credit, debit, moveMoney, getWallet, giveItem, notify, settings, num, naira, loadUser, clampInt, toKobo, fundsError, adultError, lagosDay, metricStmt } from '../core.js';
 import { perks, PLANS, tierName } from '../tiers.js';
 
 const PAYSTACK = 'https://api.paystack.co';
@@ -29,7 +29,9 @@ const fromPurpose = p => { const m = /^(MAPO|NEPO)_(MONTH|YEAR)$/.exec(p || '');
 // at the same money value, so nobody loses what they paid.
 export async function activateTier(env, userId, tier, plan) {
   const s = await settings(env);
-  const P = PLANS(s)[tier], p = P[plan];
+  // plan: 'month' | 'year', or { days, bonus } for promo codes
+  const P = PLANS(s)[tier], p = typeof plan === 'object' ? plan : P[plan];
+  const bonus = typeof plan === 'object' ? (plan.bonus ?? 0) : P.bonus;
   const u = await loadUser(env, userId);
   const cur = tierOf(u);
   let base = Date.now();
@@ -41,9 +43,25 @@ export async function activateTier(env, userId, tier, plan) {
   }
   const until = new Date(base + p.days * 86400000).toISOString();
   await env.DB.prepare('UPDATE users SET tier=?, tier_until=? WHERE id=?').bind(tier, until, userId).run();
-  if (P.bonus > 0) await giveItem(env, userId, 'booster-2x', P.bonus);
-  await notify(env, userId, `Welcome to ${tier === 'NEPO' ? 'Nepo' : 'Mapo'}! You get ${P.bonus} bonus boosters. It runs till ${until.slice(0, 10)}.`, '/me');
+  if (bonus > 0) await giveItem(env, userId, 'booster-2x', bonus);
+  await notify(env, userId, `Welcome to ${tier === 'NEPO' ? 'Nepo' : 'Mapo'}!${bonus > 0 ? ` You get ${bonus} bonus boosters.` : ''} It runs till ${until.slice(0, 10)}.`, '/me');
   return until;
+}
+// A player turns in a promo code for a free Mapo / Nepo plan. One use per player; the use count is
+// claimed in one statement so a code can't go over its limit even with many people at once.
+export async function redeemCode(env, user, raw) {
+  const code = String(raw || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) return json({ error: 'Enter the code.', field: 'code' }, 400);
+  const c = await env.DB.prepare('SELECT * FROM promo_codes WHERE code=?').bind(code).first();
+  if (!c || !c.active || (c.expires_at && c.expires_at < nowIso())) return json({ error: 'That code no work. Check it or ask for a new one.', field: 'code' }, 404);
+  const u = await loadUser(env, user.id);
+  if (tierOf(u) === 'NEPO' && c.tier === 'MAPO') return json({ error: 'You are already a Nepo baby. This code is for Mapo.', field: 'code' }, 409);
+  const mine = await env.DB.prepare('INSERT OR IGNORE INTO promo_redemptions(code,user_id) VALUES(?,?)').bind(code, user.id).run();
+  if (!mine.meta.changes) return json({ error: 'You don already use this code.', field: 'code' }, 409);
+  const claim = await env.DB.prepare('UPDATE promo_codes SET used=used+1 WHERE code=? AND used<max_uses AND active=1').bind(code).run();
+  if (!claim.meta.changes) { await env.DB.prepare('DELETE FROM promo_redemptions WHERE code=? AND user_id=?').bind(code, user.id).run(); return json({ error: 'This code don finish. Everybody don use am.', field: 'code' }, 409); }
+  const until = await activateTier(env, user.id, c.tier, { days: c.days, bonus: 0 });
+  return json({ message: `Code worked! You are ${c.tier === 'NEPO' ? 'a Nepo' : 'a Mapo'} baby till ${until.slice(0, 10)}.`, reload: true });
 }
 export const activateNepo = (env, userId, plan) => activateTier(env, userId, 'NEPO', plan);
 
@@ -175,6 +193,47 @@ export async function handleMoneyApi(req, env, path, user) {
     if (!await allow(env, 'resolve:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
     try { const d = await ps(env, 'GET', `/bank/resolve?account_number=${data.account_number}&bank_code=${encodeURIComponent(data.bank_code)}`); return json({ account_name: d.account_name }); }
     catch { return json({ error: 'We no fit confirm this account. Check the number and bank.', field: 'account_number' }, 400); }
+  }
+
+  // Players send wallet money to each other (not winnings). Wallet money can't be withdrawn, so it stays in the game.
+  if (path === '/api/wallet/send' && req.method === 'POST') {
+    if (me.role !== 'USER') return json({ error: 'Only players can send money.' }, 403);
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'send:' + user.id, 20, 86400)) return json({ error: 'Too many sends today. Try again tomorrow.' }, 429);
+    const adult = await needAdult(env, me, data); if (adult) return adult;
+    const kobo = clampInt(toKobo(data.amount), 0, 10000000000, 0);
+    if (kobo < 10000) return json({ error: 'Send at least ₦100.', field: 'amount' }, 400);
+    const to = await env.DB.prepare("SELECT id, username FROM users WHERE username=? AND role='USER' AND status='ACTIVE'").bind(String(data.to || '').trim()).first();
+    if (!to) return json({ error: 'No player with that nickname.', field: 'to' }, 404);
+    if (to.id === user.id) return json({ error: 'You no fit send money to yourself.', field: 'to' }, 400);
+    if (Date.now() - Date.parse(me.created_at.replace(' ', 'T') + (me.created_at.includes('T') ? '' : 'Z')) < 86400000) return json({ error: 'New accounts can send money after 24 hours.' }, 403);
+    const cap = num(s, 'transfer_daily_max_kobo', 5000000);
+    const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19);
+    const sent = -Number((await env.DB.prepare("SELECT COALESCE(SUM(amount_kobo),0) n FROM wallet_transactions WHERE user_id=? AND type='GIFT_SENT' AND created_at>=?").bind(user.id, dayStart).first())?.n || 0);
+    if (sent + kobo > cap) return json({ error: `You fit send up to ${naira(cap)} a day. You have ${naira(Math.max(0, cap - sent))} left today.`, field: 'amount' }, 400);
+    const note = String(data.note || '').trim().slice(0, 80);
+    const ok = await moveMoney(env, { from: user.id, to: to.id, amount: kobo, outType: 'GIFT_SENT', inType: 'GIFT_RECEIVED', outNote: `To ${to.username}${note ? ': ' + note : ''}`, inNote: `From ${me.username}${note ? ': ' + note : ''}` });
+    if (!ok) return fundsError(`You need ${naira(kobo)} in your wallet.`);
+    await notify(env, to.id, `${me.username} sent you ${naira(kobo)}${note ? ': “' + note + '”' : ''}. It is in your wallet.`, '/wallet');
+    return json({ message: `Sent ${naira(kobo)} to ${to.username}.`, reload: true });
+  }
+  // Winnings → wallet (one way). Handy for paying entry fees and the store.
+  if (path === '/api/wallet/convert' && req.method === 'POST') {
+    if (me.role !== 'USER') return json({ error: 'Only players have winnings.' }, 403);
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'convert:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const kobo = clampInt(toKobo(data.amount), 0, 10000000000, 0);
+    if (kobo < 10000) return json({ error: 'Move at least ₦100.', field: 'amount' }, 400);
+    if (data.ack !== true) return json({ error: 'Tick the box: money moved to your wallet can’t be withdrawn.', field: 'ack' }, 400);
+    const ok = await moveMoney(env, { from: user.id, to: user.id, amount: kobo, fromBal: 'WINNINGS', toBal: 'WALLET', outType: 'CONVERT', inType: 'CONVERT', outNote: 'Winnings to wallet', inNote: 'From winnings' });
+    if (!ok) return json({ error: `You don’t have ${naira(kobo)} in winnings.`, field: 'amount' }, 409);
+    return json({ message: `Moved ${naira(kobo)} from winnings to your wallet.`, reload: true });
+  }
+  if (path === '/api/codes/redeem' && req.method === 'POST') {
+    if (me.role !== 'USER') return json({ error: 'Only players can use codes.' }, 403);
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'code:' + user.id, 10, 3600)) return json({ error: 'Too many tries. Wait an hour.' }, 429);
+    return redeemCode(env, user, data.code);
   }
 
   if (path === '/api/withdraw' && req.method === 'POST') {

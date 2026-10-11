@@ -10,7 +10,7 @@ import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, 
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
-import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, setupPage, suggestPage } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
 import { handlePlayApi, maybeFreeBox } from './api/play.js';
@@ -584,6 +584,7 @@ async function adminRoute(req, env, url, path, user) {
     const items = (await env.DB.prepare('SELECT m.*, (SELECT COUNT(*) FROM merch_interest i WHERE i.item=m.id) AS interested FROM merch m ORDER BY m.sort, m.created_at DESC LIMIT 200').all()).results;
     return html(adminMerch({ ...b, items, edit: items.find(i => i.id === q.get('edit')) || null }));
   }
+  if (path === '/admin/codes') return html(adminCodes({ ...b, codes: (await env.DB.prepare('SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 200').all()).results }));
   if (path === '/admin/badges') {
     const [list, given] = await env.DB.batch([
       env.DB.prepare("SELECT sb.*, (SELECT COUNT(*) FROM badges b WHERE b.kind='X:' || sb.id) AS holders FROM special_badges sb ORDER BY sb.created_at DESC"),

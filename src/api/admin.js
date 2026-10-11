@@ -394,6 +394,29 @@ export async function handleAdminApi(req, env, path, user) {
     return json({ message: emoji ? `${target.username} now has ${emoji}` : 'Emoji removed', reload: true });
   }
 
+  // ── promo codes: a free Mapo or Nepo plan for some days ──
+  if (path === '/api/admin/codes' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    let code = String(data.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code) code = 'TAP' + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+    if (code.length < 4 || code.length > 20) return json({ error: 'Codes are 4–20 letters and numbers.', field: 'code' }, 400);
+    const tier = data.tier === 'NEPO' ? 'NEPO' : 'MAPO';
+    const days = clampInt(data.days, 1, 730, 30);
+    const maxUses = clampInt(String(data.max_uses || '1').replace(/,/g, ''), 1, 1000000, 1);
+    const exp = data.expires ? Date.parse(String(data.expires)) : 0;
+    if (data.expires && !exp) return json({ error: 'Pick a valid end date.', field: 'expires' }, 400);
+    const r = await env.DB.prepare('INSERT OR IGNORE INTO promo_codes(code,tier,days,max_uses,expires_at,note,created_by) VALUES(?,?,?,?,?,?,?)').bind(code, tier, days, maxUses, exp ? new Date(exp).toISOString() : null, String(data.note || '').slice(0, 80) || null, user.id).run();
+    if (!r.meta.changes) return json({ error: 'That code already exists.', field: 'code' }, 409);
+    await audit(env, user.id, 'code.create', { code, tier, days, maxUses });
+    return json({ message: `Code ${code} made: ${tier === 'NEPO' ? 'Nepo' : 'Mapo'} for ${days} days, ${maxUses} use${maxUses === 1 ? '' : 's'}.`, reload: true });
+  }
+  const cm = path.match(/^\/api\/admin\/codes\/([A-Z0-9]{4,20})\/toggle$/);
+  if (cm && req.method === 'POST') {
+    await env.DB.prepare('UPDATE promo_codes SET active=1-active WHERE code=?').bind(cm[1]).run();
+    await audit(env, user.id, 'code.toggle', cm[1]);
+    return json({ message: 'Done', reload: true });
+  }
+
   // ── suggestions ──
   const gm = path.match(/^\/api\/admin\/suggestions\/([^/]+)\/(done|delete)$/);
   if (gm && req.method === 'POST') {
