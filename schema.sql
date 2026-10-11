@@ -33,11 +33,16 @@ CREATE TABLE IF NOT EXISTS pools (
   is_private INTEGER NOT NULL DEFAULT 0, join_password TEXT, sponsor_user_id TEXT, sponsor_name TEXT,
   theme_color TEXT, skin_url TEXT, game_type TEXT NOT NULL DEFAULT 'STANDARD', side_a TEXT, side_b TEXT,
   promo_id TEXT, bg_color TEXT, split_style TEXT NOT NULL DEFAULT 'TOP', vs_split INTEGER NOT NULL DEFAULT 0, pad_pattern TEXT, allow_own_pad INTEGER NOT NULL DEFAULT 0, lapo_rules INTEGER NOT NULL DEFAULT 0, paused_players TEXT,
+  instant INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER,
   settled_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS pool_entries (
   pool_id TEXT NOT NULL, user_id TEXT NOT NULL, taps INTEGER NOT NULL DEFAULT 0, raw_taps INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_batch_at TEXT, settled_raw_taps INTEGER NOT NULL DEFAULT 0, side_choice TEXT, booster_item TEXT, reached_at TEXT,
   final_rank INTEGER, prize_kobo INTEGER NOT NULL DEFAULT 0, paid_kobo INTEGER NOT NULL DEFAULT 0, boosters_used INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
+-- Players the creator invited (they get a notification; private pools let them in without the password).
+CREATE TABLE IF NOT EXISTS pool_invites (
+  pool_id TEXT NOT NULL, user_id TEXT NOT NULL, invited_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 
 -- ── money ───────────────────────────────────────────────────────────────────
@@ -111,6 +116,8 @@ CREATE INDEX IF NOT EXISTS idx_tap_stats_board ON tap_stats(period, taps DESC);
 CREATE INDEX IF NOT EXISTS idx_badges_user ON badges(user_id);
 CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_pools_creator ON pools(created_by);
+CREATE INDEX IF NOT EXISTS idx_pool_invites_user ON pool_invites(user_id);
+CREATE INDEX IF NOT EXISTS idx_pools_status ON pools(status, starts_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral ON users(referral_code);
 
 INSERT OR IGNORE INTO settings(key,value) VALUES
@@ -118,7 +125,7 @@ INSERT OR IGNORE INTO settings(key,value) VALUES
   ('min_withdraw_lapo_kobo','1000000'), ('min_withdraw_mapo_kobo','750000'), ('min_withdraw_nepo_kobo','500000'), ('starter_boosters','3'), ('nepo_bonus_boosters','5'), ('mapo_bonus_boosters','3'),
   ('referral_batch','10'), ('max_multi_pools','10'), ('max_multi_pools_mapo','3'), ('voice_min_rank','56'), ('voice_top_n','5'), ('house_cut_pct','0'),
   ('tap_rate_lapo','15'), ('tap_rate_mapo','25'), ('tap_rate_nepo','40'), ('tap_limits_on','0'), ('tap_limit_daily','20000'), ('tap_limit_monthly','400000'),
-  ('auto_payouts','0'), ('auto_payout_max_kobo','5000000'), ('auto_payout_min_age_days','7'), ('alert_email',''), ('withdrawals_per_day','1');
+  ('auto_payouts','0'), ('auto_payout_max_kobo','5000000'), ('auto_payout_min_age_days','7'), ('alert_email',''), ('withdrawals_per_day','1'), ('instant_wait_hours','24');
 
 INSERT OR IGNORE INTO store_items(id,name,description,kind,price_kobo,multiplier,duration_seconds,audience,min_rank,config,giftable,sort,per_game_limit) VALUES
   ('booster-small','Small Chops 1.5×','Small push: 1.5× taps for 15 seconds.','BOOSTER',5000,1.5,15,'ALL',1,'{"color":"#21D4C8"}',1,0,0),

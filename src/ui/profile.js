@@ -204,7 +204,7 @@ document.querySelectorAll('form.phrase-form').forEach(function(f){f.addEventList
     var out=document.querySelector('.phrase-out');out.hidden=false;out.textContent='';var p=document.createElement('p');p.className='small';p.style.margin='10px 0 6px';p.textContent=(j.message||'Your 12 words')+'. Write them down in order and keep them secret.';out.appendChild(p);
     var ol=document.createElement('ol');ol.className='words';String(j.phrase||'').split(' ').forEach(function(w){var li=document.createElement('li');li.textContent=w;ol.appendChild(li);});out.appendChild(ol);f.password.value='';});
 },true);});
-var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=8').then(function(){window.TASound.play(s,12,true);});});`;
+var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=9').then(function(){window.TASound.play(s,12,true);});});`;
   return appPage({ user, title: 'Settings', active: '/me', body, wallet, css: SET_CSS, script, narrow: true, theme, bgCss });
 }
 
@@ -239,26 +239,34 @@ export function notificationsPage(ctx) {
 }
 
 // ── Top tappers (day / week / month / year / all time) ──────────────────────
-const TOP_CSS = `.podium{display:grid;grid-template-columns:1fr 1.15fr 1fr;align-items:end;gap:10px;margin:6px 0 16px}
-.podium>div{display:grid;justify-items:center;gap:6px;padding:12px 8px;border-radius:22px;text-align:center}
-.podium .n{font:900 15px/1.1 var(--display);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.podium .s{font:800 13px var(--body)}
-.podium .p1{padding-top:18px}
-.mini-ava{flex:none;width:40px;height:40px}`;
+const TOP_CSS = `.podium{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr) minmax(0,1fr);align-items:end;gap:8px;margin:6px 0 16px}
+.podium>a{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:12px 8px 12px;border-radius:22px;text-align:center;text-decoration:none}
+.podium .place{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#fff;color:var(--ink);font:900 15px/1 var(--display);box-shadow:0 2px 0 rgba(0,0,0,.25)}
+.podium .n{width:100%;font:900 14px/1.15 var(--display);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 0 rgba(0,0,0,.35)}
+.podium .s{display:inline-block;max-width:100%;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.28);color:#fff;font:800 13px/1.2 var(--body);white-space:nowrap;text-shadow:none}
+.podium .p1{padding-top:16px}
+.podium svg{max-width:100%;height:auto}
+.mini-ava{flex:none;width:40px;height:40px}
+.toplist .item{gap:10px}
+.toplist .pos{flex:none;min-width:40px;font:900 17px var(--display);color:var(--ink-soft)}
+.toplist .grow{min-width:0}
+.toplist .t{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toplist .amt{flex:none;text-align:right;line-height:1.05}
+.toplist .amt small{display:block;font:700 11px var(--body);color:var(--ink-soft);text-transform:uppercase;letter-spacing:.4px}`;
 export function topPage(ctx) {
   const { user, period, rows, me, label, theme, bgCss, badgeKind, page = 1, hasNext = false, term = '' } = ctx;
   const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
   const podium = page === 1 && !term && rows.length >= 3;
   const [a, b, c] = rows;
-  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" style="text-decoration:none">${avatarSvg(avatarFor(r.username), { size: place === 1 ? 74 : 58 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${short(r.taps)} taps</div></a>` : '<div></div>';
-  const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b style="min-width:44px;font:900 18px var(--display);color:var(--ink-soft)">#${short(r.pos)}</b><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt">${short(r.taps)}</b></a>`;
+  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps"><span class="place">${place}</span>${avatarSvg(avatarFor(r.username), { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(compact(r.taps))} taps</div></a>` : '<div></div>';
+  const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b class="pos">#${short(r.pos)}</b><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt" title="${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps">${esc(compact(r.taps))}<small>taps</small></b></a>`;
   const qs = `/top?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`;
   const body = `<h1 class="h1">Top tappers</h1><p class="sub">Every player, from the fastest finger down. Whoever taps the most ${label} ${period === 'ALL' ? 'sits on top' : `wins the <b style="color:#fff">Tapper of the ${badgeKind.toLowerCase()}</b> badge`}. Taps count when a pool ends.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/top?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 <form class="row" method="get" action="/top" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
 ${rows.length ? `${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
-<div class="list">${(podium ? rows.slice(3) : rows).map(row).join('')}</div>
-${me && me.pos > (page * 50) ? `<div class="item me" style="margin-top:12px"><b style="min-width:44px;font:900 18px var(--display)">#${short(me.pos)}</b><div class="grow"><div class="t">You</div></div><b class="amt">${short(me.taps)}</b></div>` : ''}
+<div class="list toplist">${(podium ? rows.slice(3) : rows).map(row).join('')}</div>
+${me && me.pos > (page * 50) ? `<div class="item me" style="margin-top:12px"><b style="min-width:44px;font:900 18px var(--display)">#${short(me.pos)}</b><div class="grow"><div class="t">You</div></div><b class="amt">${esc(compact(me.taps))}<small>taps</small></b></div>` : ''}
 ${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No player with that nickname here.' : `No taps counted ${label} yet. ${user ? '<a href="/pools">Go tap!</a>' : '<a href="/signup">Join and tap!</a>'}`}</div>`}
 <div class="actions"><a class="btn btn--white btn--sm" href="/winners">Top winners</a><a class="btn btn--ghost btn--sm" href="/players">Find a player</a></div>`;
   return anyPage({ user, title: 'Top tappers', active: '/me', body, css: TOP_CSS, theme, bgCss, description: 'The fastest fingers on Tap Am: all time, today, this week, month and year.' });

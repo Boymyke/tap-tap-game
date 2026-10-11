@@ -352,6 +352,69 @@
   }
   document.addEventListener('change', function (e) { var f = e.target.form || (e.target.closest && e.target.closest('form')); if (f) syncShow(f); });
 
+  /* ── player picker: <div data-picker> (search names, pick several) ── */
+  function pickerOf(el) { return el.closest('[data-picker]'); }
+  function pickedNames(pk) { var v = pk.querySelector('[data-picker-val]').value; return v ? v.split(',') : []; }
+  function setPicked(pk, list) {
+    pk.querySelector('[data-picker-val]').value = list.join(',');
+    var box = pk.querySelector('[data-picked]'); box.innerHTML = '';
+    list.forEach(function (n) {
+      var c = document.createElement('span'), t = document.createElement('span'), x = document.createElement('button');
+      c.className = 'pchip'; t.textContent = n; x.type = 'button'; x.textContent = '×'; x.setAttribute('data-unpick', n); x.setAttribute('aria-label', 'Remove ' + n);
+      c.appendChild(t); c.appendChild(x); box.appendChild(c);
+    });
+  }
+  function closePicker(pk) { if (!pk) return; pk.querySelector('[data-picker-res]').hidden = true; pk.querySelector('[data-picker-q]').setAttribute('aria-expanded', 'false'); }
+  function pickName(pk, name) {
+    var list = pickedNames(pk);
+    if (list.indexOf(name) < 0) { if (list.length >= 50) { TA.toast('You fit invite 50 players at a time.'); return; } list.push(name); }
+    setPicked(pk, list); var q = pk.querySelector('[data-picker-q]'); q.value = ''; closePicker(pk); q.focus();
+  }
+  var pickTimer;
+  document.addEventListener('input', function (e) {
+    var q = e.target; if (!q.matches || !q.matches('[data-picker-q]')) return;
+    var pk = pickerOf(q), term = q.value.trim().replace(/^@/, '');
+    clearTimeout(pickTimer);
+    if (!term) { closePicker(pk); return; }
+    pickTimer = setTimeout(function () {
+      TA.api('/api/players/search?q=' + encodeURIComponent(term), undefined, 'GET').then(function (j) {
+        if (q.value.trim().replace(/^@/, '') !== term) return;   // the box changed while we waited
+        var r = pk.querySelector('[data-picker-res]'), have = pickedNames(pk);
+        var list = (j.players || []).filter(function (p) { return have.indexOf(p.name) < 0; });
+        r.innerHTML = '';
+        if (!list.length) { var d = document.createElement('div'); d.className = 'none'; d.textContent = j._ok ? 'No player found with that name.' : (j.error || 'Search no work. Try again.'); r.appendChild(d); }
+        list.forEach(function (p, i) {
+          var b = document.createElement('button'), n = document.createElement('span'), t = document.createElement('span');
+          b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('data-pick', p.name); b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+          n.className = 'nm'; n.textContent = p.name + (p.emoji ? ' ' + p.emoji : ''); t.className = 'tg'; t.textContent = p.tier;
+          b.appendChild(n); b.appendChild(t); r.appendChild(b);
+        });
+        r.hidden = false; q.setAttribute('aria-expanded', 'true');
+      });
+    }, 200);
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-pick],[data-unpick]');
+    if (!b) { $$('[data-picker-res]').forEach(function (r) { if (!r.hidden && !pickerOf(r).contains(e.target)) closePicker(pickerOf(r)); }); return; }
+    e.preventDefault();
+    var pk = pickerOf(b);
+    if (b.hasAttribute('data-pick')) pickName(pk, b.getAttribute('data-pick'));
+    else { var gone = b.getAttribute('data-unpick'); setPicked(pk, pickedNames(pk).filter(function (n) { return n !== gone; })); }
+  });
+  document.addEventListener('keydown', function (e) {
+    var q = e.target; if (!q.matches || !q.matches('[data-picker-q]')) return;
+    var pk = pickerOf(q), r = pk.querySelector('[data-picker-res]'), opts = r.hidden ? [] : $$('[data-pick]', r), cur = -1;
+    for (var i = 0; i < opts.length; i++) if (opts[i].getAttribute('aria-selected') === 'true') cur = i;
+    if (e.key === 'Enter') { e.preventDefault(); if (cur > -1) pickName(pk, opts[cur].getAttribute('data-pick')); return; }   // never submits the form
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && opts.length) {
+      e.preventDefault();
+      var nx = e.key === 'ArrowDown' ? Math.min(opts.length - 1, cur + 1) : Math.max(0, cur - 1);
+      opts.forEach(function (o, k) { o.setAttribute('aria-selected', k === nx ? 'true' : 'false'); });
+      opts[nx].scrollIntoView({ block: 'nearest' });
+    }
+    if (e.key === 'Escape') closePicker(pk);
+  });
+
   /* ── image uploads: <input type=file data-upload="fieldName"> ────── */
   document.addEventListener('change', function (e) {
     var i = e.target; if (!i.matches || !i.matches('input[type=file][data-upload]') || !i.files[0]) return;

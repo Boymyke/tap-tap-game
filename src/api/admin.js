@@ -2,7 +2,7 @@
 import { json, readJson, uid, nowIso, allow } from '../lib.js';
 import { requireRole, credit, debit, giveItem, notify, audit, clampInt, clearSettingsCache, naira, toKobo, settings } from '../core.js';
 import { clearRankCache, generateRanks, recalcRank } from '../game/ranks.js';
-import { roomCall, poolState, refundPlayers, pausePool, restartPool } from '../game/pools.js';
+import { roomCall, poolState, pausePool, restartPool, cancelPool, extendPool } from '../game/pools.js';
 import { processWithdrawal, activateTier } from './money.js';
 import { sendAlertEmail } from '../email.js';
 import { isPattern } from '../ui/patterns.js';
@@ -114,7 +114,7 @@ export async function handleAdminApi(req, env, path, user) {
   if (path === '/api/admin/overload/pause-all' && req.method === 'POST') {
     const { data } = await body();
     if (data?.confirm !== true) return json({ error: 'Tick confirm to pause every live and upcoming pool.', field: 'confirm' }, 400);
-    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED') AND ends_at>? LIMIT 200").bind(nowIso()).all()).results;
+    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED','WAITING') AND ends_at>? LIMIT 200").bind(nowIso()).all()).results;
     let n = 0, players = 0;
     for (const p of pools) { const r = await pausePool(env, p); if (r.paused) { n++; players += r.players; } }
     await env.DB.prepare("INSERT INTO settings(key,value) VALUES('overload','1') ON CONFLICT(key) DO UPDATE SET value='1'").run(); clearSettingsCache();
@@ -131,7 +131,7 @@ export async function handleAdminApi(req, env, path, user) {
     await audit(env, user.id, 'overload.restart', { pools: n, minutes });
     return json({ message: `Restarted ${n} pool${n === 1 ? '' : 's'}. They start in ${minutes} minutes.`, reload: true });
   }
-  const pm = path.match(/^\/api\/admin\/pools\/([^/]+)\/(settle|cancel|pause|restart)$/);
+  const pm = path.match(/^\/api\/admin\/pools\/([^/]+)\/(settle|cancel|pause|restart|extend)$/);
   if (pm && req.method === 'POST') {
     const pool = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(pm[1]).first();
     if (!pool) return json({ error: 'Pool not found.' }, 404);
@@ -154,19 +154,19 @@ export async function handleAdminApi(req, env, path, user) {
     }
     if (pm[2] === 'cancel') {
       if (pool.settled_at) return json({ error: 'Pool already settled.' }, 409);
-      const c = await env.DB.prepare("UPDATE pools SET status='CANCELLED', settled_at=? WHERE id=? AND settled_at IS NULL").bind(nowIso(), pool.id).run();
-      if (!c.meta.changes) return json({ error: 'Pool already settled.' }, 409);
-      await roomCall(env, pool.id, '/init', { pool: { ...pool, ends_at: nowIso() } }).catch(() => {});   // stop taps now
-      const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(pool.id).all()).results.map(r => r.user_id);
-      const back = await refundPlayers(env, pool, 'Refund');   // entry fees + prize top-ups go back to whoever paid them
-      for (const u of players) await notify(env, u, `“${pool.name}” was cancelled. Any money you paid into it is back with you.`, '/wallet');
-      const seeded = Number(pool.prize_kobo) - back;
-      if (seeded > 0 && pool.created_by && pool.created_by !== user.id) {
-        const creator = await env.DB.prepare('SELECT role FROM users WHERE id=?').bind(pool.created_by).first();
-        if (creator && creator.role !== 'ADMIN') await credit(env, pool.created_by, seeded, { type: 'REFUND', reference: pool.id, note: `Prize refund: ${pool.name}` });
-      }
-      await audit(env, user.id, 'pool.cancel', pool.id);
+      const r = await cancelPool(env, pool, { why: 'Refund' });
+      if (!r.cancelled) return json({ error: 'Pool already settled.' }, 409);
+      await audit(env, user.id, 'pool.cancel', { pool: pool.id, players: r.players, refunded: r.refunded, seeded: r.seeded });
       return json({ message: 'Pool cancelled and refunded', reload: true });
+    }
+    if (pm[2] === 'extend') {
+      const { data, response } = await body(); if (response) return response;
+      const minutes = Number(data?.minutes);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return json({ error: 'Add between 1 and 1,440 minutes.', field: 'minutes' }, 400);
+      const r = await extendPool(env, pool, minutes);
+      if (r.error) return json({ error: r.error }, 409);
+      await audit(env, user.id, 'pool.extend', { pool: pool.id, minutes, from: pool.ends_at, to: r.endsAt });
+      return json({ message: `Added ${minutes} minute${minutes === 1 ? '' : 's'}. ${r.pool.status === 'WAITING' ? 'The match will run longer once it starts.' : 'Players see the new end time now.'}`, endsAt: r.endsAt, reload: true });
     }
   }
 

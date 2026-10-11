@@ -1,9 +1,9 @@
 // Player pages: home, pools list, pool detail (lobby / instructions / results), create pool.
-import { appPage, esc, naira, nairaShort, short, lagos, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag } from './kit.js';
+import { appPage, esc, naira, nairaShort, short, lagos, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag, postBtn, playerPicker, fmtDur } from './kit.js';
 import { ICONS } from './theme.js';
 import { rankAvatar, avatarSvg, avatarFor } from './avatar.js';
 import { PATTERNS, patternBg } from './patterns.js';
-import { splitText } from '../game/pools.js';
+import { splitText, INSTANT_LEAD_MS } from '../game/pools.js';
 
 const pct = n => Math.round(Math.max(0, Math.min(1, n)) * 100);
 const shareCardAttr = d => `data-share-card='${esc(JSON.stringify(d))}'`;
@@ -124,13 +124,16 @@ const POOL_CSS = `
 .phead .stats .k{font:700 12px var(--body);opacity:.9}.phead .stats .v{font:900 24px/1.05 var(--display)}
 .instr h2{margin:0 0 10px;font:900 22px/1.1 var(--display);color:var(--ink)}
 .instr ul{margin:0 0 12px;padding:0;list-style:none;display:grid;gap:8px}
-.instr li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
-.instr li::before{content:"";flex:none;width:10px;height:10px;margin-top:6px;border-radius:50%;background:var(--purple)}
+.instr li{position:relative;padding-left:20px;font-size:15px;line-height:1.45}
+.instr li::before{content:"";position:absolute;left:0;top:6px;width:10px;height:10px;border-radius:50%;background:var(--purple)}
 .instr .code-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:16px;background:var(--cloud)}
 .instr .code-line b{font:900 22px var(--display);letter-spacing:1px}
 .board-me{box-shadow:0 0 0 3px var(--green),0 4px 0 rgba(21,11,51,.22)!important}
 .mini-ava{flex:none;width:36px;height:36px}
 .rk{width:40px;font:900 20px var(--display);color:var(--ink-soft)}
+.waitbox{box-shadow:0 0 0 3px var(--sunny),var(--sh)}
+.wait-n{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.wait-n b{font:900 46px/1 var(--display);color:var(--ink)}.wait-n span{font:800 17px var(--body);color:var(--ink-soft)}
 .list .item:nth-child(1) .rk{color:#E0A800}.list .item:nth-child(2) .rk{color:#8A93A6}.list .item:nth-child(3) .rk{color:#C96A2B}
 `;
 export function poolPage(ctx) {
@@ -139,14 +142,15 @@ export function poolPage(ctx) {
   const url = `${origin}/pool/${p.id}`;
   const vs = p.gameType === 'MATCH' && p.sideA;
   const head = `<section class="tcard phead ${color}" style="${p.theme ? `--c:${esc(p.theme)};--cd:color-mix(in srgb,${esc(p.theme)} 65%,#000)` : ''}">
-  <div class="row wrap" style="justify-content:flex-start;gap:6px">${stateBadge(p.state)}${p.kind === 'SPONSORED' ? `<span class="badge sponsor">Sponsored</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid pool</span>' : '<span class="badge">Free pool</span>'}${p.private ? `<span class="badge">${ICONS.lock.replace('<svg', '<svg width="12" height="12"')}Private</span>` : ''}${p.lapoRules ? '<span class="badge lapo">Lapo rules</span>' : ''}${p.paused ? '<span class="badge red">Paused</span>' : ''}${p.joined ? '<span class="badge live">Joined</span>' : ''}</div>
+  <div class="row wrap" style="justify-content:flex-start;gap:6px">${stateBadge(p.state)}${p.kind === 'SPONSORED' ? `<span class="badge sponsor">Sponsored</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid pool</span>' : '<span class="badge">Free pool</span>'}${p.private ? `<span class="badge">${ICONS.lock.replace('<svg', '<svg width="12" height="12"')}Private</span>` : ''}${p.lapoRules ? '<span class="badge lapo">Lapo rules</span>' : ''}${p.paused ? '<span class="badge red">Paused</span>' : ''}${p.instant ? '<span class="badge instant">⚡ Instant match</span>' : ''}${p.joined ? '<span class="badge live">Joined</span>' : p.invited ? '<span class="badge">You’re invited</span>' : ''}</div>
   ${vs ? `<div class="vsrow" style="margin-top:12px"><span class="code">${esc(p.sideA)}</span><span class="vs">VS</span><span class="code">${esc(p.sideB)}</span></div>` : ''}
   <h1>${esc(p.name)}</h1>
   ${p.sponsor ? `<p style="margin:0 0 6px;font-weight:700">Sponsored by ${esc(p.sponsor)}</p>` : ''}
   ${p.description ? `<p style="margin:0 0 6px">${esc(p.description)}</p>` : ''}
   <div class="stats"><div><div class="k">Prize pool</div><div class="v">${p.prize ? esc(nairaShort(p.prize)) : 'Akara'}</div></div><div><div class="k">Entry</div><div class="v">${p.entryFee ? esc(naira(p.entryFee)) : 'Free'}</div></div>
-  <div><div class="k">Players</div><div class="v">${short(p.players || 0)}${p.maxPlayers < 100000 ? `<small style="font-size:14px"> / ${short(p.maxPlayers)}</small>` : ''}</div></div><div><div class="k">${p.state === 'soon' ? 'Starts' : p.state === 'live' ? 'Ends' : 'Ended'}</div><div class="v" style="font-size:16px;line-height:1.3">${esc(lagos(p.state === 'soon' ? p.startsAt : p.endsAt))}</div></div></div>
+  <div><div class="k">Players</div><div class="v" data-players>${short(p.players || 0)}${p.maxPlayers < 100000 ? `<small style="font-size:14px"> / ${short(p.maxPlayers)}</small>` : ''}</div></div><div><div class="k">${p.state === 'waiting' ? 'Match length' : p.state === 'soon' ? 'Starts' : p.state === 'live' ? 'Ends' : 'Ended'}</div><div class="v" style="font-size:16px;line-height:1.3">${p.state === 'waiting' ? esc(fmtDur(p.duration)) : esc(lagos(p.state === 'soon' ? p.startsAt : p.endsAt))}</div></div></div>
   <div style="margin-top:12px">${whenPill(p).replace('data-when', 'data-reload-at-zero data-when')}</div>
+  ${p.state === 'waiting' ? `<div class="bar-progress" style="margin-top:10px" aria-hidden="true"><i data-fill style="width:${pct((p.players || 0) / Math.max(1, p.maxPlayers))}%"></i></div>` : ''}
 </section>`;
 
   let action = '';
@@ -155,10 +159,20 @@ export function poolPage(ctx) {
   else if (!p.joined && user?.role === 'USER') {
     if (joinBlock) action = `<div class="panel" style="margin-top:14px"><p style="margin:0 0 4px;font-weight:700">${esc(joinBlock.why)}</p>${joinBlock.need ? `<div class="actions"><a class="btn btn--green" href="/plans">See plans</a></div>` : ''}</div>`;
     else action = `<div class="panel" style="margin-top:14px">${form(`/api/pools/${p.id}/join`, `
-      ${p.private ? field({ label: 'Pool password', name: 'password', placeholder: 'XXXX-XXXX', attrs: 'autocapitalize="characters" autocomplete="off" maxlength="9" required' }) : ''}
+      ${p.private && p.invited ? '<div class="note">You’re invited, so you don’t need the password.</div>' : ''}
+      ${p.private && !p.invited ? field({ label: 'Pool password', name: 'password', placeholder: 'XXXX-XXXX', attrs: 'autocapitalize="characters" autocomplete="off" maxlength="9" required' }) : ''}
       ${vs ? choice({ label: 'Pick your side', name: 'side', options: [[p.sideA, p.sideA], [p.sideB, p.sideB]], value: '' }) : ''}
       ${p.entryFee ? `<div class="note">Entry fee <b>${esc(naira(p.entryFee))}</b> comes from your wallet (you have ${esc(naira(wallet.balance_kobo))}). It joins the prize and is <b>not refunded</b> once the pool starts.</div>${wallet.balance_kobo < p.entryFee && wallet.winnings_kobo >= p.entryFee ? check({ name: 'use_winnings', label: `Pay from my winnings (${esc(naira(wallet.winnings_kobo))})` }) : ''}` : ''}
+      ${p.state === 'waiting' ? `<div class="note">Instant match: it starts by itself ${INSTANT_LEAD_MS / 1000} seconds after the last of the ${short(p.maxPlayers)} seats fills, then runs ${esc(fmtDur(p.duration))}. ${p.entryFee ? 'If it doesn’t fill in time, your entry fee comes back.' : ''}</div>` : ''}
     `, { submit: p.entryFee ? `Pay ${naira(p.entryFee)} and join` : 'Join this pool', shine: true })}</div>`;
+  } else if (p.joined && p.state === 'waiting') {
+    const left = Math.max(0, p.maxPlayers - (p.players || 0));
+    action = `<div class="panel waitbox" style="margin-top:14px">
+      <div class="wait-n"><b data-left>${short(left)}</b><span>more player${left === 1 ? '' : 's'} to go</span></div>
+      <p style="margin:8px 0 0">You’re in! The match starts by itself ${INSTANT_LEAD_MS / 1000} seconds after the last seat fills, and runs <b>${esc(fmtDur(p.duration))}</b>. Keep this page open and we’ll take you straight to the game — or we’ll send you a notification.</p>
+      <p class="small muted" style="margin:8px 0 0">Not full by ${esc(lagos(p.startsAt))}? It’s cancelled${p.entryFee ? ' and your entry fee comes back' : ''}. Share the code to fill it faster.</p>
+      <div class="actions"><button type="button" class="btn btn--green btn--shine btn--block" data-share-url="${esc(url)}" data-share-text="Join my Tap Am instant match “${esc(p.name)}” — we start when ${short(p.maxPlayers)} people join. Code ${esc(p.code)}">${ICONS.share} Invite friends to fill it</button></div>
+    </div>`;
   } else if (p.joined) {
     action = `<div class="panel" style="margin-top:14px">
       <div class="row wrap"><div><div class="small muted">Your score</div><b style="font:900 30px var(--display)">${short(board?.me?.score || 0)}</b></div><div style="text-align:right"><div class="small muted">Your position</div><b style="font:900 30px var(--display)">${board?.me?.rank ? '#' + board.me.rank : '—'}</b></div></div>
@@ -168,11 +182,15 @@ export function poolPage(ctx) {
   }
 
   // Paid pools: anybody can add money to the prize. The creator can add to any of their pools.
-  const canTop = !p.paused && (p.state === 'soon' || p.state === 'live') && (p.kind === 'PAID' || isCreator) && (user?.role === 'USER' || (user?.role === 'SPONSOR' && isCreator));
+  const canTop = !p.paused && (p.state === 'soon' || p.state === 'live' || p.state === 'waiting') && (p.kind === 'PAID' || isCreator) && (user?.role === 'USER' || (user?.role === 'SPONSOR' && isCreator));
+  const open = !p.paused && (p.state === 'soon' || p.state === 'live' || p.state === 'waiting');
+  if (open && user?.role === 'ADMIN') action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Add time</h2><p class="muted" style="margin:0 0 10px;font-size:14px">${p.state === 'waiting' ? 'Makes the match run longer once it starts.' : `Ends ${esc(lagos(p.endsAt))}. Players see the new end time straight away.`}</p><div class="actions" style="margin-top:0">${[1, 5, 15, 30, 60].map(m => postBtn(`/api/admin/pools/${p.id}/extend`, `+${m < 60 ? m + ' min' : '1 hour'}`, { body: { minutes: m }, cls: 'btn--soft btn--sm' })).join('')}</div></div>`;
+  if (open && isCreator) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Invite players</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Search by name. They get a notification with this pool${p.private ? ', and they can join without the password' : ''}.</p>${form(`/api/pools/${p.id}/invite`, playerPicker({ name: 'invites', label: 'Players', id: 'inv' }), { submit: 'Send invites', btn: 'btn--green' })}</div>`;
   if (canTop) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Make the prize bigger</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Add money from your wallet to the prize pool. It goes to the winners and is not refunded once the pool starts (unless the pool is cancelled or paused).</p>${form(`/api/pools/${p.id}/topup`, `${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}`, { submit: 'Add to prize', btn: 'btn--gold' })}</div>`;
   const sp = p.split, tie = p.tie === 'SPLIT' ? 'Ties: tied players split the prize.' : 'Ties: whoever reached the score first wins.';
   const aud = { ALL: 'Everybody fit join.', LAPO: 'Lapo babies only.', MAPO: 'Mapo and Nepo babies only.', NEPO: 'Nepo babies only.' }[p.audience] || '';
   const instr = `<section class="panel instr" style="margin-top:14px"><h2>Pool instructions</h2><ul>
+    ${p.instant ? `<li><b>Instant match:</b> ${p.state === 'waiting' ? `starts by itself when ${short(p.maxPlayers)} players join` : `started when ${short(p.maxPlayers)} players joined`}, and runs ${esc(fmtDur(p.duration))}.</li>` : `<li>Runs ${esc(fmtDur(p.duration))}${p.state === 'soon' ? `, from ${esc(lagos(p.startsAt))}` : ''}.</li>`}
     <li>${esc(splitText(sp, p.splitStyle, p.vsSplit))}.</li>
     ${vs && p.vsSplit ? `<li>VS pool: pick ${esc(p.sideA)} or ${esc(p.sideB)}. Each side has its own pot — its players’ entry fees plus half of any starting prize${sidePots ? ` (${esc(p.sideA)} ${esc(naira(sidePots[p.sideA] || 0))} · ${esc(p.sideB)} ${esc(naira(sidePots[p.sideB] || 0))})` : ''}. The top tappers on each side share their side’s pot.</li>` : ''}
     <li>${esc(tie)}</li><li>${esc(aud)}</li>
@@ -201,7 +219,20 @@ export function poolPage(ctx) {
 
   const listHref = user?.role === 'SPONSOR' ? '/sponsor/pools' : user?.role === 'ADMIN' ? '/admin/pools' : '/pools';
   const body = head + action + instr + creator + leader;
-  return appPage({ user, title: p.name, active: listHref, back: listHref, body, wallet, css: POOL_CSS, theme, bgCss });
+  const script = p.state === 'waiting' ? `
+(function(){var id=${JSON.stringify(p.id)},joined=${p.joined ? 'true' : 'false'},busy=false,mark=document.querySelector('[data-waiting]');
+function stop(){clearInterval(t);document.removeEventListener('visibilitychange',tick);}
+function tick(){if(!mark||!document.contains(mark))return stop();if(busy||document.hidden)return;busy=true;
+ TA.api('/api/pools/'+encodeURIComponent(id)+'/state',undefined,'GET').then(function(j){busy=false;if(!j._ok)return;
+  if(!document.contains(mark))return stop();
+  if(j.state!=='waiting'){stop();if(joined&&j.state!=='cancelled'&&j.state!=='ended'){TA.toast('The pool is full — game on!');TA.go('/play?pools='+encodeURIComponent(id));}else TA.go(location.pathname,{replace:true,fresh:true});return;}
+  var left=Math.max(0,j.maxPlayers-j.players);
+  document.querySelectorAll('[data-waiting]').forEach(function(e){e.textContent=j.players+'/'+j.maxPlayers+' joined · starts when full';});
+  document.querySelectorAll('[data-left]').forEach(function(e){e.textContent=left;});
+  var f=document.querySelector('[data-fill]');if(f)f.style.width=Math.round(Math.min(1,j.players/Math.max(1,j.maxPlayers))*100)+'%';
+  var pl=document.querySelector('[data-players]');if(pl&&pl.firstChild)pl.firstChild.nodeValue=String(j.players);});}
+var t=setInterval(tick,3000);document.addEventListener('visibilitychange',tick);})();` : '';
+  return appPage({ user, title: p.name, active: listHref, back: listHref, body, wallet, css: POOL_CSS, script, theme, bgCss });
 }
 
 // ── Create pool ─────────────────────────────────────────────────────────────
@@ -214,7 +245,20 @@ const CREATE_CSS = `
 /* phones: one column, nothing wider than the screen */
 .cp form,.cp .ta-field{min-width:0}
 .cp .two>*{min-width:0}
-.cp input[type=datetime-local]{min-width:0;width:100%;max-width:100%;-webkit-appearance:none;appearance:none;font-size:15px;padding-right:8px}
+.cp input[type=date],.cp input[type=time]{min-width:0;width:100%;max-width:100%;-webkit-appearance:none;appearance:none;font-size:16px;padding-right:8px}
+.cp .modes{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr))}
+.cp .mode{position:relative;display:grid;align-content:start;gap:3px;padding:12px 14px;border-radius:var(--r-in);background:var(--cloud);box-shadow:inset 0 0 0 2px var(--line);cursor:pointer;color:var(--ink)}
+.cp .mode input{position:absolute;opacity:0;pointer-events:none}
+.cp .mode b{font:900 17px/1.1 var(--display)}
+.cp .mode small{font:600 13px/1.35 var(--body);color:var(--ink-soft)}
+.cp .mode:has(input:checked){background:#fff;box-shadow:inset 0 0 0 3px var(--ink),0 3px 0 var(--ink)}
+.cp .mode:has(input:focus-visible){outline:3px solid var(--purple);outline-offset:2px}
+.cp .qchips{display:flex;flex-wrap:wrap;gap:8px}
+.cp .qchip{min-height:40px;padding:0 14px;border:0;border-radius:999px;background:#fff;color:var(--ink);font:800 14px var(--body);box-shadow:inset 0 0 0 2px var(--line);cursor:pointer}
+.cp .qchip.on{background:var(--ink);color:#fff;box-shadow:none}
+.cp .when-prev{display:flex;gap:10px;align-items:flex-start;background:var(--ink);color:#fff;font-weight:700}
+.cp .when-prev::before{content:"⏱";flex:none}
+.cp .when-prev.bad{background:#FFE3E8;color:#8A0F25}
 .cp .seg-choice{grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr))}
 .cp .seg-choice label{min-height:42px;font-size:14px}
 .pats{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px}
@@ -229,8 +273,10 @@ export function createPoolPage(ctx) {
   const { user, wallet, role, tierKey, ads, theme, bgCss, blast = null, lapoLeft = null } = ctx;
   const admin = role === 'ADMIN', sponsor = role === 'SPONSOR';
   const canColour = admin || sponsor;   // pool colours, background and tap area: sponsors and the admin only
-  const now = new Date(Date.now() + 10 * 60000), later = new Date(Date.now() + 70 * 60000);
-  const local = d => new Date(d.getTime() + 60 * 60000).toISOString().slice(0, 16);   // shown in Lagos time (UTC+1); the browser converts back
+  // Day and time are typed in Lagos time (UTC+1, no summer time): UTC fields of (now + 1h) = the Lagos clock.
+  const lagosClock = ms => new Date(ms + 3600000).toISOString();
+  const nextSlot = Math.ceil((Date.now() + 3600000) / 900000) * 900000;   // an hour from now, on the next quarter hour
+  const minDay = lagosClock(Date.now()).slice(0, 10), maxDay = lagosClock(Date.now() + 60 * 86400000).slice(0, 10);
   const kinds = admin ? [['FREE', 'Free'], ['PAID', 'Paid'], ['SPONSORED', 'Sponsored']] : [['FREE', 'Free'], ['PAID', 'Paid']];
   const approved = (ads || []).filter(a => a.approved && a.active);
   const body = `<h1 class="h1">Create a pool</h1><p class="sub">${sponsor ? 'You fund the prize from your wallet; players join free.' : admin ? 'As super admin you can create any type of pool.' : 'A free pool for fun, or a paid pool where every entry fee joins the prize.'}${lapoLeft !== null ? ` <b style="color:#fff">Lapo babies create ${lapoLeft.max} pools a day: you have ${lapoLeft.left} left today.</b>` : ''}</p>
@@ -243,8 +289,23 @@ export function createPoolPage(ctx) {
     ${moneyField({ label: 'Starting prize (₦)', name: 'prize', placeholder: '0', tip: 'Optional money you add from your wallet so the pot starts bigger. It is locked into the pool once you create it.' })}</div>
   </div>
   ${sponsor || admin ? `<div class="group" data-show="kind=SPONSORED">${moneyField({ label: admin ? 'Prize (₦)' : 'Prize (₦, at least ₦10,000)', name: 'prize', id: 'f-prize-sp', placeholder: '50,000', tip: admin ? 'Funded by Tap Am. Players join free.' : 'The prize you fund from your wallet. Players join free.' })}</div>` : ''}
-  <div class="two">${field({ label: 'Starts', name: 'starts_at', type: 'datetime-local', value: local(now), attrs: 'required' })}${field({ label: 'Ends', name: 'ends_at', type: 'datetime-local', value: local(later), attrs: 'required' })}</div>
-  <p class="ta-hint" style="margin-top:-8px">A pool runs at least 60 seconds.</p>
+  <div class="ta-field" data-field="start_mode"><span class="ta-label">When does it start?</span><div class="modes" role="radiogroup" aria-label="When does it start?">
+    <label class="mode"><input type="radio" name="start_mode" value="NOW" checked><b>Start now</b><small>Players join and tap straight away</small></label>
+    <label class="mode"><input type="radio" name="start_mode" value="LATER"><b>Schedule for later</b><small>Pick the day and time</small></label>
+    <label class="mode"><input type="radio" name="start_mode" value="INSTANT"><b>⚡ Instant match</b><small>Starts the moment enough players join</small></label>
+  </div><p class="ta-error" data-err="start_mode"></p></div>
+  <div class="group" data-show="start_mode=LATER" hidden>
+    <div class="qchips" role="group" aria-label="Quick picks"><button type="button" class="qchip" data-q="30">In 30 min</button><button type="button" class="qchip" data-q="60">In 1 hour</button><button type="button" class="qchip" data-q="t20">Tonight 8 PM</button><button type="button" class="qchip" data-q="m20">Tomorrow 8 PM</button><button type="button" class="qchip" data-q="sat18">Saturday 6 PM</button></div>
+    <div class="two">${field({ label: 'Day', name: 'start_date', type: 'date', value: lagosClock(nextSlot).slice(0, 10), attrs: `min="${minDay}" max="${maxDay}" required disabled` })}${field({ label: 'Time (Lagos)', name: 'start_time', type: 'time', value: lagosClock(nextSlot).slice(11, 16), attrs: 'step="300" required disabled' })}</div>
+  </div>
+  <div class="group" data-show="start_mode=INSTANT" hidden>
+    ${field({ label: 'Players needed to start', name: 'instant_players', value: '10', attrs: 'inputmode="numeric" autocomplete="off" maxlength="5" data-num disabled', tip: 'The match waits until this many players join, then starts by itself. Nobody else can join once it is full.' })}
+    <div class="qchips" role="group" aria-label="Quick picks">${[2, 4, 10, 20, 50, 100].map(n => `<button type="button" class="qchip${n === 10 ? ' on' : ''}" data-n="${n}">${n} players</button>`).join('')}</div>
+    <p class="ta-hint" style="margin:0">It starts ${INSTANT_LEAD_MS / 1000} seconds after the last seat fills. If it isn’t full within 24 hours, it’s cancelled and every entry fee goes back.</p>
+  </div>
+  ${choice({ label: 'How long does it run?', name: 'duration', options: [['60', '1 min'], ['300', '5 min'], ['900', '15 min'], ['1800', '30 min'], ['3600', '1 hour'], ['CUSTOM', 'Custom']], value: '3600' })}
+  <div class="group" data-show="duration=CUSTOM" hidden><div class="two">${field({ label: 'Length', name: 'custom_len', value: '2', attrs: 'inputmode="decimal" autocomplete="off" maxlength="6" disabled' })}${select({ label: 'Unit', name: 'custom_unit', options: [['MIN', 'Minutes'], ['HOUR', 'Hours'], ['DAY', 'Days']], value: 'HOUR', attrs: 'disabled' })}</div></div>
+  <div class="preview when-prev" data-when-preview aria-live="polite"></div>
   ${choice({ label: 'Who fit join', name: 'audience', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo only'], ['MAPO', 'Mapo + Nepo'], ['NEPO', 'Nepo only']], value: 'ALL', cls: 'wrap4' })}
   ${choice({ label: 'Game type', name: 'game_type', options: [['STANDARD', 'Normal'], ['MATCH', 'VS (two sides)']], value: 'STANDARD', tip: 'VS: players pick a side. Each side has its own pot and the top tappers on each side share it.' })}
   <div class="group" data-show="game_type=MATCH">
@@ -254,7 +315,8 @@ export function createPoolPage(ctx) {
   ${select({ label: 'Share it', name: 'split_style', options: [['TOP', 'Bigger for top places'], ['EQUAL', 'Equal shares']], value: 'TOP', attrs: 'data-split' })}</div>
   <div class="preview" data-split-preview>Winner takes all.</div>
   ${choice({ label: 'If players tie', name: 'tie_rule', options: [['FIRST', 'First to reach wins'], ['SPLIT', 'Split the prize']], value: 'FIRST' })}
-  ${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.', tip: 'The most people that can join. When the pool is full, nobody else can join. Leave it empty to let everybody in.' })}
+  <div data-show="start_mode=NOW|LATER">${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.', tip: 'The most people that can join. When the pool is full, nobody else can join. Leave it empty to let everybody in.' })}</div>
+  ${playerPicker({ name: 'invites', label: 'Invite players <small>(optional)</small>', hint: 'Search by name and add as many as you like (50 at a time). They get a notification with the link, and invited players can join a private pool without the password.' })}
   <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'lapo_rules', label: '<b>Use Lapo baby rules</b> (level the game)' })}<button type="button" class="tip" data-tip="Everybody in this pool plays like a Lapo baby: one finger at a time, the Lapo tap speed, and only the boosters every player can use. Mapo and Nepo perks are switched off here, so it is a fair fight." aria-label="More info">i</button></div>
   ${canColour ? `${check({ name: 'custom_pad', label: `Set the tap area for this pool${sponsor ? ' (your brand colours)' : ''}` })}
   <div class="group" data-show="custom_pad=true">
@@ -290,6 +352,37 @@ f.addEventListener('input',paint);f.addEventListener('change',paint);paint();
 var pp=f.querySelector('[data-padprev]'),PB=${JSON.stringify(Object.fromEntries(Object.entries(PATTERNS).map(([k, p]) => [k, p.img + ' ' + p.pos + '/' + p.size + ' ' + p.rep])))};
 function pad(){if(!pp)return;var c=(f.theme_color||{}).value||'#2E8BFF',k=(f.querySelector('input[name=pad_pattern]:checked')||{}).value;pp.style.background=(PB[k]?PB[k]+',':'')+c;
  f.querySelectorAll('[data-pat]').forEach(function(l){var kk=l.getAttribute('data-pat');l.style.background=(PB[kk]?PB[kk]+',':'')+c;});}
-f.addEventListener('input',pad);f.addEventListener('change',pad);pad();`;
+f.addEventListener('input',pad);f.addEventListener('change',pad);pad();
+var pre=f.querySelector('[data-when-preview]');
+function clock(ms){var d=new Date(ms+3600000).toISOString();return {date:d.slice(0,10),time:d.slice(11,16),dow:new Date(ms+3600000).getUTCDay(),h:+d.slice(11,13),m:+d.slice(14,16)};}
+function fmt(ms,day){try{return new Intl.DateTimeFormat('en-NG',day?{timeZone:'Africa/Lagos',weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}:{timeZone:'Africa/Lagos',hour:'numeric',minute:'2-digit'}).format(new Date(ms));}catch(e){return new Date(ms).toLocaleString();}}
+function dur(){var v=(f.querySelector('input[name=duration]:checked')||{}).value;if(v==='CUSTOM'){var n=parseFloat(String(f.custom_len.value).replace(/[^0-9.]/g,''))||0;return Math.round(n*({MIN:60,HOUR:3600,DAY:86400}[f.custom_unit.value]||60));}return +v||0;}
+function fd(s){if(s<60)return s+' sec';if(s%86400===0)return s/86400+(s===86400?' day':' days');if(s%3600===0)return s/3600+(s===3600?' hour':' hours');if(s<3600)return Math.round(s/60)+' min';var h=Math.floor(s/3600),m=Math.round(s%3600/60);return h>=24?Math.floor(h/24)+'d '+(h%24)+'h':h+'h '+m+'m';}
+function mode(){return (f.querySelector('input[name=start_mode]:checked')||{}).value||'NOW';}
+function when(){var m=mode(),d=dur(),bad=false,txt;
+ if(d<60){txt='A pool runs at least 1 minute.';bad=true;}
+ else if(d>604800){txt='A pool fit run 7 days max.';bad=true;}
+ else if(m==='INSTANT'){var n=parseInt(String(f.instant_players.value).replace(/[^0-9]/g,''),10)||0;txt=n<2?'An instant match needs at least 2 players.':'Starts by itself when '+n.toLocaleString('en-NG')+' players join, then runs '+fd(d)+'.';bad=n<2;}
+ else{var s=m==='LATER'?Date.parse(f.start_date.value+'T'+f.start_time.value+':00+01:00'):Date.now();
+  if(!s){txt='Pick the day and time.';bad=true;}
+  else if(m==='LATER'&&s<Date.now()-60000){txt='That time don pass. Pick a later time.';bad=true;}
+  else{var e=s+d*1000;txt=(m==='NOW'?'Starts now':'Starts '+fmt(s,true))+' · ends '+fmt(e,clock(s).date!==clock(e).date)+' · runs '+fd(d)+' (Lagos time)';}}
+ pre.textContent=txt;pre.classList.toggle('bad',bad);}
+f.addEventListener('input',when);f.addEventListener('change',when);when();
+var wt=setInterval(function(){if(!document.contains(pre))return clearInterval(wt);when();},30000);
+var c0=clock(Date.now()),tb=f.querySelector('[data-q=t20]');if(tb&&(c0.h>19||(c0.h===19&&c0.m>=30)))tb.hidden=true;
+f.addEventListener('click',function(e){
+ var b=e.target.closest('[data-q]');
+ if(b){e.preventDefault();var now=Date.now(),k=b.getAttribute('data-q'),t,c=clock(now),mid=Date.parse(c.date+'T00:00:00+01:00');
+  if(k==='30'||k==='60')t=Math.ceil((now+k*60000)/300000)*300000;
+  else if(k==='t20')t=mid+20*3600000;
+  else if(k==='m20')t=mid+86400000+20*3600000;
+  else{var add=(6-c.dow+7)%7;if(add===0&&c.h>=18)add=7;t=mid+add*86400000+18*3600000;}
+  var p=clock(t);f.start_date.value=p.date;f.start_time.value=p.time;
+  f.querySelectorAll('[data-q]').forEach(function(x){x.classList.toggle('on',x===b);});when();return;}
+ var nb=e.target.closest('[data-n]');
+ if(nb){e.preventDefault();f.instant_players.value=nb.getAttribute('data-n');f.querySelectorAll('[data-n]').forEach(function(x){x.classList.toggle('on',x===nb);});when();}
+});
+f.addEventListener('input',function(e){if(e.target.name==='start_date'||e.target.name==='start_time')f.querySelectorAll('[data-q]').forEach(function(x){x.classList.remove('on');});if(e.target.name==='instant_players')f.querySelectorAll('[data-n]').forEach(function(x){x.classList.toggle('on',x.getAttribute('data-n')===e.target.value.replace(/[^0-9]/g,''));});});`;
   return appPage({ user, title: 'Create a pool', active: role === 'SPONSOR' ? '/sponsor/pools' : role === 'ADMIN' ? '/admin/pools' : '/pools', body, wallet, narrow: true, css: CREATE_CSS, script, theme, bgCss });
 }
