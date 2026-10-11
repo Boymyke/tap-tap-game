@@ -1,7 +1,7 @@
 // Player API: pools, taps, boosters, store, inventory, gifts, settings, calculator, ads, leads, account.
 import { isPattern } from '../ui/patterns.js';
 import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie } from '../lib.js';
-import { tierOf, isNepo, isPaid, requireRole, debit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
+import { tierOf, isNepo, isPaid, requireRole, debit, credit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
 import { perks, THEMES, SOUNDS } from '../tiers.js';
 import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool } from '../game/pools.js';
 import { allRanks, rankInfo } from '../game/ranks.js';
@@ -97,6 +97,18 @@ export async function handlePlayApi(req, env, path, user) {
     return json({ results: Object.fromEntries(results), skipped: ids.filter(i => !live.includes(i)), ...(limitInfo && limitInfo.allow === 0 ? { limit: 'You don reach your tap limit for now. Try again later.' } : {}) });
   }
 
+  // ── mystery boxes: open one, get a random reward (picked on the server) ──
+  if (path === '/api/box/open' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'box:' + user.id, 30, 600)) return json({ error: 'Easy small. Open the next one in a minute.' }, 429);
+    const box = await env.DB.prepare("SELECT * FROM store_items WHERE id=? AND kind='BOX'").bind(String(data.item || '')).first();
+    if (!box) return json({ error: 'Pick a box.' }, 400);
+    if (!await takeItem(env, user.id, box.id)) return json({ error: 'You no get this box. Buy one for the store.', redirect: '/store?tab=BOX', go: 'Store' }, 409);
+    const reward = await openBox(env, await loadUser(env, user.id), box);
+    return json({ message: reward.text, reward });
+  }
+
   // ── store & inventory ──
   if (path === '/api/store/buy' && req.method === 'POST') {
     const deny = requireRole(user, ['USER']); if (deny) return deny;
@@ -107,8 +119,8 @@ export async function handlePlayApi(req, env, path, user) {
     const me = await loadUser(env, user.id);
     const lock = itemLock(item, me);
     if (lock) return lock.need === 'RANK' ? json({ error: lock.why + '. Keep tapping to rank up.', code: 'UPGRADE', need: 'RANK', redirect: '/ranks', go: 'See ranks' }, 403) : upgradeError(`${item.name}: ${lock.why}.`, lock.need || 'MAPO');
-    const qty = item.kind === 'BOOSTER' ? clampInt(data.qty, 1, 100, 1) : 1;
-    if (item.kind !== 'BOOSTER' && await owns(env, user.id, item.id)) return json({ error: 'You don already get this one.' }, 409);
+    const qty = item.kind === 'BOOSTER' || item.kind === 'BOX' ? clampInt(data.qty, 1, 100, 1) : 1;
+    if (item.kind === 'SKIN' && await owns(env, user.id, item.id)) return json({ error: 'You don already get this one.' }, 409);
     const cost = item.price_kobo * qty;
     if (cost > 0) {
       if (!me.adult_confirmed_at) { if (data.adult !== true) return json({ error: 'Confirm you are 18 or older before using money in Tap Am.', code: 'ADULT' }, 403); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
@@ -322,4 +334,45 @@ export async function handlePlayApi(req, env, path, user) {
     return json({ message: 'Account archived. Log in again within 30 days to bring it back.', redirect: '/' }, 200, { 'set-cookie': sessionCookie('', 0) });
   }
   return null;
+}
+
+// Picks a reward from the box's list (weights), skipping things this player can't use or already owns.
+// The random number comes from crypto on the server, never from the browser.
+export async function openBox(env, me, box) {
+  const cfg = parseJson(box.config, {});
+  let list = Array.isArray(cfg.rewards) ? cfg.rewards : [];
+  const ids = list.filter(r => r.item).map(r => r.item);
+  const items = ids.length ? (await env.DB.prepare(`SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.id IN (${ids.map(() => '?').join(',')})`).bind(me.id, ...ids).all()).results : [];
+  const byId = Object.fromEntries(items.map(x => [x.id, x]));
+  list = list.filter(r => r.wallet > 0 || (byId[r.item] && !itemLock(byId[r.item], me) && !(byId[r.item].kind === 'SKIN' && byId[r.item].owned > 0)));
+  if (!list.length) list = [{ item: 'booster-2x', qty: 1, w: 1 }];
+  const total = list.reduce((a, r) => a + Math.max(1, Number(r.w) || 1), 0);
+  let roll = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296 * total, pick = list[0];
+  for (const r of list) { roll -= Math.max(1, Number(r.w) || 1); if (roll < 0) { pick = r; break; } }
+  if (pick.wallet > 0) {
+    const amt = Math.min(1000000, Math.floor(Number(pick.wallet)));
+    await credit(env, me.id, amt, { type: 'BOX_REWARD', reference: box.id, note: box.name });
+    return { kind: 'WALLET', amount: amt, text: `${box.name}: ${naira(amt)} landed in your wallet!` };
+  }
+  const it = byId[pick.item] || { id: 'booster-2x', name: 'Turbo 2×', kind: 'BOOSTER' };
+  const qty = Math.max(1, Math.min(10, Number(pick.qty) || 1));
+  await giveItem(env, me.id, it.id, qty, { gift: true, note: box.name });
+  return { kind: it.kind, item: it.id, name: it.name, qty, text: `${box.name}: you got ${qty}× ${it.name}!` };
+}
+
+// Free mystery box now and then for active players (checked when they open the home page).
+export async function maybeFreeBox(env, me, s) {
+  const days = num(s, 'free_box_days', 3);
+  if (!days || me.role !== 'USER') return null;
+  const now = Date.now(), due = new Date(now - days * 86400000).toISOString();
+  if (me.last_free_box_at && me.last_free_box_at > due) return null;
+  const lucky = crypto.getRandomValues(new Uint8Array(1))[0] < 90;   // about 35% each day the player shows up
+  // claim today's roll first, so refreshing the page can't roll again
+  const next = lucky ? new Date(now).toISOString() : new Date(now - (days - 1) * 86400000).toISOString();
+  const r = await env.DB.prepare('UPDATE users SET last_free_box_at=? WHERE id=? AND (last_free_box_at IS NULL OR last_free_box_at<=?)').bind(next, me.id, due).run();
+  if (!r.meta.changes || !lucky) return null;
+  const t = tierOf(me), boxId = t === 'NEPO' ? 'box-nepo' : t === 'MAPO' ? 'box-mapo' : 'box-basic';
+  await giveItem(env, me.id, boxId, 1, { gift: true, note: 'Free drop' });
+  await notify(env, me.id, 'A free mystery box dropped for you! Open it in your bag.', '/bag');
+  return boxId;
 }

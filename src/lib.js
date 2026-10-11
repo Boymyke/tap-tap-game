@@ -99,7 +99,7 @@ export async function currentUser(req, env) {
   if (!tokenOk(token)) return null;
   const id = await sha256Hex(token);
   const row = await env.DB.prepare(`SELECT u.id,u.username,u.email,u.role,u.tier,u.tier_until,u.status,u.lifetime_taps,u.games_played,u.wins,u.rank_level,u.referral_code,u.referral_count,
-      u.equipped_skin,u.prefs,u.gender,u.country,u.adult_confirmed_at,u.emoji,u.emoji_meaning,u.created_at,s.expires_at,
+      u.equipped_skin,u.prefs,u.gender,u.country,u.adult_confirmed_at,u.emoji,u.emoji_meaning,u.email_news,u.hide_profile,u.seed_set_at,u.last_free_box_at,u.created_at,s.expires_at,
       COALESCE(w.balance_kobo,0) AS w_balance, COALESCE(w.winnings_kobo,0) AS w_winnings,
       (SELECT COUNT(*) FROM notifications n WHERE n.user_id=u.id AND n.read=0) AS unread
     FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN wallets w ON w.user_id=u.id WHERE s.id=?`).bind(id).first();

@@ -23,7 +23,7 @@ export const isSponsor = u => u?.role === 'SPONSOR';
 export const isPlayer = u => u?.role === 'USER';
 export const tierLabel = u => (u?.role === 'SPONSOR' ? 'Sponsor' : u?.role === 'ADMIN' ? 'Super admin' : tierName(tierOf(u)));
 
-export const USER_COLS = 'id,username,email,role,tier,tier_until,status,lifetime_taps,games_played,wins,rank_level,referral_code,referral_count,equipped_skin,prefs,gender,country,adult_confirmed_at,archived_at,emoji,emoji_meaning,created_at';
+export const USER_COLS = 'id,username,email,role,tier,tier_until,status,lifetime_taps,games_played,wins,rank_level,referral_code,referral_count,equipped_skin,prefs,gender,country,adult_confirmed_at,archived_at,emoji,emoji_meaning,email_news,hide_profile,seed_set_at,last_free_box_at,created_at';
 export async function loadUser(env, id) {
   return env.DB.prepare(`SELECT ${USER_COLS} FROM users WHERE id=?`).bind(id).first();
 }

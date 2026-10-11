@@ -13,7 +13,7 @@ import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponso
 import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, setupPage, suggestPage } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
 import { handleAuthApi } from './auth-api.js';
-import { handlePlayApi } from './api/play.js';
+import { handlePlayApi, maybeFreeBox } from './api/play.js';
 import { handleMoneyApi, payCallback, paystackOn, testPayments, BANKS, autoPayouts } from './api/money.js';
 import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
@@ -276,6 +276,7 @@ async function route(req, env, url, path, user) {
   switch (path) {
     case '/dashboard': {
       if (user.role !== 'USER') return go(req, homeFor(user));
+      try { await maybeFreeBox(env, user, b.s); } catch (e) { console.error('free box', e?.message); }
       if (!user.referral_code) {   // accounts made before referrals existed
         for (let i = 0; i < 5 && !user.referral_code; i++) { const c = randomCode(6); const r = await env.DB.prepare('UPDATE users SET referral_code=? WHERE id=? AND referral_code IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE referral_code=?)').bind(c, user.id, c).run(); if (r.meta.changes) user.referral_code = c; }
       }
@@ -313,14 +314,14 @@ async function route(req, env, url, path, user) {
     case '/play': return playRoute(req, env, url, user, b);
     case '/store': {
       if (user.role !== 'USER') return go(req, homeFor(user));
-      const tab = q.get('tab') === 'SKIN' ? 'SKIN' : 'BOOSTER';
-      const items = (await env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.active=1 AND s.kind IN ('BOOSTER','SKIN') ORDER BY s.sort, s.price_kobo").bind(user.id).all()).results
+      const tab = ['SKIN', 'BOX'].includes(q.get('tab')) ? q.get('tab') : 'BOOSTER';
+      const items = (await env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.active=1 AND s.kind IN ('BOOSTER','SKIN','BOX') ORDER BY s.sort, s.price_kobo").bind(user.id).all()).results
         .map(i => ({ ...i, lock: itemLock(i, user), equipped: i.kind === 'SKIN' && user.equipped_skin === i.id }));
-      return html(storePage({ ...b, items, tab }));
+      return html(storePage({ ...b, items, tab, group: q.get('g') }));
     }
     case '/bag': {
       const inv = (await env.DB.prepare(`SELECT s.id AS item_id, s.name, s.kind, s.multiplier, s.duration_seconds, s.audience, s.config, s.per_game_limit, COALESCE(i.quantity,0) AS quantity, s.price_kobo, s.min_rank
-        FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE ((i.quantity>0) OR (s.kind='SKIN' AND s.price_kobo=0 AND s.active=1)) AND s.kind IN ('BOOSTER','SKIN') ORDER BY s.sort`).bind(user.id).all()).results
+        FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE ((i.quantity>0) OR (s.kind='SKIN' AND s.price_kobo=0 AND s.active=1)) AND s.kind IN ('BOOSTER','SKIN','BOX') ORDER BY s.sort`).bind(user.id).all()).results
         .filter(i => i.quantity > 0 || !itemLock(i, user)).map(i => ({ ...i, equipped: i.kind === 'SKIN' && user.equipped_skin === i.item_id }));
       // Patterns this player owns (from any skin they have, free ones included) for "Your tap area".
       const patterns = [...new Set(inv.filter(i => i.kind === 'SKIN').map(i => parseJson(i.config, {}).pattern).filter(k => PATTERNS[k]))];
@@ -533,14 +534,14 @@ async function adminRoute(req, env, url, path, user) {
     const [wallet, inv, items, entries, profile, flags] = await Promise.all([
       getWallet(env, target.id),
       env.DB.prepare('SELECT s.name, s.kind, i.quantity FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND i.quantity>0').bind(target.id).all(),
-      env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN') ORDER BY kind, sort").all(),
+      env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN','BOX') ORDER BY kind, sort").all(),
       env.DB.prepare('SELECT pe.*, p.name FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id WHERE pe.user_id=? ORDER BY pe.joined_at DESC LIMIT 30').bind(target.id).all(),
       target.role === 'SPONSOR' ? env.DB.prepare('SELECT * FROM sponsor_profiles WHERE user_id=?').bind(target.id).first() : null,
       env.DB.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='anticheat.flag' AND detail LIKE ?").bind(`%${target.id}%`).first()]);
     return html(adminUser({ ...b, target, wallet, inv: inv.results, items: items.results, entries: entries.results, rankName: ranks.find(r => r.level === target.rank_level)?.name || '', profile, flags: Number(flags?.n || 0) }));
   }
   if (path === '/admin/gifts') {
-    const [items, recent] = await env.DB.batch([env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN') AND active=1 ORDER BY kind, sort"), env.DB.prepare("SELECT detail,created_at FROM audit_logs WHERE action='gift.bulk' ORDER BY created_at DESC LIMIT 20")]);
+    const [items, recent] = await env.DB.batch([env.DB.prepare("SELECT id,name,kind,audience FROM store_items WHERE kind IN ('BOOSTER','SKIN','BOX') AND active=1 ORDER BY kind, sort"), env.DB.prepare("SELECT detail,created_at FROM audit_logs WHERE action='gift.bulk' ORDER BY created_at DESC LIMIT 20")]);
     return html(adminGifts({ ...b, items: items.results, recent: recent.results }));
   }
   if (path === '/admin/pools') {
