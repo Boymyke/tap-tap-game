@@ -145,7 +145,8 @@ async function startCardPayment(env, req, user, purpose, kobo) {
   try {
     const data = await ps(env, 'POST', '/transaction/initialize', { email: user.email, amount: kobo, currency: 'NGN', reference, callback_url: `${origin}/pay/callback`, metadata: { purpose, user_id: user.id } });
     if (!/^https:\/\//.test(data?.authorization_url || '')) throw new Error('No payment link');
-    return json({ redirect: data.authorization_url });
+    // The page opens Paystack's checkout as a popup over Tap Am (access code); the link is the fallback.
+    return json({ redirect: data.authorization_url, paystack: { accessCode: String(data.access_code || ''), reference } });
   } catch (e) {
     console.error('paystack init', e?.message);
     await env.DB.prepare("UPDATE payments SET status='FAILED' WHERE reference=? AND status='PENDING'").bind(reference).run();
@@ -258,6 +259,29 @@ export async function handleMoneyApi(req, env, path, user) {
   const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
   const me = await loadUser(env, user.id);
   const s = await settings(env);
+
+  // After the Paystack popup says "paid": confirm with Paystack (never trust the browser) and credit once.
+  if (path === '/api/wallet/verify' && req.method === 'POST') {
+    const { data, response } = await readJson(req); if (response) return response;
+    const ref = String(data.reference || '');
+    if (!/^TA-[a-f0-9]{8,30}$/.test(ref)) return json({ error: 'Unknown payment.' }, 400);
+    if (!await allow(env, 'payverify:' + user.id, 60, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const pay = await env.DB.prepare('SELECT reference,user_id,purpose,amount_kobo,status FROM payments WHERE reference=?').bind(ref).first();
+    if (!pay || pay.user_id !== user.id) return json({ error: 'Unknown payment.' }, 404);
+    const done = () => json({ status: 'paid', amount: pay.amount_kobo, purpose: pay.purpose, plan: fromPurpose(pay.purpose), wallet: null });
+    if (pay.status === 'SUCCESS') return done();
+    if (!paystackOn(env) || useBachs(env)) return json({ status: 'pending' });
+    let d;
+    try { d = await ps(env, 'GET', `/transaction/verify/${encodeURIComponent(ref)}`); }
+    catch (e) { console.error('pay verify', e?.message); return json({ status: 'pending' }); }
+    if (d.status === 'success' && String(d.currency || 'NGN').toUpperCase() === 'NGN') {
+      const r = await applyPayment(env, ref, d.amount);
+      if (r.ok || r.already) return done();
+      return json({ status: 'failed', error: 'The amount paid did not match. Contact Tap Am through the Suggest page.' });
+    }
+    if (['failed', 'abandoned', 'reversed'].includes(d.status)) return json({ status: 'failed', error: 'Payment no go through. No money was taken.' });
+    return json({ status: 'pending' });
+  }
 
   if (path === '/api/wallet' && req.method === 'GET') {
     const page = clampInt(new URL(req.url).searchParams.get('page'), 1, 1000, 1);
@@ -425,7 +449,7 @@ export async function handleMoneyApi(req, env, path, user) {
 
 // The gateway sends players back here after paying. Nothing is credited because of this visit alone:
 // the payment is looked up with the gateway first.
-const doneUrl = r => (r?.purpose === 'SPONSOR_FUND' ? '/sponsor?paid=1' : fromPurpose(r?.purpose) ? '/me?plan=1' : '/wallet?paid=1');
+const doneUrl = (r, ref = '') => (r?.purpose === 'SPONSOR_FUND' ? '/sponsor?paid=1' : fromPurpose(r?.purpose) ? '/me?plan=1' : '/wallet?paid=1' + (ref ? '&ref=' + encodeURIComponent(ref) : ''));
 export async function payCallback(req, env, refFromPath = '') {
   if (refFromPath) {
     if (!useBachs(env) || !/^TA-[a-f0-9]{8,30}$/.test(refFromPath)) return '/wallet?paid=0';
@@ -441,7 +465,7 @@ export async function payCallback(req, env, refFromPath = '') {
     const d = await ps(env, 'GET', `/transaction/verify/${encodeURIComponent(ref)}`);
     if (d.status !== 'success' || String(d.currency || 'NGN').toUpperCase() !== 'NGN') return '/wallet?paid=0';
     const r = await applyPayment(env, ref, d.amount);
-    return doneUrl(r);
+    return doneUrl(r, ref);
   } catch { return '/wallet?paid=0'; }
 }
 

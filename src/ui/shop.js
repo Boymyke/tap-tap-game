@@ -162,7 +162,7 @@ if(mp){var f=mp.closest('form');function pad(){var c=f.padColor.value,k=(f.query
 const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' , GIFT_SENT: 'Sent to a player', GIFT_RECEIVED: 'From a player', CONVERT: 'Winnings to wallet', BOX_REWARD: 'Mystery box', POOL_TOPUP: 'Added to a prize', TIME_BUY: 'Extra game time', EMAIL_BLAST: 'Pool email to players', STAKE: 'Tap-off stake' };
 export const txLabel = t => TX[t] || t;
 export function walletPage(ctx) {
-  const { user, wallet, tx, page, hasNext, withdrawals, minWithdraw, banks, payMode, flash, perDay, theme, bgCss, tierKey, dayCap = 100000000 } = ctx;
+  const { user, wallet, tx, page, hasNext, withdrawals, minWithdraw, banks, payMode, flash, perDay, theme, bgCss, tierKey, dayCap = 100000000, added = 0 } = ctx;
   const sponsor = user.role === 'SPONSOR';
   const body = `<h1 class="h1">Wallet</h1>
 ${flash ? `<div class="panel" style="margin-bottom:12px;box-shadow:0 0 0 3px var(--green)">${esc(flash)}</div>` : ''}
@@ -195,12 +195,14 @@ ${withdrawals.length ? `<h2 class="h2">Withdrawals</h2><div class="list" data-pa
 <h2 class="h2">History <a href="/wallet/history.csv" data-no-swap download>Download CSV</a></h2>${tx.length ? `<div class="list">${tx.map(t => `<div class="item"><div class="grow"><div class="t" style="font-size:15px">${esc(txLabel(t.type))}</div><div class="s">${esc(t.note || '')}${t.note ? ' · ' : ''}${t.balance === 'WINNINGS' ? 'Winnings' : t.balance === 'CARD' ? 'Card' : 'Wallet'} · ${esc(lagos(t.created_at))}</div></div><b class="amt ${t.amount_kobo >= 0 ? 'pos' : 'neg'}">${t.amount_kobo >= 0 ? '+' : '−'}${esc(naira(Math.abs(t.amount_kobo)))}</b></div>`).join('')}</div>${pager('/wallet', page, hasNext)}` : '<div class="empty">No money movement yet.</div>'}`;
   // Withdrawals: once the bank and a 10-digit account number are in, ask the bank for the account name
   // (Paystack). The server checks it again when the withdrawal is sent; this only fills the form.
-  const script = payMode === 'paystack' || payMode === 'bachs' ? `
+  // Back from the payment page with money added: celebrate it once, then tidy the address bar.
+  const addedJs = added > 0 ? `TA.celebrate(${JSON.stringify(naira(added))} + ' added!', 'E don land for your wallet');try{history.replaceState(history.state,'','/wallet');}catch(e){}` : '';
+  const script = addedJs + (payMode === 'paystack' || payMode === 'bachs' ? `
 var f=document.querySelector('form[data-api="/api/withdraw"]');if(f){var b=f.querySelector('[name=bank_code]'),n=f.querySelector('[name=account_number]'),a=f.querySelector('[name=account_name]'),e=f.querySelector('[data-err=account_number]'),last='';
  a.readOnly=true;a.placeholder='Filled in by your bank';
  function look(){var num=String(n.value).replace(/\\D/g,''),bc=b.value,key=bc+':'+num;if(num.length!==10||!bc){a.value='';last='';return;}if(key===last)return;last=key;a.value='Checking…';if(e)e.textContent='';
   TA.api('/api/bank/resolve',{account_number:num,bank_code:bc}).then(function(j){if(key!==last)return;if(j._ok&&j.account_name){a.value=j.account_name;}else{a.value='';if(j.account_name===null){a.readOnly=false;a.placeholder='Type the account name';}else if(e)e.textContent=j.error||'We no fit confirm this account. Check the number and bank.';}});}
- b.addEventListener('change',look);n.addEventListener('input',look);}` : '';
+ b.addEventListener('change',look);n.addEventListener('input',look);}` : '');
   return appPage({ user, title: 'Wallet', active: '/wallet', body, wallet, theme, bgCss, script });
 }
 

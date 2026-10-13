@@ -21,7 +21,7 @@ import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
 import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex, likeEsc, logError, memo } from './lib.js';
 import { PATTERNS } from './ui/patterns.js';
-import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay } from './core.js';
+import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay, naira } from './core.js';
 import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
 import { listStmt, getPool, poolPublic, roomCall, joinBlock, expireWaiting, closeVotes, voteCounts } from './game/pools.js';
@@ -440,8 +440,13 @@ async function route(req, env, url, path, user) {
       const [tx, wd] = await env.DB.batch([
         env.DB.prepare('SELECT type,amount_kobo,balance,note,created_at FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 21 OFFSET ?').bind(user.id, (pg - 1) * 20),
         env.DB.prepare('SELECT * FROM withdrawals WHERE user_id=? ORDER BY created_at DESC LIMIT 10').bind(user.id)]);
-      const flash = q.get('paid') === '1' ? 'Payment received. Your wallet don update.' : q.get('paid') === '0' ? 'Payment no go through. No money was taken.' : '';
-      return html(walletPage({ ...b, tx: tx.results.slice(0, 20), page: pg, hasNext: tx.results.length > 20, withdrawals: wd.results, minWithdraw: b.perk ? b.perk.minWithdraw : 0, banks: await banksFor(env), payMode: payMode(env), flash, perDay: Math.max(1, num(b.s, 'withdrawals_per_day', 1)), dayCap: num(b.s, 'withdraw_daily_max_kobo', 100000000) }));
+      let flash = q.get('paid') === '1' ? 'Payment received. Your wallet don update.' : q.get('paid') === '0' ? 'Payment no go through. No money was taken.' : q.get('paid') === 'wait' ? 'We dey confirm your payment. Your wallet updates in a minute.' : '';
+      let added = 0;
+      if (q.get('paid') === '1' && /^TA-[a-f0-9]{8,30}$/.test(q.get('ref') || '')) {   // only this player's own, confirmed payment
+        const p = await env.DB.prepare("SELECT amount_kobo FROM payments WHERE reference=? AND user_id=? AND status='SUCCESS' AND purpose IN ('FUND','SPONSOR_FUND')").bind(q.get('ref'), user.id).first();
+        if (p) { added = Number(p.amount_kobo); flash = `${naira(added)} don land for your wallet!`; }
+      }
+      return html(walletPage({ ...b, tx: tx.results.slice(0, 20), page: pg, hasNext: tx.results.length > 20, withdrawals: wd.results, minWithdraw: b.perk ? b.perk.minWithdraw : 0, banks: await banksFor(env), payMode: payMode(env), flash, added, perDay: Math.max(1, num(b.s, 'withdrawals_per_day', 1)), dayCap: num(b.s, 'withdraw_daily_max_kobo', 100000000) }));
     }
     case '/wallet/history.csv': {
       if (!await allow(env, 'csv:' + user.id, 20, 3600)) return new Response('Too many downloads. Try again later.', { status: 429 });

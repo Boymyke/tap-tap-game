@@ -215,10 +215,69 @@
   };
   function after(j, el) {
     var ok = el.getAttribute('data-ok') || '';
+    if (j._ok && j.paystack && j.paystack.accessCode && j.redirect) { TA.paystack(j); return; }   // card payment: Paystack popup
     if (j.redirect && j._ok) { if (j.message) flash(j.message); TA.go(j.redirect); return; }
     if (ok === 'reload' || j.reload) { if (j.message) flash(j.message); TA.go(location.pathname + location.search, { replace: true, fresh: true }); return; }
     if (ok.indexOf('redirect:') === 0) { TA.go(ok.slice(9)); return; }
     if (j.message) TA.toast(j.message);
+  }
+  /* ── card payments: Paystack's checkout opens as a popup over Tap Am ──
+     A clear "Opening secure payment…" screen shows while it loads, "Confirming…" while we check with
+     Paystack, then a celebration with the amount. The server confirms every payment with Paystack itself;
+     the popup saying "paid" is never trusted. If the popup can't load, the full Paystack page opens. */
+  var payOv = null, psLoad = null;
+  function payOverlay(title, sub) {
+    if (!payOv) {
+      payOv = document.createElement('div'); payOv.className = 'payov'; payOv.setAttribute('role', 'alertdialog'); payOv.setAttribute('aria-modal', 'true'); payOv.setAttribute('aria-live', 'polite');
+      payOv.innerHTML = '<div class="payov-in"><div class="payov-ring" aria-hidden="true"><span>₦</span></div><b class="payov-t"></b><p class="payov-s"></p><div class="payov-lock" aria-hidden="true">🔒 Secured by Paystack</div></div>';
+    }
+    if (!payOv.isConnected) document.body.appendChild(payOv);
+    payOv.querySelector('.payov-t').textContent = title; payOv.querySelector('.payov-s').textContent = sub || '';
+    payOv.hidden = false; document.documentElement.classList.add('is-paying');
+  }
+  function payOverlayOff() { if (payOv) payOv.hidden = true; document.documentElement.classList.remove('is-paying'); }
+  TA.payOverlay = payOverlay; TA.payOverlayOff = payOverlayOff;
+  function loadPaystack() {
+    if (window.PaystackPop) return Promise.resolve();
+    if (psLoad) return psLoad;
+    psLoad = new Promise(function (ok, no) {
+      var s = document.createElement('script'); s.src = 'https://js.paystack.co/v2/inline.js'; s.async = true; if (NONCE) s.nonce = NONCE;
+      s.onload = function () { window.PaystackPop ? ok() : no(); }; s.onerror = no;
+      document.head.appendChild(s);
+      setTimeout(function () { if (!window.PaystackPop) no(); }, 9000);
+    });
+    psLoad.catch(function () { psLoad = null; });
+    return psLoad;
+  }
+  TA.paystack = function (j) {
+    var ps = j.paystack, ended = false;
+    function fallback() { if (ended) return; ended = true; payOverlay('Opening Paystack…', 'Taking you to the secure payment page.'); location.href = j.redirect; }
+    payOverlay('Opening secure payment…', 'Paystack dey open. No close this page.');
+    loadPaystack().then(function () {
+      try {
+        new window.PaystackPop().resumeTransaction(ps.accessCode, {
+          onLoad: function () { payOverlayOff(); },
+          onSuccess: function () { ended = true; confirmPay(ps.reference, 0); },
+          onCancel: function () { ended = true; payOverlayOff(); TA.toast('Payment cancelled. No money was taken.'); },
+          onError: fallback
+        });
+      } catch (e) { fallback(); }
+    }, fallback);
+  };
+  function confirmPay(ref, n) {
+    payOverlay('Confirming your payment…', 'We dey check with Paystack. E no go take long.');
+    TA.api('/api/wallet/verify', { reference: ref }).then(function (r) {
+      if (r._ok && r.status === 'paid') {
+        payOverlayOff();
+        if (r.plan) TA.celebrate((r.plan.tier === 'NEPO' ? 'Nepo' : 'Mapo') + ' baby!', 'Your ' + (r.plan.plan === 'year' ? 'yearly' : 'monthly') + ' plan is active now');
+        else TA.celebrate(TA.naira(r.amount) + ' added!', 'E don land for your wallet');
+        TA.go(location.pathname, { replace: true, fresh: true });
+        return;
+      }
+      if (r.status === 'failed') { payOverlayOff(); TA.toast(r.error || 'Payment no go through. No money was taken.', 'err'); return; }
+      if (n < 8) { setTimeout(function () { confirmPay(ref, n + 1); }, 2500); return; }
+      payOverlayOff(); TA.toast('Paystack never confirm am yet. Your wallet go update by itself once e land.', 'err', '/wallet', 'Wallet');
+    });
   }
   function flash(m) { try { sessionStorage.setItem('ta-flash', m); } catch (e) {} }
   function showFlash() { try { var f = sessionStorage.getItem('ta-flash'); if (f) { sessionStorage.removeItem('ta-flash'); setTimeout(function () { TA.toast(f); }, 60); } } catch (e) {} }
@@ -537,7 +596,7 @@
     opts = opts || {};
     if (!document.body.classList.contains('app-body') || !window.DOMParser || !history.pushState) { location.href = url; return; }
     // Another site (like the Paystack payment page) can't be fetched from here: just go there.
-    try { if (new URL(url, location.href).origin !== location.origin) { location.href = url; return; } } catch (e) { location.href = url; return; }
+    try { if (new URL(url, location.href).origin !== location.origin) { if (/paystack\.(co|com)$/.test(new URL(url).hostname)) payOverlay('Opening Paystack…', 'Taking you to the secure payment page.'); location.href = url; return; } } catch (e) { location.href = url; return; }
     var seq = ++navSeq;
     document.documentElement.classList.add('is-nav'); progress(true);
     getPage(url, opts.fresh).then(function (res) {
@@ -621,6 +680,7 @@
   // pages restored from the browser's back/forward cache don't re-run scripts
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
+    payOverlayOff(); $$('.is-loading').forEach(function (b) { b.classList.remove('is-loading'); });
     var i = stateIdx(), isBack = i === null || i < navIdx();
     if (i !== null) navIdx(i);
     if (isBack) onBack(); else backed(false);

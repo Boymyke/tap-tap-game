@@ -9,7 +9,7 @@ export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const BRAND = 'Tap Am';
 export const TAGLINE = 'tap ammm make you chop moneyyyy';
 export const FERRN_URL = 'https://www.ferrnagency.com';
-export const ASSET_VERSION = '12';
+export const ASSET_VERSION = '13';
 
 // Tone-on-tone diamond texture for cards (like printed match cards).
 const PATTERN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Cpath d='M0 0l14 14L0 28zM28 0l14 14-14 14zM14 28l14 14-14 14zM42 28l14 14-14 14z'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='.09'%3E%3Cpath d='M28 0L14 14l14 14zM56 0L42 14l14 14zM28 28L14 42l14 14zM56 28L42 42l14 14z'/%3E%3C/g%3E%3C/svg%3E\")";
@@ -143,6 +143,17 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 .netbar-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.3);animation:blink 1s infinite}
 .netbar.ok .netbar-dot{background:var(--ink);box-shadow:none;animation:none}
 @keyframes blink{50%{opacity:.35}}
+.payov{position:fixed;inset:0;z-index:130;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 40%,#2a3fae,#150B33 70%);animation:payov-in .2s ease-out}
+.payov[hidden]{display:none}
+.payov-in{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:320px;text-align:center;color:#fff}
+.payov-ring{position:relative;display:grid;place-items:center;width:92px;height:92px;margin-bottom:6px;border-radius:50%;background:var(--sunny);border:4px solid #fff;box-shadow:0 6px 0 var(--sunny-d),0 18px 40px rgba(0,0,0,.45)}
+.payov-ring span{font:900 40px/1 var(--display);color:var(--ink)}
+.payov-ring::after{content:"";position:absolute;inset:-12px;border-radius:50%;border:5px solid rgba(255,255,255,.18);border-top-color:var(--green);animation:spin .9s linear infinite}
+.payov-t{font:900 26px/1.1 var(--display);text-shadow:var(--ts)}
+.payov-s{margin:0;font:600 15px/1.4 var(--body);opacity:.92}
+.payov-lock{margin-top:8px;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.12);font:700 12px var(--body)}
+@keyframes payov-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.payov-ring::after{animation:none}.payov{animation:none}}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 92px);z-index:105;transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 24px);padding:10px 10px 10px 16px;border-radius:18px;background:var(--ink);color:#fff;font:600 15px/1.35 var(--body);box-shadow:0 12px 30px rgba(0,0,0,.45);animation:toast-in .22s cubic-bezier(.2,1.3,.4,1)}
 .toast.err{background:#fff;color:var(--ink);box-shadow:0 0 0 3px var(--danger),0 12px 30px rgba(0,0,0,.45)}
 .toast .ico{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--green);color:var(--ink);font-weight:900}
