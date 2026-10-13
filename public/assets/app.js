@@ -256,7 +256,8 @@
     loadPaystack().then(function () {
       try {
         new window.PaystackPop().resumeTransaction(ps.accessCode, {
-          onLoad: function () { payOverlayOff(); },
+          // Paystack's window sits above this screen; keep it as a branded backdrop while their form loads
+          onLoad: function () { payOverlay('Complete your payment', 'Finish in the Paystack window. Your wallet updates the moment it goes through.'); },
           onSuccess: function () { ended = true; confirmPay(ps.reference, 0); },
           onCancel: function () { ended = true; payOverlayOff(); TA.toast('Payment cancelled. No money was taken.'); },
           onError: fallback
