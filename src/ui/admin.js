@@ -386,6 +386,7 @@ export function adminLoginPage() {
       <div class="ta-msg" role="alert"></div>
       <button class="btn btn--block" type="submit">Enter admin</button>
     </form>
+    <p class="ta-note" style="margin:14px 0 0">Forgot your password? <a href="/login#reset-email">Get a reset code by email</a> (sent to the admin email address).</p>
   </div>
   <p style="text-align:center;margin-top:14px"><a href="/" style="color:#fff">Back to Tap Am</a></p>
 </main>`;

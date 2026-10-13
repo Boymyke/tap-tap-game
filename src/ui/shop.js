@@ -193,7 +193,15 @@ ${sponsor ? '' : `<h2 class="h2">Withdraw winnings</h2><div class="panel">
   ${field({ label: 'Your password', name: 'password', type: 'password', attrs: 'autocomplete="current-password" maxlength="128" required', hint: 'To confirm it is really you.' })}`, { submit: 'Request withdrawal' })}</div>
 ${withdrawals.length ? `<h2 class="h2">Withdrawals</h2><div class="list" data-paginate="5">${withdrawals.map(w => `<div class="item"><div class="grow"><div class="t" style="font-size:16px">${esc(naira(w.amount_kobo))} to ${esc(w.bank_name || w.bank_code)} ••${esc(String(w.account_number).slice(-4))}</div><div class="s">${esc(lagos(w.created_at))}${w.admin_note && w.status !== 'REJECTED' && w.status !== 'FAILED' ? ' · ' + esc(w.admin_note) : ''}</div>${(w.status === 'REJECTED' || w.status === 'FAILED') && w.admin_note ? `<div class="s" style="color:#A3122A;font-weight:700;margin-top:4px">Reason: ${esc(w.admin_note)}</div>` : ''}</div><span class="badge ${w.status === 'PAID' ? 'live' : w.status === 'REJECTED' || w.status === 'FAILED' ? 'red' : 'soon'}">${w.status.toLowerCase()}</span></div>`).join('')}</div>` : ''}`}
 <h2 class="h2">History <a href="/wallet/history.csv" data-no-swap download>Download CSV</a></h2>${tx.length ? `<div class="list">${tx.map(t => `<div class="item"><div class="grow"><div class="t" style="font-size:15px">${esc(txLabel(t.type))}</div><div class="s">${esc(t.note || '')}${t.note ? ' · ' : ''}${t.balance === 'WINNINGS' ? 'Winnings' : t.balance === 'CARD' ? 'Card' : 'Wallet'} · ${esc(lagos(t.created_at))}</div></div><b class="amt ${t.amount_kobo >= 0 ? 'pos' : 'neg'}">${t.amount_kobo >= 0 ? '+' : '−'}${esc(naira(Math.abs(t.amount_kobo)))}</b></div>`).join('')}</div>${pager('/wallet', page, hasNext)}` : '<div class="empty">No money movement yet.</div>'}`;
-  return appPage({ user, title: 'Wallet', active: '/wallet', body, wallet, theme, bgCss });
+  // Withdrawals: once the bank and a 10-digit account number are in, ask the bank for the account name
+  // (Paystack). The server checks it again when the withdrawal is sent; this only fills the form.
+  const script = payMode === 'paystack' || payMode === 'bachs' ? `
+var f=document.querySelector('form[data-api="/api/withdraw"]');if(f){var b=f.querySelector('[name=bank_code]'),n=f.querySelector('[name=account_number]'),a=f.querySelector('[name=account_name]'),e=f.querySelector('[data-err=account_number]'),last='';
+ a.readOnly=true;a.placeholder='Filled in by your bank';
+ function look(){var num=String(n.value).replace(/\\D/g,''),bc=b.value,key=bc+':'+num;if(num.length!==10||!bc){a.value='';last='';return;}if(key===last)return;last=key;a.value='Checking…';if(e)e.textContent='';
+  TA.api('/api/bank/resolve',{account_number:num,bank_code:bc}).then(function(j){if(key!==last)return;if(j._ok&&j.account_name){a.value=j.account_name;}else{a.value='';if(j.account_name===null){a.readOnly=false;a.placeholder='Type the account name';}else if(e)e.textContent=j.error||'We no fit confirm this account. Check the number and bank.';}});}
+ b.addEventListener('change',look);n.addEventListener('input',look);}` : '';
+  return appPage({ user, title: 'Wallet', active: '/wallet', body, wallet, theme, bgCss, script });
 }
 
 // ── Plans: Lapo / Mapo / Nepo ───────────────────────────────────────────────

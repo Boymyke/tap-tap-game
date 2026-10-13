@@ -536,6 +536,8 @@
   TA.go = function (url, opts) {
     opts = opts || {};
     if (!document.body.classList.contains('app-body') || !window.DOMParser || !history.pushState) { location.href = url; return; }
+    // Another site (like the Paystack payment page) can't be fetched from here: just go there.
+    try { if (new URL(url, location.href).origin !== location.origin) { location.href = url; return; } } catch (e) { location.href = url; return; }
     var seq = ++navSeq;
     document.documentElement.classList.add('is-nav'); progress(true);
     getPage(url, opts.fresh).then(function (res) {
