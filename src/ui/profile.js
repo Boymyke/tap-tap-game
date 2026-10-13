@@ -64,9 +64,11 @@ ${taps ? tapsSection(taps) : ''}
   <div class="panel stat"><span class="k">Games</span><span class="v">${short(user.games_played)}</span></div>
   <div class="panel stat"><span class="k">Wins</span><span class="v">${short(user.wins)}</span></div>
 </div>
+<div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start;margin-top:14px"></div>
 <h2 class="h2">Your stuff</h2>
 <div class="tiles">
-  ${tile('/settings', 'Settings', 'Password, privacy, sounds', 'c-ink')}
+  ${tile('/challenges', 'Tap-offs', 'Challenge a player 1-on-1', 'c-purple')}
+  ${tile('/settings', 'Settings', 'Password, WhatsApp, privacy', 'c-ink')}
   ${tile('/bag', 'My bag', 'Boosters and skins', 'c-orange')}
   ${tile('/ranks', 'Ranks', 'What every rank unlocks', 'c-pink')}
   ${tile(`/u/${encodeURIComponent(user.username)}`, 'My profile', 'See it like others do, and share it', 'c-sky')}
@@ -158,6 +160,11 @@ export function settingsPage(ctx) {
   const soundOpts = SOUNDS.map(snd => [snd.id, `${snd.name}${!paid && snd.id !== 'pop' ? ' (Mapo/Nepo)' : lvl < snd.minRank ? ` (rank ${snd.minRank})` : ''}`]);
   const body = `<h1 class="h1">Settings</h1>
 <div class="panel set">
+  <h2>WhatsApp number</h2><p class="sub2">So Tap Am can reach you about prizes and your account. Never shown to other players.</p>
+  ${form('/api/account/whatsapp', `${field({ label: 'WhatsApp number', name: 'whatsapp', type: 'tel', value: user.whatsapp || '', placeholder: '0803 123 4567', attrs: 'inputmode="tel" autocomplete="tel" maxlength="20" required' })}${field({ label: 'Your password', name: 'password', type: 'password', attrs: 'autocomplete="current-password" maxlength="128" required' })}`, { submit: user.whatsapp ? 'Update number' : 'Save number' })}
+  <div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start;margin-top:10px"></div>
+</div>
+<div class="panel set">
   <h2>Background</h2><p class="sub2">${nepo ? 'Backgrounds made by the Tap Am team. Shows across the app and in games.' : 'Nepo babies can change their background.'}</p>
   ${nepo ? form('/api/prefs', `<div class="bgs"><label class="bgopt" style="background:linear-gradient(165deg,#6A35FF,#1B0B4D)"><input type="radio" name="bg" value="none" ${!prefs.bg ? 'checked' : ''}>Default</label>${backgrounds.map(b => `<label class="bgopt" style="background:${esc(backgroundCss(b))}"><input type="radio" name="bg" value="${esc(b.id)}" ${prefs.bg === b.id ? 'checked' : ''}>${esc(b.name)}</label>`).join('')}</div>`, { submit: 'Save background' })
     : `<div class="bgs" style="margin-bottom:12px">${backgrounds.slice(0, 4).map(b => `<div class="bgopt" style="background:${esc(backgroundCss(b))};opacity:.6">${esc(b.name)}</div>`).join('')}</div><button type="button" class="btn btn--soft btn--block" ${upgradeAttrs('NEPO', 'Backgrounds')}>${ICONS.lock} Unlock backgrounds with Nepo</button>`}
@@ -204,7 +211,7 @@ document.querySelectorAll('form.phrase-form').forEach(function(f){f.addEventList
     var out=document.querySelector('.phrase-out');out.hidden=false;out.textContent='';var p=document.createElement('p');p.className='small';p.style.margin='10px 0 6px';p.textContent=(j.message||'Your 12 words')+'. Write them down in order and keep them secret.';out.appendChild(p);
     var ol=document.createElement('ol');ol.className='words';String(j.phrase||'').split(' ').forEach(function(w){var li=document.createElement('li');li.textContent=w;ol.appendChild(li);});out.appendChild(ol);f.password.value='';});
 },true);});
-var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=9').then(function(){window.TASound.play(s,12,true);});});`;
+var t=document.querySelector('[data-try-sound]');if(t)t.addEventListener('click',function(){var s=t.closest('form').querySelector('select[name=sound]').value;TA.loadScript('/assets/sounds.js?v=10').then(function(){window.TASound.play(s,12,true);});});`;
   return appPage({ user, title: 'Settings', active: '/me', body, wallet, css: SET_CSS, script, narrow: true, theme, bgCss });
 }
 
@@ -221,11 +228,12 @@ function run(){out.innerHTML='<div class="empty"><span class="ring"></span></div
  if(!j._ok){out.innerHTML='<div class="empty">'+esc(j.error||'Error')+'</div>';return;}
  if(!j.pools.length){out.innerHTML='<div class="empty">Join some pools first, then come back.</div>';return;}
  var h='';if(j.best)h+='<div class="tcard card c-green" style="margin-bottom:14px"><h3>Best move</h3><p>Use <b>'+j.best.uses+'× '+esc(j.best.itemName)+'</b> in <b>'+esc(j.best.poolName)+'</b> — e fit carry you to the <b>top '+j.best.reach+'</b>.</p><a class="btn btn--sm" href="/play?pools='+encodeURIComponent(j.best.pool)+'" data-no-swap>Go there</a></div>';
- else h+='<div class="panel" style="margin-bottom:14px">No booster go change your position much right now. Keep tapping and check again.</div>';
+ else h+='<div class="panel" style="margin-bottom:14px">The boosters you have won’t change your position much right now.</div>';
+ if(j.bestBuy)h+='<div class="tcard card c-sunny" style="margin-bottom:14px"><h3>Or buy and climb higher</h3><p>Buy <b>'+j.bestBuy.buy+'× '+esc(j.bestBuy.itemName)+'</b> for <b>'+TA.naira(j.bestBuy.cost)+'</b> and use '+j.bestBuy.uses+' in <b>'+esc(j.bestBuy.poolName)+'</b> — e fit carry you to the <b>top '+j.bestBuy.reach+'</b>.</p><a class="btn btn--sm" href="/store?tab=BOOSTER">Go to the store</a></div>';
  j.pools.forEach(function(p){h+='<div class="panel" style="margin-bottom:12px"><div class="row"><b style="font:900 19px var(--display)">'+esc(p.name)+'</b><span class="badge">#'+(p.rank||'—')+' of '+p.total+'</span></div>';
   if(!p.boostersAllowed)h+='<p class="small muted" style="margin:6px 0 0">Boosters are off here.</p>';
-  else if(!p.options.length)h+='<p class="small muted" style="margin:6px 0 0">You have no boosters. <a href="/store">Get some</a>.</p>';
-  else{h+='<div class="tbl-wrap" style="margin-top:10px;box-shadow:none"><table class="tbl" style="min-width:0"><tr><th>Booster</th><th>+taps each</th><th>To #1</th><th>Top 3</th><th>Top 10</th></tr>';p.options.forEach(function(o){var u=function(n){return n===0?'In':n+'×'};h+='<tr><td>'+esc(o.name)+' <span class="small muted">(have '+o.owned+')</span></td><td>+'+o.extraPerUse+'</td><td>'+(o.toTop1===0?'You lead':u(o.toTop1))+'</td><td>'+u(o.toTop3)+'</td><td>'+u(o.toTop10)+'</td></tr>'});h+='</table></div>';}
+  else if(!p.options.length)h+='<p class="small muted" style="margin:6px 0 0">No boosters available. <a href="/store">See the store</a>.</p>';
+  else{var opts=p.options.slice().sort(function(a,b){return (b.owned>0)-(a.owned>0)||a.price-b.price;});h+='<div class="tbl-wrap" style="margin-top:10px;box-shadow:none"><table class="tbl" style="min-width:0"><tr><th>Booster</th><th>+taps each</th><th>To #1</th><th>Top 3</th><th>Top 10</th></tr>';opts.forEach(function(o){var u=function(n){return n===0?'In':n+'×'};h+='<tr><td>'+esc(o.name)+' <span class="small muted">('+(o.owned>0?'have '+o.owned:'buy · '+TA.naira(o.price))+')</span></td><td>+'+o.extraPerUse+'</td><td>'+(o.toTop1===0?'You lead':u(o.toTop1))+'</td><td>'+u(o.toTop3)+'</td><td>'+u(o.toTop10)+'</td></tr>'});h+='</table></div>';}
   h+='</div>';});out.innerHTML=h;});}
 document.getElementById('go').addEventListener('click',run);run();})();`;
   return appPage({ user, title: 'Booster calculator', active: '/me', body, wallet, script, narrow: true, theme, bgCss });
@@ -233,9 +241,14 @@ document.getElementById('go').addEventListener('click',run);run();})();`;
 
 // ── Notifications ───────────────────────────────────────────────────────────
 export function notificationsPage(ctx) {
-  const { user, notes, wallet, theme, bgCss } = ctx;
-  const body = `<h1 class="h1">Notifications</h1>${notes.length ? `<div class="list">${notes.map(n => `<a class="item" href="${esc(n.link && n.link.startsWith('/') ? n.link : '#')}" style="${n.read ? '' : 'box-shadow:0 0 0 3px var(--green),0 4px 0 rgba(21,11,51,.22)'}"><div class="grow"><div style="font-weight:600">${esc(n.text)}</div><div class="s">${esc(lagos(n.created_at))}</div></div></a>`).join('')}</div>` : '<div class="empty">Nothing yet.</div>'}`;
-  return appPage({ user, title: 'Notifications', body, wallet, script: `TA.api('/api/notifications/read',{});var d=document.querySelector('.bell .dot');if(d)d.remove();`, theme, bgCss });
+  const { user, notes, wallet, theme, bgCss, page = 1, hasNext = false } = ctx;
+  const body = `<div class="headrow"><h1 class="h1">Notifications</h1>${notes.length ? `<button type="button" class="btn btn--white btn--sm" data-post="/api/notifications/clear" data-body="{}" data-confirm="Clear all your notifications?">Clear all</button>` : ''}</div>
+${notes.length ? `<div class="list notes">${notes.map(n => `<div class="item note${n.read ? '' : ' unread'}" data-note="${esc(n.id)}"><a class="grow" href="${esc(n.link && n.link.startsWith('/') ? n.link : '#')}" style="color:inherit;text-decoration:none;min-width:0"><div style="font-weight:600">${esc(n.text)}</div><div class="s">${esc(lagos(n.created_at))}</div></a><button type="button" class="nx" data-dismiss="${esc(n.id)}" aria-label="Dismiss">×</button></div>`).join('')}</div>${pager('/notifications', page, hasNext)}` : '<div class="empty">Nothing here. You’re all caught up.</div>'}`;
+  const css = `.note.unread{box-shadow:0 0 0 3px var(--green),0 4px 0 rgba(21,11,51,.22)}.note{transition:opacity .2s,transform .2s}.note.gone{opacity:0;transform:translateX(40px)}
+.nx{flex:none;display:grid;place-items:center;width:34px;height:34px;border:0;border-radius:50%;background:var(--cloud);color:var(--ink);font:900 18px/1 var(--body);cursor:pointer}`;
+  const script = `TA.api('/api/notifications/read',{});var d=document.querySelector('.bell .dot');if(d)d.remove();
+document.querySelectorAll('[data-dismiss]').forEach(function(b){b.addEventListener('click',function(){var it=b.closest('[data-note]');it.classList.add('gone');TA.api('/api/notifications/'+b.getAttribute('data-dismiss')+'/dismiss',{}).then(function(j){if(j._ok)setTimeout(function(){it.remove();if(!document.querySelector('[data-note]'))TA.go('/notifications',{replace:true,fresh:true});},200);else{it.classList.remove('gone');TA.fail(j);}});});});`;
+  return appPage({ user, title: 'Notifications', body, wallet, css, script, theme, bgCss });
 }
 
 // ── Top tappers (day / week / month / year / all time) ──────────────────────
@@ -309,7 +322,7 @@ export function profilePage(ctx) {
   const { user, p, own, hidden, won, prizes, badges, rank, origin, theme, bgCss } = ctx;
   const url = `${origin}/u/${p.username}`;
   const joined = lagosDate(p.created_at.includes('T') ? p.created_at : p.created_at.replace(' ', 'T') + 'Z');
-  const card = { url, kind: 'profile', title: p.username, line: `${rank.current.name} · Rank ${rank.current.level}`, color: '#9161FF', display: 'www.tapammm.live',
+  const card = { url, kind: 'profile', label: rank.current.name, title: p.username, line: `Rank ${rank.current.level} · ${p.tierName || 'Tap Am player'}`, color: '#9161FF', display: 'www.tapammm.live',
     stats: [`${compact(p.lifetime_taps)} all-time taps`, ...(hidden || won === null ? [] : [`${nairaCompact(won)} won`]), `${p.tierName}`, ...(hidden || won === null ? [] : [`${badges.length} badge${badges.length === 1 ? '' : 's'}`]), `Joined ${joined}`] };
   const body = `<section class="tcard prof c-purple">${rankAvatar(rank.current.level, { size: 92, title: rank.current.name })}
   <div style="min-width:0"><h1>${nameTag(p.username, p.emoji, own ? user.emoji_meaning : null)}</h1><div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">${tierBadge(p.tierName)}<span class="small" style="font-weight:700">Joined ${esc(joined)}</span></div></div>
@@ -325,7 +338,7 @@ export function profilePage(ctx) {
 </div>
 ${hidden ? '<div class="empty" style="margin-top:14px">This player keeps their winnings and badges private.</div>' : badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
 ${own ? `<p class="small muted" style="margin:14px 2px 0">${p.hide_profile ? 'Your winnings and badges are hidden from others.' : 'Everybody can see your winnings and badges.'} <a href="/settings" style="color:#fff;font-weight:800">Change in Settings</a></p>` : ''}
-${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div>` : ''}`;
+${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div><div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start"></div>` : user?.role === 'USER' ? `<div class="actions"><a class="btn btn--gold" href="/challenges?to=${encodeURIComponent(p.username)}">🥊 Challenge ${esc(p.username)} to a tap-off</a></div>` : ''}`;
   const css = ME_CSS + `.pstats{display:grid;gap:10px;margin-top:14px}
 .pstats>*{margin:0}.pstats .grid>*{margin:0}
 .pline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px}
@@ -346,7 +359,7 @@ const RANKS_CSS = `.rgrid{display:grid;gap:14px}
 .rcard.c-sunny li,.rcard.c-green li{background:rgba(255,255,255,.55);color:var(--ink)}
 .rcard.me{outline:4px solid var(--green);outline-offset:3px}
 .rcard.locked{filter:saturate(.7)}`;
-const UNLOCK_NAMES = { voice: 'Live voice in games (Nepo, top 5)', 'skin-kente': 'Kente tap skin', 'skin-neon': 'Neon night tap skin', 'booster-long': 'Long Thing 2× booster', 'booster-4x': 'Gbas Gbos 4× booster', 'booster-5x': 'Odogwu 5× booster', 'booster-8x': 'Jaga Jaga 8× booster', 'booster-10x': 'Odogwu Pro 10× booster' };
+const UNLOCK_NAMES = { voice: 'Live voice in games (Nepo, top 3)', 'skin-kente': 'Kente tap skin', 'skin-neon': 'Neon night tap skin', 'booster-long': 'Long Thing 2× booster', 'booster-4x': 'Gbas Gbos 4× booster', 'booster-5x': 'Odogwu 5× booster', 'booster-8x': 'Jaga Jaga 8× booster', 'booster-10x': 'Odogwu Pro 10× booster' };
 const unlockName = k => UNLOCK_NAMES[k] || (k.startsWith('sound-') ? `${(SOUNDS.find(s => s.id === k.slice(6)) || { name: k.slice(6) }).name} tap sound` : k);
 export function ranksPage(ctx) {
   const { user, ranks, myLevel, wallet, theme, bgCss } = ctx;

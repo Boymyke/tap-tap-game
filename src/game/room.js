@@ -91,7 +91,7 @@ export class GameRoom extends DurableObject {
         if (this.meta.waiting) return j({ error: 'This match starts when every seat is taken.', code: 'NOT_STARTED' }, 409);
         if (now < this.meta.startsAt) return j({ error: 'The pool never start.', code: 'NOT_STARTED' }, 409);
         if (now >= this.meta.endsAt) return j({ error: 'This pool don end.', code: 'ENDED' }, 409);
-        if (this.meta.paused) return j({ error: 'This pool is paused. Your money and boosters for it are coming back.', code: 'PAUSED' }, 409);
+        if (this.meta.paused) return j({ error: 'This pool is paused because of a server problem. Your score is saved.', code: 'PAUSED' }, 409);
         // Lapo-rules pools: everybody plays at the Lapo speed, and the pool can't share taps with other pools.
         if (this.meta.lapoRules && Number(body.count) > 1) return j({ error: 'This pool uses Lapo baby rules. Tap in it on its own.', code: 'SOLO' }, 409);
         const rate = Math.max(5, Math.min(60, Math.min(Number(body.rate) || DEFAULT_RATE, this.meta.lapoRules ? Number(body.lapoRate) || DEFAULT_RATE : 60)));
@@ -113,6 +113,7 @@ export class GameRoom extends DurableObject {
         const p = this.players.get(body.uid);
         if (!this.meta || !p) return j({ error: 'Join the pool first.' }, 403);
         if (!this.meta.boosters) return j({ error: 'Boosters are off for this pool.' }, 409);
+        if (this.meta.paused) return j({ error: 'This pool is paused.' }, 409);
         // instant match still filling up: its start time isn't known yet, so a booster can't be timed
         if (this.meta.waiting) return j({ error: 'Boosters work once the match starts.' }, 409);
         if (now >= this.meta.endsAt) return j({ error: 'This pool don end.' }, 409);

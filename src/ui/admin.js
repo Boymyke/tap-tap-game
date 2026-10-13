@@ -6,7 +6,7 @@ import { skinPreview } from './skins.js';
 import { adForm, adList, AD_CSS, AD_JS } from './sponsor.js';
 import { backgroundCss, tierName, tierOf } from '../tiers.js';
 
-const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/money', 'Top money'], ['/admin/suggestions', 'Suggestions']];
+const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/errors', 'Errors'], ['/admin/messages', 'Announce'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/money', 'Top money'], ['/admin/suggestions', 'Suggestions']];
 const tabs = cur => `<nav class="tabs" aria-label="Admin sections">${TABS.map(([h, l]) => `<a href="${h}" ${h === cur ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
 const page = (ctx, title, active, body, extra = {}) => appPage({ user: ctx.user, title, active: TABS.some(t => t[0] === active) && ['/admin', '/admin/users', '/admin/pools', '/admin/ads', '/admin/health'].includes(active) ? active : '', body: tabs(extra.tab || active) + body, ...extra });
 const ADMIN_CSS = `.danger-form .btn{background:var(--danger);box-shadow:0 4px 0 var(--danger-d);color:#fff}
@@ -14,6 +14,9 @@ const ADMIN_CSS = `.danger-form .btn{background:var(--danger);box-shadow:0 4px 0
 .rejform{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
 .rejform .ta-field{flex:1;min-width:160px;margin:0}.rejform .ta-input{height:40px}
 .sgrp h3{margin:0;font:900 17px var(--display)}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.sgrp .two>*,.sgrp .three>*{min-width:0}
+@media (max-width:640px){.three{grid-template-columns:1fr}}
+.errs .tbl td{vertical-align:top}.errs details summary{cursor:pointer;font-weight:700}.errs pre{white-space:pre-wrap;font-size:12px;margin:6px 0 0;max-height:220px;overflow:auto;background:var(--cloud);padding:8px;border-radius:8px}
 .sgrp .ta-input{background:#fff}
 .hl{display:grid;gap:10px}
 .hl .item{align-items:flex-start}
@@ -32,12 +35,12 @@ export function adminHome(ctx) {
     .map(([a, b, c]) => `<div class="tcard card ${c}" style="padding:14px"><div class="stat"><span class="k">${a}</span><span class="v">${typeof b === 'number' ? short(b) : esc(b)}</span></div></div>`).join('')}
 </div>
 <div class="grid g2 g4" style="margin-top:12px">
-  <a class="btn btn--green btn--block" href="/pools/new">+ Create pool</a><a class="btn btn--white btn--block" href="/admin/gifts">Bulk gift</a><a class="btn btn--white btn--block" href="/admin/ads">Ads</a><a class="btn btn--white btn--block" href="/admin/health">System health</a>
+  <a class="btn btn--green btn--block" href="/pools/new">+ Create pool</a><a class="btn btn--white btn--block" href="/admin/messages">Announce / email</a><a class="btn btn--white btn--block" href="/admin/errors">Errors${ctx.errors24 ? ` <span class="badge red">${ctx.errors24}</span>` : ''}</a><a class="btn btn--white btn--block" href="/admin/health">System health</a>
 </div>
-<h2 class="h2">Server overload</h2><div class="panel" style="${st.overload === '1' ? 'box-shadow:0 0 0 3px var(--danger),var(--sh)' : ''}">
-  <p class="muted" style="margin:0 0 10px">${st.overload === '1' ? '<b style="color:var(--danger)">Games are paused.</b> Players see a notice on their home page. Restart when the servers are fine.' : 'If the servers are struggling, pause every live and upcoming pool. Players get back the money and boosters they put into those pools, and a message. Restart them when things are fine.'}</p>
-  ${st.overload === '1' ? form('/api/admin/overload/restart-all', `${field({ label: 'Start the pools again in (minutes)', name: 'minutes', type: 'number', value: '10', attrs: 'min="1" max="1440"' })}`, { submit: 'Restart all paused pools' })
-    : form('/api/admin/overload/pause-all', `${check({ name: 'confirm', label: 'Yes, pause every live and upcoming pool and refund the players' })}`, { submit: 'Pause all games', btn: 'btn--danger' })}
+<h2 class="h2">Server problem</h2><div class="panel" style="${st.overload === '1' ? 'box-shadow:0 0 0 3px var(--danger),var(--sh)' : ''}">
+  <p class="muted" style="margin:0 0 10px">${st.overload === '1' ? '<b style="color:var(--danger)">Games are paused. Sign-ups and new pools are off.</b> Every score and every naira is kept. When the servers are fine, open the vote: players choose to continue each match or restart it (boosters back).' : 'If the servers are down or struggling, pause every live and upcoming pool. Scores, entry fees and prizes are kept, players get a message, and nobody can sign up or create pools until you say the servers are back.'}</p>
+  ${st.overload === '1' ? form('/api/admin/overload/restart-all', `${field({ label: 'Pools paused one by one (with refunds) start again in (minutes)', name: 'minutes', type: 'number', value: '10', attrs: 'min="1" max="1440"' })}`, { submit: `Servers are fine: open the vote (${esc(v('vote_hours', 1))} h)` })
+    : form('/api/admin/overload/pause-all', `${check({ name: 'confirm', label: 'Yes, pause every live and upcoming pool now' })}`, { submit: 'Pause all games (server problem)', btn: 'btn--danger' })}
 </div>
 <h2 class="h2">Settings</h2><div class="panel">${form('/api/admin/settings', `
   <div class="sgrp"><h3>Plans (₦)</h3>
@@ -54,15 +57,26 @@ export function adminHome(ctx) {
     <div class="two">${moneyField({ label: 'Lapo min withdrawal', name: 'min_withdraw_lapo_kobo', value: k('min_withdraw_lapo_kobo') })}${moneyField({ label: 'Mapo min withdrawal', name: 'min_withdraw_mapo_kobo', value: k('min_withdraw_mapo_kobo') })}</div>
     <div class="two">${moneyField({ label: 'Nepo min withdrawal', name: 'min_withdraw_nepo_kobo', value: k('min_withdraw_nepo_kobo') })}${field({ label: 'Withdrawals per day', name: 'withdrawals_per_day', type: 'number', value: v('withdrawals_per_day', 1), attrs: 'min="1" max="5"' })}</div>
     <div class="two">${moneyField({ label: 'Sponsor email blast price', name: 'email_blast_kobo', value: k('email_blast_kobo') })}${moneyField({ label: 'Daily money a player can send', name: 'transfer_daily_max_kobo', value: k('transfer_daily_max_kobo') })}</div>
-    <div class="two">${field({ label: 'Pools a Lapo baby can create a day', name: 'lapo_pools_per_day', type: 'number', value: v('lapo_pools_per_day', 3), attrs: 'min="0" max="50"' })}${field({ label: 'Free mystery box every (days, about)', name: 'free_box_days', type: 'number', value: v('free_box_days', 3), attrs: 'min="0" max="60"', hint: '0 = no free boxes.' })}</div>
+    <div class="two">${moneyField({ label: 'Most a player can withdraw a day', name: 'withdraw_daily_max_kobo', value: k('withdraw_daily_max_kobo') || 1000000 })}${field({ label: 'Free mystery box every (days, about)', name: 'free_box_days', type: 'number', value: v('free_box_days', 3), attrs: 'min="0" max="60"', hint: '0 = no free boxes.' })}</div>
+    ${check({ name: 'stakes_on', label: '<b>Money stakes on tap-offs</b> (players put money on 1-on-1 challenges; Tap Am holds it). Check with your lawyer before switching on.', checked: st.stakes_on === '1' })}</div>
+  <div class="sgrp"><h3>Pools</h3>
+    <div class="three">${field({ label: 'Pools a Lapo baby can create a day', name: 'lapo_pools_per_day', type: 'number', value: v('lapo_pools_per_day', 3), attrs: 'min="0" max="500"' })}${field({ label: 'Pools a Mapo baby can create a day', name: 'mapo_pools_per_day', type: 'number', value: v('mapo_pools_per_day', 20), attrs: 'min="0" max="500"' })}${field({ label: 'Pools a Nepo baby can create a day', name: 'nepo_pools_per_day', type: 'number', value: v('nepo_pools_per_day', 50), attrs: 'min="0" max="500"' })}</div>
+    <div class="two">${field({ label: 'Seconds added per ₦10,000 in a game', name: 'topup_seconds_per_step', type: 'number', value: v('topup_seconds_per_step', 10), attrs: 'min="1" max="600"' })}${field({ label: 'Instant match: cancel if not full after (hours)', name: 'instant_wait_hours', type: 'number', value: v('instant_wait_hours', 24), attrs: 'min="1" max="168"' })}</div>
+    <div class="two">${field({ label: 'Server-problem vote lasts (hours)', name: 'vote_hours', type: 'number', value: v('vote_hours', 1), attrs: 'min="1" max="24"' })}${field({ label: 'Votes needed to continue (%)', name: 'vote_continue_pct', type: 'number', value: v('vote_continue_pct', 50), attrs: 'min="1" max="100"', hint: 'Below this share of “continue” votes, the match restarts.' })}</div>
     ${field({ label: 'House cut on paid pools (%)', name: 'house_cut_pct', type: 'number', value: v('house_cut_pct', 0), attrs: 'min="0" max="50"', hint: 'Taken from paid-pool prizes before payout. 0 = all entry fees go to winners.' })}
     ${check({ name: 'auto_payouts', label: '<b>Automatic payouts</b> through the payment gateway (small amounts, older accounts, no cheating flags)', checked: st.auto_payouts === '1' })}
     <div class="two">${moneyField({ label: 'Auto-pay up to (₦)', name: 'auto_payout_max_kobo', value: k('auto_payout_max_kobo') })}${field({ label: 'Account at least (days old)', name: 'auto_payout_min_age_days', type: 'number', value: v('auto_payout_min_age_days', 7), attrs: 'min="0"' })}</div></div>
   <div class="sgrp"><h3>Players and site</h3>
     <div class="two">${field({ label: 'Starter boosters', name: 'starter_boosters', type: 'number', value: v('starter_boosters', 3), attrs: 'min="0"' })}${field({ label: 'Sign-ups per referral booster', name: 'referral_batch', type: 'number', value: v('referral_batch', 10), attrs: 'min="1"' })}</div>
-    <div class="two">${field({ label: 'Voice: minimum rank', name: 'voice_min_rank', type: 'number', value: v('voice_min_rank', 56), attrs: 'min="1"' })}${field({ label: 'Voice: top N', name: 'voice_top_n', type: 'number', value: v('voice_top_n', 5), attrs: 'min="1"' })}</div>
+    ${check({ name: 'voice_on', label: '<b>Live voice in games</b> (only Nepo babies in the top of a pool can talk)', checked: st.voice_on !== '0' })}
+    ${field({ label: 'Voice: how many top Nepo babies can talk', name: 'voice_top_n', type: 'number', value: v('voice_top_n', 3), attrs: 'min="1" max="10"' })}
+    ${check({ name: 'signups_paused', label: '<b>Pause sign-ups</b> (new accounts can’t be made until you switch this off)', checked: st.signups_paused === '1' })}
     ${field({ label: 'Alert emails (comma separated)', name: 'alert_email', type: 'email', value: st.alert_email || '', placeholder: 'you@yourcompany.com', hint: 'System health alerts go here.' })}
-    ${check({ name: 'landing_demo_pools', label: 'Show sample sponsored pools on the landing page (turn off once real sponsors are live)', checked: st.landing_demo_pools === '1' })}</div>`, { submit: 'Save settings' })}</div>
+    ${check({ name: 'landing_demo_pools', label: 'Show sample sponsored pools on the landing page (turn off once real sponsors are live)', checked: st.landing_demo_pools === '1' })}</div>
+  <div class="sgrp"><h3>Community and socials</h3>
+    ${field({ label: 'WhatsApp community link', name: 'whatsapp_community', value: st.whatsapp_community || '', placeholder: 'https://chat.whatsapp.com/…', attrs: 'inputmode="url" autocomplete="off"', hint: 'Shows as “Join our WhatsApp community” on players’ profiles and the menu. Empty = hidden.' })}
+    <div class="three">${field({ label: 'X (Twitter)', name: 'social_twitter', value: st.social_twitter || '', placeholder: 'https://x.com/tapammm', attrs: 'inputmode="url" autocomplete="off"' })}${field({ label: 'Instagram', name: 'social_instagram', value: st.social_instagram || '', placeholder: 'https://instagram.com/tapammm', attrs: 'inputmode="url" autocomplete="off"' })}${field({ label: 'TikTok', name: 'social_tiktok', value: st.social_tiktok || '', placeholder: 'https://tiktok.com/@tapammm', attrs: 'inputmode="url" autocomplete="off"' })}</div>
+    <p class="ta-hint" style="margin:0">These show in the menu and on the home page. Leave a box empty to hide that link.</p></div>`, { submit: 'Save settings' })}</div>
 <h2 class="h2">Recent admin actions</h2>${audit.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Action</th><th>Detail</th></tr></thead><tbody>${audit.map(a => `<tr><td>${esc(lagos(a.created_at))}</td><td>${esc(a.action)}</td><td class="small" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.detail || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nothing yet.</div>'}`;
   return page(ctx, 'Admin', '/admin', body, { css: ADMIN_CSS });
 }
@@ -93,7 +107,7 @@ export function adminUsers(ctx) {
 </details>
 <form class="row" method="get" action="/admin/users" style="gap:8px;margin-bottom:12px"><input class="ta-input" name="q" value="${esc(q)}" placeholder="Search nickname or email" aria-label="Search users"><button class="btn btn--green" type="submit">Search</button></form>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nickname</th><th>Type</th><th>Status</th><th>Taps</th><th>Games</th><th>Wins</th><th>Rank</th><th>Wallet</th><th>Winnings</th><th>Country</th><th>Joined</th></tr></thead><tbody>
-${users.map(u => `<tr><td><a href="/admin/users/${esc(u.id)}">${esc(u.username)}</a><div class="small muted">${esc(u.email || '')}</div></td><td>${tierBadge(roleLabel(u))}</td><td>${u.status === 'ACTIVE' ? 'Active' : `<span class="badge red">${esc(u.status.toLowerCase())}</span>`}</td><td>${short(u.lifetime_taps)}</td><td>${u.games_played}</td><td>${u.wins}</td><td>${u.rank_level}</td><td>${esc(naira(u.balance_kobo))}</td><td>${esc(naira(u.winnings_kobo))}</td><td>${esc(u.country || '—')}</td><td>${esc(lagos(u.created_at, { hour: undefined, minute: undefined }))}</td></tr>`).join('') || '<tr><td colspan="11">No users found.</td></tr>'}
+${users.map(u => `<tr><td><a href="/admin/users/${esc(u.id)}">${esc(u.username)}</a><div class="small muted">${esc(u.email || '')}${u.whatsapp ? ' · ' + esc(u.whatsapp) : ''}</div></td><td>${tierBadge(roleLabel(u))}</td><td>${u.status === 'ACTIVE' ? 'Active' : `<span class="badge red">${esc(u.status.toLowerCase())}</span>`}</td><td>${short(u.lifetime_taps)}</td><td>${u.games_played}</td><td>${u.wins}</td><td>${u.rank_level}</td><td>${esc(naira(u.balance_kobo))}</td><td>${esc(naira(u.winnings_kobo))}</td><td>${esc(u.country || '—')}</td><td>${esc(lagos(u.created_at, { hour: undefined, minute: undefined }))}</td></tr>`).join('') || '<tr><td colspan="11">No users found.</td></tr>'}
 </tbody></table></div>${pager(`/admin/users${q ? '?q=' + encodeURIComponent(q) : ''}`, pg, hasNext)}`;
   const script = `var f=document.getElementById('phr');if(f)f.addEventListener('submit',function(e){e.preventDefault();var b=f.querySelector('button');b.classList.add('is-loading');
 fetch('/api/admin/phrases/export',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({password:f.password.value})}).then(function(r){b.classList.remove('is-loading');f.password.value='';
@@ -105,7 +119,7 @@ export function adminUser(ctx) {
   const { target: u, wallet, inv, items, entries, rankName, profile, flags } = ctx;
   const self = u.id === ctx.user.id;
   const body = `<h1 class="h1">${nameTag(u.username, u.emoji)}</h1>
-<div class="row wrap" style="margin:-4px 2px 14px;justify-content:flex-start;gap:8px">${tierBadge(roleLabel(u))}<span class="small" style="color:var(--muted)">${esc(u.email || '')} · ${esc(u.gender || '')} ${esc(u.country || '')} · joined ${esc(lagos(u.created_at))}${u.adult_confirmed_at ? ' · 18+ confirmed' : ''}</span></div>
+<div class="row wrap" style="margin:-4px 2px 14px;justify-content:flex-start;gap:8px">${tierBadge(roleLabel(u))}<span class="small" style="color:var(--muted)">${esc(u.email || '')}${u.whatsapp ? ` · WhatsApp <a href="https://wa.me/${esc(u.whatsapp.replace('+', ''))}" target="_blank" rel="noopener" style="color:var(--green);font-weight:800">${esc(u.whatsapp)}</a>` : ''} · ${esc(u.gender || '')} ${esc(u.country || '')} · joined ${esc(lagos(u.created_at))}${u.adult_confirmed_at ? ' · 18+ confirmed' : ''}</span></div>
 <div class="grid g2 g4"><div class="panel stat"><span class="k">Lifetime taps</span><span class="v">${short(u.lifetime_taps)}</span></div><div class="panel stat"><span class="k">Games / wins</span><span class="v">${u.games_played} / ${u.wins}</span></div><div class="panel stat"><span class="k">Wallet</span><span class="v">${esc(naira(wallet.balance_kobo))}</span></div><div class="panel stat"><span class="k">Winnings</span><span class="v">${esc(naira(wallet.winnings_kobo))}</span></div></div>
 <p class="small" style="color:var(--muted)">Rank ${u.rank_level}: ${esc(rankName)}${u.tier_until ? ` · ${esc(tierName(u.tier))} till ${esc(lagos(u.tier_until))}` : ''}${u.referral_count ? ` · ${u.referral_count} referrals` : ''}${u.status !== 'ACTIVE' ? ` · <b style="color:#fff">${esc(u.status)}</b>` : ''}</p>
 ${flags ? `<div class="panel" style="box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>${flags} anti-cheat flag${flags === 1 ? '' : 's'}</b> — taps faster than their tier allows were dropped in some games. Check before paying out.</div>` : ''}
@@ -376,4 +390,37 @@ export function adminLoginPage() {
   <p style="text-align:center;margin-top:14px"><a href="/" style="color:#fff">Back to Tap Am</a></p>
 </main>`;
   return themeShell({ title: 'Admin login', body, bodyClass: 'bg-anim', css: '.badge{display:inline-flex;padding:5px 10px;border-radius:999px;font:800 12px var(--body)}.badge.red{background:var(--danger);color:#fff}' });
+}
+
+// ── errors: what happened, when, where, and what to do ─────────────────────
+export function adminErrors(ctx) {
+  const { rows, page: pg, hasNext, counts } = ctx;
+  const body = `<div class="headrow"><h1 class="h1">Errors</h1>${rows.length ? postBtn('/api/admin/errors/clear', 'Clear all', { cls: 'btn--white btn--sm', confirm: 'Clear the whole error log?' }) : ''}</div>
+<p class="sub">Every server error is recorded here with when it happened, where, the details and what to do about it. Last 24 hours: <b>${short(counts.day)}</b> · last 7 days: <b>${short(counts.week)}</b>.</p>
+${rows.length ? `<div class="tbl-wrap errs"><table class="tbl"><thead><tr><th>When (Lagos)</th><th>Where</th><th>What happened</th><th>What to do</th></tr></thead><tbody>
+${rows.map(r => `<tr><td style="white-space:nowrap">${esc(lagos(r.created_at))}</td><td>${esc(r.area)}</td><td><b>${esc(r.message)}</b><details><summary>Details</summary><pre>${esc(r.detail || '')}${r.stack ? '\n\n' + esc(r.stack) : ''}</pre></details></td><td>${esc(r.hint || '')}</td></tr>`).join('')}
+</tbody></table></div>${pager('/admin/errors', pg, hasNext)}` : '<div class="empty">No errors recorded. 🎉</div>'}`;
+  return page(ctx, 'Errors', '/admin/errors', body, { css: ADMIN_CSS });
+}
+
+// ── announcements and emails ────────────────────────────────────────────────
+export function adminMessages(ctx) {
+  const { recent, pools, jobs, emailOn } = ctx;
+  const body = `<h1 class="h1">Announce</h1>
+${emailOn ? '' : '<div class="panel" style="margin-bottom:12px;background:var(--sunny)"><b>Email is not connected yet.</b> Notifications and pop-ups work now; emails will be skipped until ZEPTOMAIL_TOKEN is added to the worker.</div>'}
+<h2 class="h2">Make an announcement</h2><div class="panel">${form('/api/admin/announcements', `
+  ${field({ label: 'Title', name: 'title', placeholder: 'Big Friday tournament!', attrs: 'maxlength="90" required' })}
+  <div class="ta-field" data-field="body"><label class="ta-label" for="f-body">Message</label><textarea class="ta-input" id="f-body" name="body" rows="4" maxlength="2000" placeholder="What players should know" required></textarea><p class="ta-error" data-err="body"></p></div>
+  ${field({ label: 'Link (optional)', name: 'link', placeholder: '/pools or https://…', attrs: 'maxlength="300" autocomplete="off"' })}
+  ${choice({ label: 'Who gets it', name: 'audience', options: [['ALL', 'Everybody'], ['PLAYERS', 'All players'], ['LAPO', 'Lapo'], ['MAPO', 'Mapo'], ['NEPO', 'Nepo'], ['SPONSORS', 'Sponsors']], value: 'ALL', cls: 'wrap4' })}
+  ${check({ name: 'overlay', label: '<b>Also show it as a pop-up</b> the next time they open Tap Am (never during a game)' })}
+  <div class="two">${select({ label: 'Also email it', name: 'email', options: [['NO', 'No email'], ['NEWS', 'Yes — to people who said yes to news'], ['SERVICE', 'Yes — to every account (service news only)']], value: 'NO' })}${field({ label: 'Pop-up shows for (days)', name: 'days', type: 'number', value: '3', attrs: 'min="1" max="30"' })}</div>
+  <p class="ta-hint" style="margin:0">Use “every account” only for important account or service news (like a server problem). Offers and promotions go only to people who said yes.</p>`, { submit: 'Send announcement', shine: true })}</div>
+<h2 class="h2">Email a pool to players</h2><div class="panel">${pools.length ? form('/api/admin/email-pool', `
+  ${select({ label: 'Pool', name: 'pool', options: pools.map(p => [p.id, `${p.name}${p.sponsor_name ? ' · ' + p.sponsor_name : ''}`]) })}
+  ${choice({ label: 'Players', name: 'audience', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo'], ['MAPO', 'Mapo'], ['NEPO', 'Nepo']], value: 'ALL', cls: 'wrap4' })}
+  <p class="ta-hint" style="margin:0">Sent from no-reply@tapammm.live to players who said yes to pool news, with a one-click “stop these emails” link. Free for Tap Am.</p>`, { submit: 'Email this pool' }) : '<p class="muted" style="margin:0">No open pools to email right now.</p>'}</div>
+${jobs.length ? `<h2 class="h2">Emails going out</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>What</th><th>Status</th><th>Sent</th><th>Started</th></tr></thead><tbody>${jobs.map(j => `<tr><td>${esc(j.what)}</td><td>${esc(j.status.toLowerCase())}</td><td>${short(j.sent)}</td><td>${esc(lagos(j.created_at))}</td></tr>`).join('')}</tbody></table></div>` : ''}
+<h2 class="h2">Recent announcements</h2>${recent.length ? `<div class="list">${recent.map(a => `<div class="item"><div class="grow"><div class="t" style="font-size:16px">${esc(a.title)}</div><div class="s">${esc(lagos(a.created_at))} · ${esc(a.audience.toLowerCase())}${a.overlay ? ' · pop-up' + (a.active ? '' : ' (stopped)') : ''}${a.email !== 'NO' ? ' · email' : ''}</div></div>${a.overlay && a.active ? postBtn(`/api/admin/announcements/${a.id}/stop`, 'Stop pop-up', { cls: 'btn--soft btn--sm' }) : ''}</div>`).join('')}</div>` : '<div class="empty">No announcements yet.</div>'}`;
+  return page(ctx, 'Announce', '/admin/messages', body, { css: ADMIN_CSS });
 }

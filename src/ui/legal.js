@@ -35,7 +35,7 @@ const DOCS = {
 <li>Prizes are paid into your Winnings within moments of the pool ending. See <a href="/prizes">Prizes &amp; Withdrawals</a>.</li></ul>`, FLAG('Paid entry + cash prize contests may be regulated as gaming or promotional competitions by Nigerian state regulators (e.g. LSLGA in Lagos; FSGRN reciprocity). Confirm the licence or permit needed before enabling real-money paid pools and sponsored prizes.')],
       ['Ranks and badges', `<p>Your rank goes up with lifetime taps, games played and wins. Top tappers of each day, week, month and year (Lagos time) get a badge when the period ends. Ranks, badges and leaderboards have no cash value.</p>`],
       ['Ads', `<p>Sponsors’ ads may pop up when you open a game, while you wait in the lobby, and when a game ends before your result. You can close each ad after 5 seconds. Ads never affect scores or results.</p>`],
-      ['Live voice', `<p>Nepo babies at the required rank who are in the top 5 of a pool can talk; anyone in the pool can listen. Keep it clean: no hate, threats, harassment, private information or adverts. We don’t record voice.</p>`],
+      ['Live voice', `<p>Nepo babies who are in the top 3 of a pool can talk (the super admin can switch voice off); anyone in the pool can listen. Keep it clean: no hate, threats, harassment, private information or adverts. We don’t record voice.</p>`],
       ['Related rules', `<p>These rules work together with the <a href="/fair-play">Fair Play Policy</a>, <a href="/prizes">Prizes &amp; Withdrawals</a>, <a href="/account-rules">Account Suspension Rules</a> and our <a href="/terms">Terms</a>.</p>`]
     ]
   },

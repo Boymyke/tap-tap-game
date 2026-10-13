@@ -8,6 +8,9 @@
 //   SEED_KEY             long random text; encrypts the recovery-phrase backup copies
 //   OTP_PEPPER           long random text; signs email codes and unsubscribe links
 //   ADMIN_SETUP_KEY      long random text; used once to create the super admin
+//   ZEPTOMAIL_TOKEN      ZeptoMail (Zoho) → Mail Agents → SMTP/API → "Send Mail token"; sends sign-up codes,
+//                        announcements and pool emails from no-reply@tapammm.live
+//   ZEPTOMAIL_HOST       only if your ZeptoMail account is in the EU or India data centre (api.zeptomail.eu / .in)
 // Never add OTP_DEV_MODE or PAYMENTS_TEST_MODE here.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -18,7 +21,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },
-  "vars": { "PUBLIC_URL": "https://tapammm.live" },
+  "vars": { "PUBLIC_URL": "https://tapammm.live", "EMAIL_FROM": "no-reply@tapammm.live" },
   // tapammm.live must be added to this Cloudflare account first (nameservers moved from Namecheap).
   "routes": [
     { "pattern": "tapammm.live", "custom_domain": true },

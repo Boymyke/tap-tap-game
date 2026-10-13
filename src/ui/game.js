@@ -86,6 +86,19 @@ body.is-game{background:var(--bg-deep)}
 .boostbtn .cnt{position:absolute;top:-8px;left:34px;min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:var(--pink);color:#fff;font:900 12px/24px var(--body);text-align:center;border:2px solid var(--bg-deep)}
 .boostbtn[disabled]{filter:grayscale(.8);opacity:.6}
 .gm-foot .grow{flex:1}
+.cashbtn{display:flex;align-items:center;gap:8px;min-height:56px;padding:0 16px 0 10px;border:0;border-radius:var(--r-btn);background:var(--green);color:var(--ink);font:900 17px var(--display);cursor:pointer;box-shadow:0 5px 0 var(--green-d)}
+.cashbtn .ic{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--r-in);background:var(--ink);color:var(--green);font:900 18px var(--display)}
+.cashbtn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--green-d)}
+.cashbtn[hidden]{display:none}
+.amts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.amts button{min-height:52px;border:0;border-radius:var(--r-in);background:var(--cloud);color:var(--ink);font:900 16px/1.1 var(--display);cursor:pointer}
+.amts button small{display:block;font:700 11px var(--body);color:var(--ink-soft)}
+.amts button[aria-pressed=true]{background:var(--ink);color:#fff}.amts button[aria-pressed=true] small{color:#C9BDF5}
+.bopt.buy{background:#fff;box-shadow:inset 0 0 0 2px var(--line)}
+.bopt .q.buyq{background:var(--green);color:var(--ink);padding:6px 10px;border-radius:999px;font:900 13px var(--body)}
+.bsub{margin:14px 0 2px;font:800 12px var(--body);letter-spacing:.4px;text-transform:uppercase;color:var(--ink-soft)}
+.bpager{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;font:700 13px var(--body);color:var(--ink-soft)}
+.gend .won{display:inline-block;margin:6px 0 2px;padding:8px 16px;border-radius:999px;background:var(--green);color:var(--ink);font:900 22px var(--display)}
 .gm-foot .btn{min-height:50px}
 /* booster tips: up to 3 cards slide in from the left now and then. Tap one to use that booster. */
 .tips{position:absolute;left:0;bottom:calc(env(safe-area-inset-bottom) + 84px);z-index:12;display:grid;gap:8px;max-width:min(340px,calc(100% - 20px));pointer-events:none}
@@ -215,11 +228,16 @@ export function playPage(ctx) {
 <footer class="gm-foot">
   <button type="button" class="boostbtn" id="boost-btn" aria-label="Boosters"><span class="ic">×2</span><span>Boost</span><span class="cnt" id="boost-count">0</span></button>
   <span class="grow"></span>
+  <button type="button" class="cashbtn" id="cash-btn" aria-label="Add money to the prize" hidden><span class="ic">₦+</span><span>Add time</span></button>
 </footer>
 <div class="tips" id="tips" aria-live="polite"></div>
 </div>
 <div class="gsheet" id="boost-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="bo-h"><h2 id="bo-h">Boosters <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p>Each booster multiplies every tap for some seconds. Use as many as you like — they run one after the other, and a stronger one jumps the queue.</p><div id="boost-list"></div><div class="actions"><a class="btn btn--soft btn--sm" href="/store">Get boosters</a>${me.calc ? '<a class="btn btn--soft btn--sm" href="/calc">Calculator</a>' : ''}</div></div></div>
-<div class="gsheet" id="voice-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="vo-h"><h2 id="vo-h">Live voice <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p id="v-status">Listen to the top players talk while you tap. Nepo babies at Para Para Boy or higher who are in the top ${voice.topN} fit talk.</p><div class="vlist" id="v-list"></div><div class="actions"><button type="button" class="btn btn--green btn--sm" id="v-listen">Listen</button><button type="button" class="btn btn--gold btn--sm" id="v-talk" hidden>Talk</button><button type="button" class="btn btn--soft btn--sm" id="v-leave" hidden>Leave voice</button></div></div></div>
+<div class="gsheet" id="cash-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="ca-h"><h2 id="ca-h">Add money, get time <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p>Your money goes into the prize pool, and every <b>₦10,000</b> adds <b>10 seconds</b> to the clock for everybody. It can’t be taken back.</p>
+<div class="amts" id="cash-amts"><button type="button" data-amt="10000" aria-pressed="true">₦10k<small>+10s</small></button><button type="button" data-amt="20000" aria-pressed="false">₦20k<small>+20s</small></button><button type="button" data-amt="50000" aria-pressed="false">₦50k<small>+50s</small></button></div>
+<label class="ta-check" style="margin:4px 0 10px"><input type="checkbox" id="cash-win"><span>Pay from my winnings instead of my wallet</span></label>
+<div class="actions"><button type="button" class="btn btn--green btn--block" id="cash-go">Add ₦10,000 (+10s)</button></div></div></div>
+<div class="gsheet" id="voice-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="vo-h"><h2 id="vo-h">Live voice <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p id="v-status">Listen to the top players talk while you tap. Only Nepo babies in the top ${voice.topN} of this pool fit talk.</p><div class="vlist" id="v-list"></div><div class="actions"><button type="button" class="btn btn--green btn--sm" id="v-listen">Listen</button><button type="button" class="btn btn--gold btn--sm" id="v-talk" hidden>Talk</button><button type="button" class="btn btn--soft btn--sm" id="v-leave" hidden>Leave voice</button></div></div></div>
 <div class="promo" id="promo" hidden><div class="promo-in" role="dialog" aria-modal="true" aria-label="Sponsored"><div class="lbl"><span id="promo-by">Sponsored</span><button type="button" class="promo-x" id="promo-x" aria-label="Close ad" disabled><span id="promo-wait">Wait 5s</span></button></div><div class="promo-line" aria-hidden="true"><i id="promo-line"></i></div><div id="promo-body"></div></div></div>
 <script type="application/json" id="game-data">${safeJson(data)}</script>`;
   return themeShell({ title: single ? single.name : 'Play', body, css: CSS, bodyClass: 'is-game', scripts: ['/assets/sounds.js', '/assets/game.js', ...(voice.enabled ? ['/assets/voice.js'] : [])], theme, bgCss: poolBg || bgCss, noZoom: true });

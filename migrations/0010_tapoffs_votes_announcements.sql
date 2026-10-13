@@ -1,0 +1,21 @@
+-- WhatsApp numbers, tap-offs, server-problem votes, pool block lists, buy-time pools, error log, announcements.
+ALTER TABLE users ADD COLUMN whatsapp TEXT;
+ALTER TABLE pools ADD COLUMN time_topup INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE pools ADD COLUMN challenge_id TEXT;
+ALTER TABLE pools ADD COLUMN pause_mode TEXT;
+ALTER TABLE pools ADD COLUMN paused_left_ms INTEGER;
+ALTER TABLE pools ADD COLUMN vote_until TEXT;
+CREATE TABLE IF NOT EXISTS pool_blocks (pool_id TEXT NOT NULL, user_id TEXT NOT NULL, blocked_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS pool_votes (pool_id TEXT NOT NULL, user_id TEXT NOT NULL, choice TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, from_id TEXT NOT NULL, to_id TEXT NOT NULL, stake_kobo INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 60, status TEXT NOT NULL DEFAULT 'PENDING', pool_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, responded_at TEXT, expires_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_challenges_to ON challenges(to_id, status);
+CREATE INDEX IF NOT EXISTS idx_challenges_from ON challenges(from_id, status);
+CREATE INDEX IF NOT EXISTS idx_challenges_open ON challenges(status, expires_at);
+CREATE TABLE IF NOT EXISTS error_log (id TEXT PRIMARY KEY, area TEXT NOT NULL, message TEXT NOT NULL, detail TEXT, hint TEXT, stack TEXT, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_error_log_time ON error_log(created_at);
+CREATE TABLE IF NOT EXISTS announcements (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, link TEXT, audience TEXT NOT NULL DEFAULT 'ALL', overlay INTEGER NOT NULL DEFAULT 0, email TEXT NOT NULL DEFAULT 'NO', active INTEGER NOT NULL DEFAULT 1, created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS announcement_seen (user_id TEXT NOT NULL, ann_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, ann_id));
+CREATE TABLE IF NOT EXISTS email_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref_id TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'ALL', service INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'QUEUED', cursor TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, done_at TEXT);
+INSERT OR IGNORE INTO settings(key,value) VALUES ('withdraw_daily_max_kobo','100000000'), ('mapo_pools_per_day','20'), ('nepo_pools_per_day','50'), ('topup_seconds_per_step','10'), ('vote_continue_pct','50'), ('vote_hours','1'), ('voice_on','1'), ('stakes_on','0'), ('signups_paused','0');
+UPDATE settings SET value='3' WHERE key='voice_top_n';
+UPDATE store_items SET description='Open it for a surprise: a booster or a skin.' WHERE id='box-basic';

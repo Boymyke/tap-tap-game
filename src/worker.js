@@ -4,28 +4,32 @@ import { authPage } from './ui/auth.js';
 import { legalPage, LEGAL_PATHS } from './ui/legal.js';
 import { landingPage, demoPools } from './ui/landing.js';
 import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage, unsubPage } from './ui/pages.js';
-import { dashboardPage, poolsPage, poolPage, createPoolPage } from './ui/player.js';
+import { dashboardPage, poolsPage, poolPage, createPoolPage, resultsPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
 import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage, winnersPage, playersPage, profilePage } from './ui/profile.js';
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
-import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, adminMoney, setupPage, suggestPage } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, adminMoney, setupPage, suggestPage, adminErrors, adminMessages } from './ui/admin.js';
 import { emailProblem } from './auth-rules.js';
+import { emailConfigured } from './email.js';
 import { handleAuthApi } from './auth-api.js';
 import { handlePlayApi, maybeFreeBox } from './api/play.js';
 import { handleMoneyApi, payCallback, gateway, testPayments, banksFor, autoPayouts, reconcileBachs } from './api/money.js';
 import { handleAdminApi } from './api/admin.js';
 import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
-import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex, likeEsc } from './lib.js';
+import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex, likeEsc, logError, memo } from './lib.js';
 import { PATTERNS } from './ui/patterns.js';
 import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay } from './core.js';
 import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
-import { listStmt, getPool, poolPublic, roomCall, joinBlock, computeSidePots, expireWaiting } from './game/pools.js';
+import { listStmt, getPool, poolPublic, roomCall, joinBlock, expireWaiting, closeVotes, voteCounts } from './game/pools.js';
 import { awardBadges } from './game/badges.js';
 import { processEmailBlasts, unsubOk } from './game/blasts.js';
+import { challengeLists, expireChallenges } from './game/challenges.js';
+import { siteLinks, processEmailJobs } from './game/announce.js';
+import { challengesPage } from './ui/challenges.js';
 import { logAuth, decryptPhrase, canKeepCopies } from './phrase.js';
 import { runChecks, healthSweep } from './health.js';
 
@@ -102,8 +106,30 @@ async function recentWinners(env) {
   return winCache;
 }
 
+// Toasts on the landing and sign-up pages: real recent wins (names partly hidden) mixed with Tap Am tips.
+// The tips change every day (picked by the Lagos date). They are tips and news — never invented wins.
+const TIPS = [
+  ['⚡', 'Instant matches start the moment the last seat fills.'], ['🎯', 'Daily instant match at 1 PM and 8 PM — bring your squad.'],
+  ['🥊', 'New: Tap-offs! Challenge any player 1-on-1.'], ['👆', 'Two fingers beat one. Mapo babies tap in 3 pools at once.'],
+  ['🚀', 'Boosters stack one after the other — a stronger one jumps the queue.'], ['🎁', 'Free mystery boxes drop for active players.'],
+  ['🏆', 'Top tappers of the day, week and month get badges.'], ['🍚', 'VS pools: pick Jollof or Fried rice. The side with more taps takes the whole pot.'],
+  ['⏱', 'In some games, ₦10,000 adds 10 seconds to the clock for everybody.'], ['🔒', 'Private pools: invite your people by name, no password needed.'],
+  ['📣', 'Sponsors: put your brand on a pool and reach every player who joins.'], ['🎙', 'Nepo babies in the top 3 fit talk live during a match.'],
+  ['📊', 'The booster calculator tells you which booster takes you to the top.'], ['🔁', 'Lost the network? Your taps wait and send when you’re back.'],
+  ['🎖', 'Every tap counts toward your rank — 100 ranks to climb.'], ['🤝', 'Invite friends with your link and earn free boosters.'],
+  ['🧠', 'Fair play: the server counts every tap. No bots, no wahala.'], ['💸', 'Winnings go straight to your winnings balance after every pool.'],
+  ['🗓', 'Schedule a pool for later and share the code with your group.'], ['🎨', 'Nepo babies pick their own backgrounds and tap areas.'],
+  ['📱', 'Add Tap Am to your home screen for one-tap play.'], ['🥇', 'Share your results card after every match.']
+];
+function dailyTips(n = 6) {
+  let seed = Number(lagosDay().replace(/-/g, '')) % 2147483647;
+  const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  return [...TIPS].map(t => [rnd(), t]).sort((a, b) => a[0] - b[0]).slice(0, n).map(([, [icon, text]]) => ({ icon, text }));
+}
+
 async function handleSiteApi(req, env, path) {
-  if (path === '/api/winners' && req.method === 'GET') return json({ winners: await recentWinners(env) }, 200, { 'cache-control': 'public, max-age=60' });
+  if (path === '/api/links' && req.method === 'GET') return json(await memo('links', 60000, () => siteLinks(env)), 200, { 'cache-control': 'public, max-age=120' });
+  if (path === '/api/winners' && req.method === 'GET') return json({ winners: await recentWinners(env), tips: dailyTips() }, 200, { 'cache-control': 'public, max-age=60' });
   // "Stop these emails" link from a pool news email (signed per player, works without logging in)
   if (path === '/api/unsub' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
@@ -177,7 +203,9 @@ async function sweep(env, cron) {
   const cutoff = new Date(Date.now() - 20000).toISOString();
   const due = (await env.DB.prepare("SELECT id FROM pools WHERE settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED','WAITING') AND ends_at<? LIMIT 25").bind(cutoff).all()).results;
   for (const p of due) { try { await roomCall(env, p.id, '/settle', { id: p.id }); } catch (e) { console.error('sweep settle', p.id, e?.message); } }
-  try { await expireWaiting(env); } catch (e) { console.error('instant expiry', e?.message); }
+  try { await expireWaiting(env); } catch (e) { console.error('instant expiry', e?.message); await logError(env, 'cron instant expiry', e); }
+  try { await closeVotes(env); } catch (e) { console.error('close votes', e?.message); await logError(env, 'cron pause votes', e); }
+  try { await expireChallenges(env); } catch (e) { console.error('challenge expiry', e?.message); await logError(env, 'cron tap-off expiry', e); }
   const now = nowIso();
   const res = await env.DB.batch([
     env.DB.prepare("INSERT INTO settings(key,value) VALUES('cron_last',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(now),
@@ -199,7 +227,8 @@ async function sweep(env, cron) {
   try { await autoPayouts(env); } catch (e) { console.error('auto payouts', e?.message); }
   try { await reconcileBachs(env); } catch (e) { console.error('bachs reconcile', e?.message); }
   try { await awardBadges(env); } catch (e) { console.error('badges', e?.message); }
-  try { await processEmailBlasts(env, env.PUBLIC_URL || 'https://www.tapammm.live'); } catch (e) { console.error('blasts', e?.message); }
+  try { await processEmailBlasts(env, env.PUBLIC_URL || 'https://tapammm.live'); } catch (e) { console.error('blasts', e?.message); await logError(env, 'cron pool emails', e); }
+  try { await processEmailJobs(env, env.PUBLIC_URL || 'https://tapammm.live'); } catch (e) { console.error('announce emails', e?.message); await logError(env, 'cron announcement emails', e); }
   const minute = new Date().getUTCMinutes();
   if (minute % 15 < 5) { try { await healthSweep(env); } catch (e) { console.error('health', e?.message); } }
   return due.length;
@@ -207,6 +236,7 @@ async function sweep(env, cron) {
 
 // API dispatch (the API answers' admin links are rewritten by the caller).
 async function apiRoute(req, env, path) {
+  if (path === '/api/ping') return json({ ok: true });   // the "back online?" check
   let user = null;
   const site = await handleSiteApi(req, env, path); if (site) return site;
   const auth = await handleAuthApi(req, env, path); if (auth) return auth;
@@ -270,7 +300,9 @@ export default {
       return res;
     } catch (e) {
       console.error('fatal', requestId, e?.stack || e);
-      if (ctx?.waitUntil) ctx.waitUntil(bump(env, 'errors')); else bump(env, 'errors');
+      const where = (() => { try { const u = new URL(req.url); return { method: req.method, path: u.pathname.replace(/[0-9a-f-]{36}/g, ':id'), requestId, user: user?.id || null }; } catch { return { requestId }; } })();
+      const work = Promise.all([bump(env, 'errors'), logError(env, 'request ' + where.path, e, where)]);
+      if (ctx?.waitUntil) ctx.waitUntil(work); else await work;
       if (new URL(req.url).pathname.startsWith('/api/')) return json({ error: 'Server wahala. Try again.', requestId }, 500);
       return html(errorPage(500, { user, ref: requestId.slice(0, 8) }), 500);
     }
@@ -284,7 +316,7 @@ async function route(req, env, url, path, user) {
   const q = url.searchParams;
 
   switch (path) {
-    case '/': { const [stats, pools] = await Promise.all([siteStats(env), featuredPools(env, user)]); return html(landingPage({ user, pools, stats })); }
+    case '/': { const [stats, pools] = await Promise.all([memo('stats', 30000, () => siteStats(env)), user ? featuredPools(env, user) : memo('featured', 30000, () => featuredPools(env, null))]); return html(landingPage({ user, pools, stats })); }
     case '/login': case '/signup':
       if (user) return go(req, homeFor(user));
       return html(authPage(path.slice(1), { ref: q.get('ref') || '', sponsor: q.get('type') === 'sponsor' }));
@@ -332,7 +364,9 @@ async function route(req, env, url, path, user) {
   if (resM) return go(req, `/pool/${resM[1]}`);
   if (LEGAL_PATHS.includes(path.slice(1))) return html(legalPage(path.slice(1), user));
 
-  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|me|settings|calc|notifications|suggest-pool|invite|sponsor|admin)(\/|\.|$)/;
+  const resultsM = path.match(/^\/pool\/([^/]+)\/results$/);
+  if (resultsM) return resultsRoute(req, env, url, resultsM[1], user);
+  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|me|settings|calc|notifications|suggest-pool|invite|challenges|sponsor|admin)(\/|\.|$)/;
   if (!APP.test(path)) return html(errorPage(404, { user }), 404);
   if (!user) return path.startsWith('/admin') ? go(req, '/admin/login') : loginFirst(req, url);
 
@@ -360,8 +394,10 @@ async function route(req, env, url, path, user) {
     }
     case '/pools': {
       const scope = ['open', 'live', 'sponsored', 'players-soon', 'mine', 'created', 'recent'].includes(q.get('scope')) ? q.get('scope') : 'open';
-      const pools = (await listStmt(env, user, { scope, limit: 60 }).all()).results.map(poolPublic);
-      return html(poolsPage({ ...b, scope, pools }));
+      const term = String(q.get('q') || '').trim().replace(/^#/, '').slice(0, 40);
+      const pg = pageNum(q);
+      const rows = (await listStmt(env, user, { scope, limit: 31, offset: (pg - 1) * 30, q: term }).all()).results;
+      return html(poolsPage({ ...b, scope, term, page: pg, hasNext: rows.length > 30, pools: rows.slice(0, 30).map(poolPublic) }));
     }
     case '/pools/new': {
       if (user.role === 'USER' && !b.perk?.create) return go(req, '/plans');
@@ -402,7 +438,7 @@ async function route(req, env, url, path, user) {
         env.DB.prepare('SELECT type,amount_kobo,balance,note,created_at FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 21 OFFSET ?').bind(user.id, (pg - 1) * 20),
         env.DB.prepare('SELECT * FROM withdrawals WHERE user_id=? ORDER BY created_at DESC LIMIT 10').bind(user.id)]);
       const flash = q.get('paid') === '1' ? 'Payment received. Your wallet don update.' : q.get('paid') === '0' ? 'Payment no go through. No money was taken.' : '';
-      return html(walletPage({ ...b, tx: tx.results.slice(0, 20), page: pg, hasNext: tx.results.length > 20, withdrawals: wd.results, minWithdraw: b.perk ? b.perk.minWithdraw : 0, banks: await banksFor(env), payMode: payMode(env), flash, perDay: Math.max(1, num(b.s, 'withdrawals_per_day', 1)) }));
+      return html(walletPage({ ...b, tx: tx.results.slice(0, 20), page: pg, hasNext: tx.results.length > 20, withdrawals: wd.results, minWithdraw: b.perk ? b.perk.minWithdraw : 0, banks: await banksFor(env), payMode: payMode(env), flash, perDay: Math.max(1, num(b.s, 'withdrawals_per_day', 1)), dayCap: num(b.s, 'withdraw_daily_max_kobo', 100000000) }));
     }
     case '/wallet/history.csv': {
       if (!await allow(env, 'csv:' + user.id, 20, 3600)) return new Response('Too many downloads. Try again later.', { status: 429 });
@@ -437,8 +473,13 @@ async function route(req, env, url, path, user) {
       return html(suggestPoolPage({ ...b, mine }));
     }
     case '/notifications': {
-      const notes = (await env.DB.prepare('SELECT text,link,read,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 60').bind(user.id).all()).results;
-      return html(notificationsPage({ ...b, notes }));
+      const pg = pageNum(q);
+      const notes = (await env.DB.prepare('SELECT id,text,link,read,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 31 OFFSET ?').bind(user.id, (pg - 1) * 30).all()).results;
+      return html(notificationsPage({ ...b, notes: notes.slice(0, 30), page: pg, hasNext: notes.length > 30 }));
+    }
+    case '/challenges': {
+      if (user.role !== 'USER') return go(req, homeFor(user));
+      return html(challengesPage({ ...b, lists: await challengeLists(env, user), stakesOn: b.s.stakes_on === '1', to: String(q.get('to') || '').slice(0, 24) }));
     }
   }
 
@@ -456,11 +497,11 @@ async function topRoute(env, q, user) {
   const like = term ? likeEsc(term) + '%' : '';
   let rows, me = null;
   if (period === 'ALL') {
-    rows = (await env.DB.prepare(`SELECT * FROM (SELECT id,username,rank_level,emoji,lifetime_taps AS taps, ROW_NUMBER() OVER (ORDER BY lifetime_taps DESC, created_at) AS pos FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0) WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT 51 OFFSET ?`).bind(like, like, (pg - 1) * 50).all()).results;
+    rows = await memo(`top:ALL:${like}:${pg}`, 30000, async () => (await env.DB.prepare(`SELECT * FROM (SELECT id,username,rank_level,emoji,lifetime_taps AS taps, ROW_NUMBER() OVER (ORDER BY lifetime_taps DESC, created_at) AS pos FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>0) WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT 51 OFFSET ?`).bind(like, like, (pg - 1) * 50).all()).results);
     if (user?.role === 'USER' && !term && user.lifetime_taps > 0 && !rows.some(r => r.id === user.id)) me = { taps: user.lifetime_taps, pos: 1 + Number((await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='USER' AND status='ACTIVE' AND lifetime_taps>?").bind(user.lifetime_taps).first())?.n || 0) };
   } else {
     const key = periodKeys()[period];
-    rows = (await env.DB.prepare(`SELECT * FROM (SELECT u.id,u.username,u.rank_level,u.emoji,t.taps, ROW_NUMBER() OVER (ORDER BY t.taps DESC, u.created_at) AS pos FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE') WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT 51 OFFSET ?`).bind(key, like, like, (pg - 1) * 50).all()).results;
+    rows = await memo(`top:${key}:${like}:${pg}`, 30000, async () => (await env.DB.prepare(`SELECT * FROM (SELECT u.id,u.username,u.rank_level,u.emoji,t.taps, ROW_NUMBER() OVER (ORDER BY t.taps DESC, u.created_at) AS pos FROM tap_stats t JOIN users u ON u.id=t.user_id WHERE t.period=? AND u.status='ACTIVE') WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT 51 OFFSET ?`).bind(key, like, like, (pg - 1) * 50).all()).results);
     if (user?.role === 'USER' && !term && !rows.some(r => r.id === user.id)) {
       const mine = await env.DB.prepare('SELECT taps FROM tap_stats WHERE period=? AND user_id=?').bind(key, user.id).first();
       if (mine) me = { taps: mine.taps, pos: 1 + Number((await env.DB.prepare('SELECT COUNT(*) n FROM tap_stats WHERE period=? AND taps>?').bind(key, mine.taps).first())?.n || 0) };
@@ -517,6 +558,27 @@ async function profileRoute(env, url, nick, user) {
   return html(profilePage({ user, p: { ...p, tierName: tierLabel(p) }, own, hidden, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
 }
 
+// Public results page for a finished pool (anyone with the link can see it; it's made to be shared).
+async function resultsRoute(req, env, url, id, user) {
+  const p = await env.DB.prepare('SELECT * FROM pools WHERE id=? OR hashtag=?').bind(id, String(id).toUpperCase()).first();
+  if (!p) return html(errorPage(404, { user }), 404);
+  if (!p.settled_at || p.status === 'CANCELLED') return go(req, user ? `/pool/${p.id}` : '/');
+  const rows = (await env.DB.prepare(`SELECT pe.user_id, u.username n, u.hide_profile, pe.taps s, pe.prize_kobo prize, pe.side_choice side, pe.final_rank
+    FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? AND pe.taps>0 ORDER BY pe.taps DESC, pe.reached_at ASC LIMIT 10`).bind(p.id).all()).results
+    .map(r => ({ n: r.n, s: r.s, side: r.side, me: r.user_id === user?.id, prize: r.hide_profile && r.user_id !== user?.id ? 0 : r.prize }));   // players who hide their winnings stay hidden
+  const players = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pool_entries WHERE pool_id=?').bind(p.id).first())?.n || 0);
+  let vs = null;
+  if (p.vs_split && p.side_a) {
+    const t = (await env.DB.prepare('SELECT side_choice s, COALESCE(SUM(taps),0) t, COUNT(*) c, COALESCE(SUM(prize_kobo),0) w FROM pool_entries WHERE pool_id=? GROUP BY side_choice').bind(p.id).all()).results;
+    const by = k => Object.fromEntries(t.map(r => [r.s, Number(r[k])]));
+    const taps = by('t'), a = taps[p.side_a] || 0, bb = taps[p.side_b] || 0;
+    vs = { taps, count: by('c'), won: by('w'), winners: a === bb ? (a ? [p.side_a, p.side_b] : []) : [a > bb ? p.side_a : p.side_b] };
+  }
+  const me = user ? await env.DB.prepare('SELECT final_rank, taps, prize_kobo FROM pool_entries WHERE pool_id=? AND user_id=?').bind(p.id, user.id).first() : null;
+  const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
+  return html(resultsPage({ user, pool: p, rows, vs, players, me, origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
+}
+
 async function poolRoute(req, env, id, user, b, origin) {
   const p = await getPool(env, id, user);
   if (!p) return html(errorPage(404, { user }), 404);
@@ -537,8 +599,8 @@ async function poolRoute(req, env, id, user, b, origin) {
   const jb = user.role === 'USER' ? joinBlock(p, user) : { why: 'Only player accounts can join pools.' };
   const myBoosters = user.role === 'USER' ? Number((await env.DB.prepare("SELECT COALESCE(SUM(i.quantity),0) n FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND s.kind='BOOSTER'").bind(user.id).first())?.n || 0) : 0;
   const entries = isCreator ? (await env.DB.prepare('SELECT u.username, pe.joined_at, pe.paid_kobo, pe.side_choice FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? ORDER BY pe.joined_at DESC LIMIT 200').bind(p.id).all()).results : null;
-  const sidePots = p.vs_split && p.side_a ? await computeSidePots(env, p) : null;
-  return html(poolPage({ ...b, pool: pub, board, results, isCreator, joinBlock: jb, myBoosters, entries, origin, sidePots }));
+  const votes = pub.pauseMode === 'VOTE' ? { ...(await voteCounts(env, p.id)), mine: (await env.DB.prepare('SELECT choice FROM pool_votes WHERE pool_id=? AND user_id=?').bind(p.id, user.id).first())?.choice || null } : null;
+  return html(poolPage({ ...b, pool: pub, board, results, isCreator, joinBlock: jb, myBoosters, entries, origin, votes }));
 }
 
 async function playRoute(req, env, url, user, b) {
@@ -551,13 +613,17 @@ async function playRoute(req, env, url, user, b) {
   // Lapo-rules pools are played on their own (no one-tap-counts-in-many).
   if (joined.length > 1) { const normal = joined.filter(p => !p.lapo_rules); joined = normal.length ? normal : joined.slice(0, 1); }
   if (!joined.length) return go(req, found[0] ? `/pool/${found[0].id}` : '/pools');
-  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg, lapoRules: x.lapoRules }; });
+  const pools = joined.map(p => { const x = poolPublic(p); return { id: x.id, name: x.name, state: x.state, startsAt: x.startsAt, endsAt: x.endsAt, boosters: x.boosters, sideA: x.sideA, sideB: x.sideB, side: p.side_choice || null, prize: x.prize, sponsor: x.sponsor, kind: x.kind, theme: x.theme, padPattern: x.padPattern, allowOwnPad: x.allowOwnPad, bg: x.bg, lapoRules: x.lapoRules, timeTopup: x.timeTopup }; });
   const prefs = parseJson(user.prefs, {});
   const [skinRow, items] = await env.DB.batch([
     env.DB.prepare("SELECT config FROM store_items WHERE id=? AND kind='SKIN'").bind(user.equipped_skin || 'skin-boy'),
     env.DB.prepare("SELECT s.*, COALESCE(i.quantity,0) AS quantity FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.kind='BOOSTER' AND s.active=1 ORDER BY s.sort").bind(user.id)]);
-  const boosters = items.results.filter(x => x.quantity > 0 || itemLock(x, user)).map(x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, everybody: x.audience === 'ALL', color: parseJson(x.config, {}).color || '#2E8BFF', lock: lock ? { why: lock.why, need: lock.need } : null }; });
-  const voice = { enabled: !!(env.CALLS_APP_ID && env.CALLS_APP_TOKEN), topN: num(b.s, 'voice_top_n', 5), minRank: num(b.s, 'voice_min_rank', 56) };
+  // The boosters you own first; then 3 you don't have yet (ones you can buy right now before locked ones), at the bottom.
+  const toB = x => { const lock = itemLock(x, user); return { id: x.id, name: x.name, mult: x.multiplier, dur: x.duration_seconds, qty: x.quantity, perGame: x.per_game_limit || 0, everybody: x.audience === 'ALL', color: parseJson(x.config, {}).color || '#2E8BFF', price: x.price_kobo, owned: x.quantity > 0, lock: lock ? { why: lock.why, need: lock.need } : null }; };
+  const owned = items.results.filter(x => x.quantity > 0).map(toB);
+  const extra = items.results.filter(x => x.quantity <= 0).map(toB).sort((a, c) => (!!a.lock - !!c.lock) || a.price - c.price).slice(0, 3);
+  const boosters = [...owned, ...extra];
+  const voice = { enabled: !!(env.CALLS_APP_ID && env.CALLS_APP_TOKEN) && b.s.voice_on !== '0', topN: num(b.s, 'voice_top_n', 3) };
   const me = { name: user.username, tier: b.tierKey, fingers: pk.fingers, rate: pk.rate, sound: soundFor(user, prefs), muted: !!prefs.muted, vibrate: prefs.vibrate !== false, calc: !!pk.calc, rank: user.rank_level || 1, emoji: user.emoji || null };
   return html(playPage({ user, pools, boosters, skin: parseJson(skinRow.results[0]?.config, { bg: '#2E8BFF', pattern: 'waves' }), prefs, voice, serverNow: nowIso(), me, paid: b.tierKey !== 'LAPO', theme: b.theme, bgCss: b.bgCss }));
 }
@@ -627,7 +693,23 @@ async function adminRoute(req, env, url, path, user) {
       (SELECT COUNT(*) FROM suggestions WHERE kind='POOL' AND status='NEW') poolIdeas,
       (SELECT COALESCE(SUM(n),0) FROM metrics WHERE key='taps' AND day=?) tapsToday`).bind(now, now, now, now, lagosDay()).first();
     const audit = (await env.DB.prepare('SELECT action,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 15').all()).results;
-    return html(adminHome({ ...b, stats: s, settings: await settings(env), audit }));
+    const errors24 = Number((await env.DB.prepare('SELECT COUNT(*) n FROM error_log WHERE created_at>?').bind(new Date(Date.now() - 86400000).toISOString()).first())?.n || 0);
+    return html(adminHome({ ...b, stats: s, settings: await settings(env), audit, errors24 }));
+  }
+  if (path === '/admin/errors') {
+    const pg = pageNum(q);
+    const [rows, c] = await env.DB.batch([
+      env.DB.prepare('SELECT * FROM error_log ORDER BY created_at DESC LIMIT 51 OFFSET ?').bind((pg - 1) * 50),
+      env.DB.prepare('SELECT (SELECT COUNT(*) FROM error_log WHERE created_at>?) day, (SELECT COUNT(*) FROM error_log WHERE created_at>?) week').bind(new Date(Date.now() - 86400000).toISOString(), new Date(Date.now() - 7 * 86400000).toISOString())]);
+    return html(adminErrors({ ...b, rows: rows.results.slice(0, 50), page: pg, hasNext: rows.results.length > 50, counts: c.results[0] }));
+  }
+  if (path === '/admin/messages') {
+    const [recent, pools, jobs] = await env.DB.batch([
+      env.DB.prepare('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 20'),
+      env.DB.prepare("SELECT id,name,sponsor_name FROM pools WHERE settled_at IS NULL AND status!='CANCELLED' AND ends_at>? AND is_private=0 ORDER BY starts_at LIMIT 100").bind(nowIso()),
+      env.DB.prepare(`SELECT 'Announcement: ' || a.title AS what, j.status, j.sent, j.created_at FROM email_jobs j JOIN announcements a ON a.id=j.ref_id
+        UNION ALL SELECT 'Pool: ' || p.name, b.status, b.sent, b.created_at FROM email_blasts b JOIN pools p ON p.id=b.pool_id ORDER BY 4 DESC LIMIT 15`)]);
+    return html(adminMessages({ ...b, recent: recent.results, pools: pools.results, jobs: jobs.results, emailOn: emailConfigured(env) }));
   }
   if (path === '/admin/health') {
     const { checks, dbBytes } = await runChecks(env);

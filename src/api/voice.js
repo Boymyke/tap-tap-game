@@ -1,6 +1,7 @@
 // Live voice in games, using Cloudflare Realtime (SFU). Needs CALLS_APP_ID + CALLS_APP_TOKEN.
-// Rules: talk = Nepo + rank ≥ voice_min_rank (Para Para Boy I) + top N in that pool.
+// Rules: talk = a Nepo baby who is in the top 3 (voice_top_n) of that pool right now.
 //        listen = anyone who joined the pool. One voice room per person at a time.
+//        The super admin can switch live voice off for everybody (voice_on = 0).
 import { json, readJson, nowIso } from '../lib.js';
 import { requireRole, isNepo, loadUser, settings, num } from '../core.js';
 import { getPool, poolState, roomCall } from '../game/pools.js';
@@ -16,12 +17,11 @@ async function calls(env, method, path, body) {
 export async function canTalk(env, user, poolId) {
   const s = await settings(env);
   const me = await loadUser(env, user.id);
+  if (s.voice_on === '0') return { ok: false, why: 'Live voice is switched off for now.' };
   if (!isNepo(me)) return { ok: false, why: 'Only Nepo babies fit talk in games.' };
-  const minRank = num(s, 'voice_min_rank', 56);
-  if ((me.rank_level || 1) < minRank) return { ok: false, why: `Reach rank ${minRank} (Para Para Boy) to unlock your mic.` };
-  const topN = num(s, 'voice_top_n', 5);
+  const topN = num(s, 'voice_top_n', 3);
   const b = (await roomCall(env, poolId, `/board?uid=${user.id}&n=3`)).data;
-  if (!b.me || !b.me.rank || b.me.rank > topN) return { ok: false, why: `Enter the top ${topN} for this pool to talk.` };
+  if (!b.me || !b.me.rank || b.me.rank > topN) return { ok: false, why: `Only the top ${topN} Nepo babies in this pool fit talk. Tap your way up!` };
   return { ok: true };
 }
 
@@ -29,6 +29,7 @@ export async function handleVoiceApi(req, env, path, user) {
   if (!path.startsWith('/api/voice/')) return null;
   const deny = requireRole(user, ['USER']); if (deny) return deny;
   if (!env.CALLS_APP_ID || !env.CALLS_APP_TOKEN) return json({ error: 'Live voice never open yet.' }, 503);
+  if ((await settings(env)).voice_on === '0') return json({ error: 'Live voice is switched off for now.' }, 503);
 
   if (path === '/api/voice/speakers' && req.method === 'GET') {
     const pool = String(new URL(req.url).searchParams.get('pool') || '');

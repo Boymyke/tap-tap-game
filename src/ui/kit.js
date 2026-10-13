@@ -222,14 +222,14 @@ export function appPage({ user, title, active = '', body, script = '', css = '',
 }
 
 export const tierBadge = label => `<span class="badge ${{ 'Nepo baby': 'nepo', 'Mapo baby': 'mapo', 'Lapo baby': 'lapo', Sponsor: 'sponsor', 'Super admin': 'red' }[label] || 'lapo'}">${esc(label)}</span>`;
-export const stateBadge = s => `<span class="badge ${s}">${{ live: 'Live now', soon: 'Coming up', ended: 'Ended', cancelled: 'Cancelled', waiting: 'Filling up' }[s] || s}</span>`;
+export const stateBadge = s => `<span class="badge ${s === 'paused' ? 'red' : s}">${{ live: 'Live now', soon: 'Coming up', ended: 'Ended', cancelled: 'Cancelled', waiting: 'Filling up', paused: 'Paused' }[s] || s}</span>`;
 // A player's name plus the emoji the super admin gave them. Only the owner gets a button that shows
 // the meaning (pass `meaning` only for the signed-in user's own name); everyone else just sees the emoji.
 export const nameTag = (name, emoji, meaning = null) => `${esc(name)}${emoji ? (meaning
   ? ` <button type="button" class="nemoji" data-emoji-meaning="${esc(meaning)}" data-emoji="${esc(emoji)}" aria-label="What your emoji means">${esc(emoji)}</button>`
   : ` <span class="nemoji" aria-hidden="true">${esc(emoji)}</span>`) : ''}`;
 // Live countdown pill: "Starts in 2h 03m 10s" / "Ends in 14m 09s" (updated by app.js).
-export const whenPill = p => p.state === 'waiting'
+export const whenPill = p => p.state === 'paused' ? `<span class="when ended">${p.voteUntil ? 'Paused · vote open' : 'Paused · scores saved'}</span>` : p.state === 'waiting'
   ? `<span class="when waiting" data-waiting>${short(p.players || 0)}/${short(p.maxPlayers)} joined · starts when full</span>`
   : p.state === 'ended' || p.state === 'cancelled'
   ? `<span class="when ended">${p.state === 'cancelled' ? 'Cancelled' : 'Ended ' + esc(lagos(p.endsAt))}</span>`

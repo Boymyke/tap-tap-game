@@ -1,15 +1,18 @@
 // Player API: pools, taps, boosters, store, inventory, gifts, settings, calculator, ads, leads, account.
 import { isPattern } from '../ui/patterns.js';
-import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie, likeEsc } from '../lib.js';
+import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie, likeEsc, passwordOk } from '../lib.js';
+import { normWhatsapp } from '../auth-api.js';
 import { tierOf, tierLabel, isNepo, isPaid, requireRole, debit, credit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
 import { perks, THEMES, SOUNDS } from '../tiers.js';
-import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool, addInvites } from '../game/pools.js';
+import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool, addInvites, castVote } from '../game/pools.js';
 import { allRanks, rankInfo } from '../game/ranks.js';
+import { createChallenge, answerChallenge } from '../game/challenges.js';
+import { pendingOverlay } from '../game/announce.js';
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 export async function handlePlayApi(req, env, path, user) {
-  const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost|topup|invite|state))?$/);
+  const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost|topup|invite|state|result|vote))?$/);
 
   // ── pools ──
   if (path === '/api/pools' && req.method === 'GET') {
@@ -31,6 +34,21 @@ export async function handlePlayApi(req, env, path, user) {
     if (!p) return json({ error: 'We no see any pool with that code. Check the letters and try again.', field: 'code' }, 404);
     return json({ redirect: `/pool/${p.id}` });
   }
+  // ── tap-off challenges ──
+  if (path === '/api/challenges' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'challenge:' + user.id, 30, 86400)) return json({ error: 'You don send plenty challenges today. Try again tomorrow.' }, 429);
+    return createChallenge(env, await loadUser(env, user.id), data);
+  }
+  const cm = path.match(/^\/api\/challenges\/([0-9a-f-]{36})\/(accept|decline|cancel)$/);
+  if (cm && req.method === 'POST') {
+    const deny = requireRole(user, ['USER']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'challenge-ans:' + user.id, 60, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    return answerChallenge(env, await loadUser(env, user.id), cm[1], cm[2], data);
+  }
+
   // Player search for invites: names that start with what was typed ("_" and "%" are matched as typed).
   if (path === '/api/players/search' && req.method === 'GET') {
     const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
@@ -41,10 +59,33 @@ export async function handlePlayApi(req, env, path, user) {
       .bind(user.id, likeEsc(q) + '%', q).all()).results;
     return json({ players: rows.map(r => ({ name: r.username, emoji: r.emoji || null, tier: tierLabel(r), rank: r.rank_level || 1 })) });
   }
+  // Server-problem vote: continue the paused match or restart it.
+  if (m && m[2] === 'vote' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'vote:' + user.id, 30, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const pool = await getPool(env, m[1], user); if (!pool) return json({ error: 'Pool not found.' }, 404);
+    return castVote(env, user, pool, String(data.choice || '').toUpperCase());
+  }
+  // Your result after a pool is paid out: your place, taps and what you won (VS: which side won).
+  if (m && m[2] === 'result' && req.method === 'GET') {
+    const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
+    const p = await env.DB.prepare('SELECT id, settled_at, status, vs_split, side_a, side_b FROM pools WHERE id=?').bind(m[1]).first();
+    if (!p) return json({ error: 'Pool not found.' }, 404);
+    if (!p.settled_at || p.status === 'CANCELLED') return json({ settled: false, cancelled: p.status === 'CANCELLED' });
+    const me = await env.DB.prepare('SELECT final_rank, taps, prize_kobo FROM pool_entries WHERE pool_id=? AND user_id=?').bind(p.id, user.id).first();
+    let vs = null;
+    if (p.vs_split && p.side_a) {
+      const t = Object.fromEntries((await env.DB.prepare('SELECT side_choice s, COALESCE(SUM(taps),0) t FROM pool_entries WHERE pool_id=? GROUP BY side_choice').bind(p.id).all()).results.map(r => [r.s, Number(r.t)]));
+      const a = t[p.side_a] || 0, b = t[p.side_b] || 0;
+      vs = { taps: { [p.side_a]: a, [p.side_b]: b }, winners: a === b ? (a ? [p.side_a, p.side_b] : []) : [a > b ? p.side_a : p.side_b] };
+    }
+    return json({ settled: true, rank: me?.final_rank || null, taps: me?.taps || 0, prize: me?.prize_kobo || 0, vs });
+  }
   // Pool status for the "waiting for players" screen (instant matches).
   if (m && m[2] === 'state' && req.method === 'GET') {
     const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
-    const p = await env.DB.prepare('SELECT status, starts_at, ends_at, settled_at, max_players, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=pools.id) AS players FROM pools WHERE id=?').bind(m[1]).first();
+    const p = await env.DB.prepare('SELECT status, pause_mode, vote_until, starts_at, ends_at, settled_at, max_players, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=pools.id) AS players FROM pools WHERE id=?').bind(m[1]).first();
     if (!p) return json({ error: 'Pool not found.' }, 404);
     return json({ state: poolState(p), players: Number(p.players), maxPlayers: Number(p.max_players), startsAt: p.starts_at, endsAt: p.ends_at });
   }
@@ -63,7 +104,7 @@ export async function handlePlayApi(req, env, path, user) {
   if (m && m[2] === 'topup' && req.method === 'POST') {
     const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
     const { data, response } = await readJson(req); if (response) return response;
-    if (!await allow(env, 'topup:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    if (!await allow(env, 'topup:' + user.id, 60, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
     const pool = await getPool(env, m[1], user); if (!pool) return json({ error: 'Pool not found.' }, 404);
     return topUpPool(env, await loadUser(env, user.id), pool, data);
   }
@@ -259,7 +300,8 @@ export async function handlePlayApi(req, env, path, user) {
     const rate = Math.max(1, Math.min(40, Number(new URL(req.url).searchParams.get('rate')) || 6));
     const now = nowIso();
     const pools = (await env.DB.prepare("SELECT p.id,p.name,p.prize_kobo,p.ends_at,p.boosters_allowed FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id WHERE pe.user_id=? AND p.ends_at>? AND p.status!='CANCELLED' LIMIT 10").bind(user.id, now).all()).results;
-    const boosters = (await env.DB.prepare("SELECT s.id,s.name,s.multiplier,s.duration_seconds,s.audience,s.min_rank,s.per_game_limit,i.quantity FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND s.kind='BOOSTER' AND i.quantity>0").bind(user.id).all()).results
+    // Boosters you own, plus the ones in the store you could buy now (the calculator suggests both).
+    const boosters = (await env.DB.prepare("SELECT s.id,s.name,s.multiplier,s.duration_seconds,s.audience,s.min_rank,s.per_game_limit,s.price_kobo,COALESCE(i.quantity,0) AS quantity FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.kind='BOOSTER' AND (i.quantity>0 OR s.active=1)").bind(user.id).all()).results
       .filter(x => !itemLock(x, me));
     const out = [];
     for (const p of pools) {
@@ -269,20 +311,24 @@ export async function handlePlayApi(req, env, path, user) {
       const options = boosters.map(x => {
         const extra = Math.round(rate * x.duration_seconds * (x.multiplier - 1));
         const uses = n => { const gap = target(n); return gap <= 0 ? 0 : Math.ceil(gap / Math.max(1, extra)); };
-        const capped = x.per_game_limit > 0 ? Math.max(0, x.per_game_limit - (b.me?.used?.[x.id] || 0)) : x.quantity;
-        return { item: x.id, name: x.name, owned: x.quantity, usable: Math.min(x.quantity, capped), extraPerUse: extra, toTop1: uses(1), toTop3: uses(3), toTop10: uses(10) };
+        const left = x.per_game_limit > 0 ? Math.max(0, x.per_game_limit - (b.me?.used?.[x.id] || 0)) : 1000;
+        return { item: x.id, name: x.name, owned: x.quantity, price: x.price_kobo, usable: Math.min(x.quantity, left), canBuy: left, extraPerUse: extra, toTop1: uses(1), toTop3: uses(3), toTop10: uses(10) };
       });
       out.push({ pool: p.id, name: p.name, prize: p.prize_kobo, rank: myRank, score: myScore, total: b.total, boostersAllowed: !!p.boosters_allowed, options });
     }
-    let best = null;   // the pool where the fewest boosters get you highest
+    // best = with boosters you already have; bestBuy = the cheapest buy that takes you higher than that
+    let best = null, bestBuy = null;
     for (const p of out) {
       if (!p.boostersAllowed) continue;
       for (const o of p.options) for (const [reach, n] of [[1, o.toTop1], [3, o.toTop3], [10, o.toTop10]]) {
-        if (!n || n > o.usable) continue;
-        if (!best || reach < best.reach || (reach === best.reach && (n < best.uses || (n === best.uses && p.prize > best.prize)))) best = { pool: p.pool, poolName: p.name, item: o.item, itemName: o.name, reach, uses: n, prize: p.prize };
+        if (!n) continue;
+        if (n <= o.usable && (!best || reach < best.reach || (reach === best.reach && (n < best.uses || (n === best.uses && p.prize > best.prize))))) best = { pool: p.pool, poolName: p.name, item: o.item, itemName: o.name, reach, uses: n, prize: p.prize };
+        const buy = Math.max(0, n - o.owned), cost = buy * o.price;
+        if (buy > 0 && n <= o.canBuy && (!bestBuy || reach < bestBuy.reach || (reach === bestBuy.reach && cost < bestBuy.cost))) bestBuy = { pool: p.pool, poolName: p.name, item: o.item, itemName: o.name, reach, uses: n, buy, cost, prize: p.prize };
       }
     }
-    return json({ rate, pools: out, best });
+    if (bestBuy && best && bestBuy.reach >= best.reach) bestBuy = null;   // owned boosters already do as well
+    return json({ rate, pools: out, best, bestBuy });
   }
 
   // ── me (rank + balances, used after a game to celebrate rank ups) ──
@@ -295,6 +341,25 @@ export async function handlePlayApi(req, env, path, user) {
   }
 
   // ── notifications ──
+  // the newest announcement pop-up you haven't closed; closing it marks it seen
+  if (path === '/api/announcement' && req.method === 'GET') {
+    if (!user) return json({ announcement: null });
+    return json({ announcement: await pendingOverlay(env, user) });
+  }
+  const am = path.match(/^\/api\/announcements\/([0-9a-f-]{36})\/seen$/);
+  if (am && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
+    await env.DB.prepare('INSERT OR IGNORE INTO announcement_seen(user_id,ann_id) VALUES(?,?)').bind(user.id, am[1]).run();
+    return json({ ok: true });
+  }
+  // dismiss one notification, or clear them all (only your own)
+  const nm = path.match(/^\/api\/notifications\/([0-9a-f-]{32,36})\/dismiss$/);
+  if ((nm || path === '/api/notifications/clear') && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
+    if (nm) await env.DB.prepare('DELETE FROM notifications WHERE id=? AND user_id=?').bind(nm[1], user.id).run();
+    else await env.DB.prepare('DELETE FROM notifications WHERE user_id=?').bind(user.id).run();
+    return json({ ok: true, ...(nm ? {} : { message: 'All notifications cleared', reload: true }) });
+  }
   if (path === '/api/notifications/read' && req.method === 'POST') {
     const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
     await env.DB.prepare('UPDATE notifications SET read=1 WHERE user_id=? AND read=0').bind(user.id).run();
@@ -352,6 +417,17 @@ export async function handlePlayApi(req, env, path, user) {
     return json({ message: 'Thank you! The Tap Am team go look am.', reload: true });
   }
 
+  // ── WhatsApp number (password needed, so a stolen session can't swap it) ──
+  if (path === '/api/account/whatsapp' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'wa:' + user.id, 10, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    const wa = normWhatsapp(data.whatsapp); if (wa.error) return json({ error: wa.error, field: 'whatsapp' }, 400);
+    const pw = await passwordOk(env, user.id, data.password); if (!pw.ok) return json({ error: pw.error, field: 'password' }, pw.status);
+    await env.DB.prepare('UPDATE users SET whatsapp=? WHERE id=?').bind(wa.value, user.id).run();
+    return json({ message: 'WhatsApp number saved.', reload: true });
+  }
+
   // ── archive my account ──
   if (path === '/api/account/archive' && req.method === 'POST') {
     const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
@@ -378,16 +454,12 @@ export async function openBox(env, me, box) {
   const ids = list.filter(r => r.item).map(r => r.item);
   const items = ids.length ? (await env.DB.prepare(`SELECT s.*, COALESCE(i.quantity,0) AS owned FROM store_items s LEFT JOIN inventory i ON i.item_id=s.id AND i.user_id=? WHERE s.id IN (${ids.map(() => '?').join(',')})`).bind(me.id, ...ids).all()).results : [];
   const byId = Object.fromEntries(items.map(x => [x.id, x]));
-  list = list.filter(r => r.wallet > 0 || (byId[r.item] && !itemLock(byId[r.item], me) && !(byId[r.item].kind === 'SKIN' && byId[r.item].owned > 0)));
+  // Boxes give boosters and skins only — never money (the super admin's rule).
+  list = list.filter(r => !(r.wallet > 0) && byId[r.item] && !itemLock(byId[r.item], me) && !(byId[r.item].kind === 'SKIN' && byId[r.item].owned > 0));
   if (!list.length) list = [{ item: 'booster-2x', qty: 1, w: 1 }];
   const total = list.reduce((a, r) => a + Math.max(1, Number(r.w) || 1), 0);
   let roll = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296 * total, pick = list[0];
   for (const r of list) { roll -= Math.max(1, Number(r.w) || 1); if (roll < 0) { pick = r; break; } }
-  if (pick.wallet > 0) {
-    const amt = Math.min(1000000, Math.floor(Number(pick.wallet)));
-    await credit(env, me.id, amt, { type: 'BOX_REWARD', reference: box.id, note: box.name });
-    return { kind: 'WALLET', amount: amt, text: `${box.name}: ${naira(amt)} landed in your wallet!` };
-  }
   const it = byId[pick.item] || { id: 'booster-2x', name: 'Turbo 2×', kind: 'BOOSTER' };
   const qty = Math.max(1, Math.min(10, Number(pick.qty) || 1));
   await giveItem(env, me.id, it.id, qty, { gift: true, note: box.name });

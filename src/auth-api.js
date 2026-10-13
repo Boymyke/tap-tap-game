@@ -1,11 +1,11 @@
-// Sign-up (with a 12-word recovery phrase, no email code), login, password reset and change.
+// Sign-up (email code, then a 12-word recovery phrase), login, password reset and change.
 import {
   json, uid, nowIso, hashPassword, sha256Hex, safeEqual, createSession, sessionCookie,
   clientIp, readJson, allow, clearLimit, PBKDF2_ITERATIONS, LEGACY_PBKDF2_ITERATIONS, currentUser, appSecret
 } from './lib.js';
 import { newPhrase, normPhrase, phraseMatches, phraseColumns, decryptPhrase, logAuth } from './phrase.js';
 import { nicknameProblem, emailProblem, passwordProblem, genderProblem, countryProblem, TERMS_VERSION } from './auth-rules.js';
-import { sendCodeEmail, maskEmail, testMode } from './email.js';
+import { sendCodeEmail, maskEmail, testMode, emailConfigured } from './email.js';
 import { randomCode, giveItem, notify, settings, num } from './core.js';
 
 // Starter boosters for every new player, plus a booster for the referrer on every Nth sign-up.
@@ -98,58 +98,111 @@ function codeSentBody(env, message, email, code, result) {
 
 const normEmail = e => String(e ?? '').trim().toLowerCase();
 
+// WhatsApp number: Nigerian numbers may be typed 080…, 234… or +234…; others need their + country code.
+export function normWhatsapp(v) {
+  let n = String(v ?? '').replace(/[\s\-().]/g, '');
+  if (!n) return { error: 'Enter your WhatsApp number.' };
+  if (/^0\d{10}$/.test(n)) n = '+234' + n.slice(1);
+  else if (/^234\d{10}$/.test(n)) n = '+' + n;
+  if (!/^\+[1-9]\d{7,14}$/.test(n)) return { error: 'Enter a WhatsApp number like 0803 123 4567 or +234 803 123 4567.' };
+  return { value: n };
+}
+
+// While the super admin has the site in "server problem" mode, nobody can sign up.
+async function signupsPaused(env) {
+  const s = await settings(env);
+  return s.overload === '1' || s.signups_paused === '1';
+}
+
+// Every sign-up check. Returns the clean details (password hashed) or { response }.
+async function checkSignup(env, data) {
+  const nickname = String(data.nickname ?? data.username ?? '').trim();
+  const email = normEmail(data.email), password = String(data.password ?? '');
+  const sponsor = data.accountType === 'SPONSOR';
+  const gender = sponsor ? 'NA' : String(data.gender ?? ''), country = String(data.country ?? '').toUpperCase();
+  let p;
+  if ((p = nicknameProblem(nickname))) return { response: fieldError('nickname', p) };
+  if ((p = emailProblem(email))) return { response: fieldError('email', p) };
+  if ((p = passwordProblem(password, nickname))) return { response: fieldError('password', p) };
+  const wa = normWhatsapp(data.whatsapp);
+  if (wa.error) return { response: fieldError('whatsapp', wa.error) };
+  if ((p = genderProblem(gender))) return { response: fieldError('gender', p) };
+  if ((p = countryProblem(country))) return { response: fieldError('country', p) };
+  if (data.agree !== true) return { response: fieldError('agree', 'Tick the box to agree before you continue.') };
+  const company = sponsor ? String(data.company || '').trim() : '';
+  if (sponsor && (company.length < 2 || company.length > 60)) return { response: fieldError('company', 'Enter your company or brand name (2–60 characters).') };
+  const ref = String(data.ref || '').trim().toUpperCase();
+  if (await env.DB.prepare('SELECT 1 FROM users WHERE username=?').bind(nickname).first()) return { response: fieldError('nickname', 'That nickname don already dey. Try another one.', 409) };
+  if (await env.DB.prepare('SELECT 1 FROM users WHERE email=?').bind(email).first()) return { response: fieldError('email', 'That email don already get account. Try Login instead.', 409) };
+  const hp = await hashPassword(password);
+  return { nickname, email, hp, sponsor, gender, country, company, whatsapp: wa.value, ref: !sponsor && /^[A-Z0-9]{4,12}$/.test(ref) ? ref : null, email_news: data.email_news === true };
+}
+
+// Makes the account from checked details and logs the person in with their new recovery phrase.
+async function createAccount(env, req, d) {
+  const phrase = newPhrase(), ph = await phraseColumns(env, phrase);
+  const id = uid(), now = nowIso();
+  const role = d.sponsor ? 'SPONSOR' : 'USER';
+  const referrer = d.ref ? await env.DB.prepare("SELECT id,username,role FROM users WHERE referral_code=? AND role IN ('USER','SPONSOR') AND status='ACTIVE'").bind(d.ref).first() : null;
+  let myCode = null;
+  for (let i = 0; i < 5; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
+  try {
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,gender,country,terms_accepted_at,terms_version,role,tier,referral_code,referred_by,email_news,seed_hash,seed_salt,seed_enc,seed_set_at,whatsapp,email_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .bind(id, d.nickname, d.email, d.hp.hash, d.hp.salt, d.hp.iterations, d.gender || null, d.country || null, now, TERMS_VERSION, role, 'LAPO', myCode, referrer?.id || null, d.email_news ? 1 : 0, ph.seed_hash, ph.seed_salt, ph.seed_enc, ph.seed_set_at, d.whatsapp || null, d.verified ? now : null),
+      env.DB.prepare('INSERT INTO wallets(user_id,balance_kobo) VALUES(?,0)').bind(id),
+      ...(d.sponsor ? [env.DB.prepare('INSERT INTO sponsor_profiles(user_id,company) VALUES(?,?)').bind(id, d.company)] : [])
+    ]);
+  } catch (e) {
+    console.error('signup insert', e?.message);
+    return json({ error: 'Somebody don take that nickname or email while you were signing up. Start again with another one.' }, 409);
+  }
+  if (role === 'USER') await welcomePlayer(env, id, referrer);
+  await logAuth(env, id, 'SIGNUP', req);
+  const sid = await createSession(id, env);
+  return json({ message: 'Account created', role, phrase, redirect: role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
+}
+
 export async function handleAuthApi(req, env, path) {
   if (req.method !== 'POST') return null;
   const ip = clientIp(req);
 
-  // ── Sign up: check details, create the account, hand back the recovery phrase ──
-  // No email code. The 12-word phrase is shown once; it resets the password later.
+  // ── Sign up, step 1: check every detail, then email a 6-digit code ──
+  // Nothing is created yet: the details (with the password already hashed) wait with the code for up
+  // to an hour. Without an email service (and outside test mode) the account is made straight away.
   if (path === '/api/signup/start' || path === '/api/signup') {
     const { data, response } = await readJson(req); if (response) return response;
     // Per network: many Nigerian phones share one mobile-network address, so this is generous;
     // the per-account limits do the real protecting.
     if (!await allow(env, 'signup-ip:' + ip, 60, 3600)) return tooMany('Too many sign-ups from this network. Try again later.');
-    const nickname = String(data.nickname ?? data.username ?? '').trim();
-    const email = normEmail(data.email), password = String(data.password ?? '');
-    const sponsor = data.accountType === 'SPONSOR';
-    const gender = sponsor ? 'NA' : String(data.gender ?? ''), country = String(data.country ?? '').toUpperCase();
-    let p;
-    if ((p = nicknameProblem(nickname))) return fieldError('nickname', p);
-    if ((p = emailProblem(email))) return fieldError('email', p);
-    if ((p = passwordProblem(password, nickname))) return fieldError('password', p);
-    if ((p = genderProblem(gender))) return fieldError('gender', p);
-    if ((p = countryProblem(country))) return fieldError('country', p);
-    if (data.agree !== true) return fieldError('agree', 'Tick the box to agree before you continue.');
-    const company = sponsor ? String(data.company || '').trim() : '';
-    if (sponsor && (company.length < 2 || company.length > 60)) return fieldError('company', 'Enter your company or brand name (2–60 characters).');
-    const ref = String(data.ref || '').trim().toUpperCase();
-    const refOk = !sponsor && /^[A-Z0-9]{4,12}$/.test(ref) ? ref : null;
-    if (await env.DB.prepare('SELECT 1 FROM users WHERE username=?').bind(nickname).first()) return fieldError('nickname', 'That nickname don already dey. Try another one.', 409);
-    if (await env.DB.prepare('SELECT 1 FROM users WHERE email=?').bind(email).first()) return fieldError('email', 'That email don already get account. Try Login instead.', 409);
-    const hp = await hashPassword(password);
-    const phrase = newPhrase(), ph = await phraseColumns(env, phrase);
-    const id = uid(), now = nowIso();
-    const role = sponsor ? 'SPONSOR' : 'USER';
-    const referrer = refOk ? await env.DB.prepare("SELECT id,username,role FROM users WHERE referral_code=? AND role IN ('USER','SPONSOR') AND status='ACTIVE'").bind(refOk).first() : null;
-    let myCode = null;
-    for (let i = 0; i < 5; i++) { const c = randomCode(6); if (!await env.DB.prepare('SELECT 1 FROM users WHERE referral_code=?').bind(c).first()) { myCode = c; break; } }
-    try {
-      await env.DB.batch([
-        env.DB.prepare('INSERT INTO users(id,username,email,password_hash,password_salt,password_iter,gender,country,terms_accepted_at,terms_version,role,tier,referral_code,referred_by,email_news,seed_hash,seed_salt,seed_enc,seed_set_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-          .bind(id, nickname, email, hp.hash, hp.salt, hp.iterations, gender || null, country || null, now, TERMS_VERSION, role, 'LAPO', myCode, referrer?.id || null, data.email_news === true ? 1 : 0, ph.seed_hash, ph.seed_salt, ph.seed_enc, ph.seed_set_at),
-        env.DB.prepare('INSERT INTO wallets(user_id,balance_kobo) VALUES(?,0)').bind(id),
-        ...(sponsor ? [env.DB.prepare('INSERT INTO sponsor_profiles(user_id,company) VALUES(?,?)').bind(id, company)] : [])
-      ]);
-    } catch (e) {
-      console.error('signup insert', e?.message);
-      return json({ error: 'Somebody don take that nickname or email. Try another one.' }, 409);
-    }
-    if (role === 'USER') await welcomePlayer(env, id, referrer);
-    await logAuth(env, id, 'SIGNUP', req);
-    const sid = await createSession(id, env);
-    return json({ message: 'Account created', role, phrase, redirect: role === 'SPONSOR' ? '/sponsor' : '/dashboard' }, 200, { 'set-cookie': sessionCookie(sid) });
+    if (await signupsPaused(env)) return json({ error: 'Sign-ups are paused for a short while because Tap Am is fixing a server problem. Try again soon.', code: 'PAUSED' }, 503);
+    const d = await checkSignup(env, data); if (d.response) return d.response;
+    const useCode = emailConfigured(env) || testMode(env);
+    if (!useCode) return createAccount(env, req, d);
+    await cleanup(env);
+    const issued = await issueCode(env, 'signup', d.email, JSON.stringify(d));
+    if (issued.wait) return json({ error: `We just sent a code to this email. Wait ${issued.wait}s before asking for another.`, retryAfter: issued.wait, step: 'verify', email: maskEmail(d.email) }, 429);
+    if (issued.tooMany) return tooMany('Too many codes for this email. Try again in one hour.');
+    const sent = await deliver(env, 'signup', d.email, issued.code);
+    if (!sent) return json({ error: 'We no fit send the email now. Check the address or try again small time.' }, 502);
+    return json({ step: 'verify', ...codeSentBody(env, 'We sent a 6-digit code to your email.', d.email, issued.code, sent) });
   }
-  if (path === '/api/signup/verify') return json({ error: 'Sign-up no longer needs an email code. Start again on the sign-up page.' }, 410);
+  // ── Sign up, step 2: the code from the email creates the account ──
+  if (path === '/api/signup/verify') {
+    const { data, response } = await readJson(req); if (response) return response;
+    if (!await allow(env, 'verify-ip:' + ip, 60, 3600)) return tooMany();
+    const email = normEmail(data.email), code = String(data.code ?? '').trim();
+    if (emailProblem(email)) return json({ error: 'Start again.' }, 400);
+    if (!/^\d{6}$/.test(code)) return fieldError('code', 'Enter the 6-digit code from your email.');
+    const checked = await checkCode(env, 'signup', email, code); if (checked.response) return checked.response;
+    // Burn the code first (one statement), so the same code can't create two accounts in parallel.
+    const burn = await env.DB.prepare("DELETE FROM email_codes WHERE purpose='signup' AND email=? AND nonce=?").bind(email, checked.row.nonce).run();
+    if (!burn.meta.changes) return json({ error: 'That code don already been used. Start again.' }, 409);
+    let d; try { d = JSON.parse(checked.row.payload || '{}'); } catch { d = {}; }
+    if (d.email !== email || !d.hp) return json({ error: 'Start again.' }, 400);
+    if (await signupsPaused(env)) return json({ error: 'Sign-ups are paused for a short while. Try again soon.', code: 'PAUSED' }, 503);
+    return createAccount(env, req, { ...d, verified: true });
+  }
 
   // ── Forgot password: nickname or email + recovery phrase + new password ──
   if (path === '/api/password/recover') {
