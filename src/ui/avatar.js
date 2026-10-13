@@ -108,14 +108,17 @@ export const rankLook = level => RANK_LOOKS[Math.min(RANK_LOOKS.length - 1, Math
 export const rankAvatar = (level, opts = {}) => avatarSvg({ skin: SKINS[(Math.floor((level - 1) / 5)) % SKINS.length], ...rankLook(level) }, opts);
 
 // Badges: tapper of the day / week / month / year (and "all time" legend).
-const BADGE = { DAY: ['#2E8BFF', 'DAY'], WEEK: ['#00C957', 'WEEK'], MONTH: ['#FF4FA3', 'MONTH'], YEAR: ['#FFB800', 'YEAR'], ALL: ['#9161FF', 'G.O.A.T'] };
+// Top winner of the day / month / year: same medal, money green with a ₦ in the middle.
+const BADGE = { DAY: ['#2E8BFF', 'DAY'], WEEK: ['#00C957', 'WEEK'], MONTH: ['#FF4FA3', 'MONTH'], YEAR: ['#FFB800', 'YEAR'], ALL: ['#9161FF', 'G.O.A.T'],
+  WIN_DAY: ['#00A84F', 'DAY'], WIN_MONTH: ['#00A84F', 'MONTH'], WIN_YEAR: ['#00A84F', 'YEAR'] };
 export function badgeSvg(period, { size = 56 } = {}) {
   const [c, label] = BADGE[period] || BADGE.DAY;
-  return `<svg class="badge-svg" viewBox="0 0 100 120" width="${size}" height="${size * 1.2}" role="img" aria-label="Tapper of the ${label.toLowerCase()}">
-<path d="M30 70l-10 44 18-8 12 14 6-44zM70 70l10 44-18-8-12 14-6-44z" fill="${c}" ${s(3)}/>
+  const win = String(period).startsWith('WIN_');
+  return `<svg class="badge-svg" viewBox="0 0 100 120" width="${size}" height="${size * 1.2}" role="img" aria-label="${win ? 'Top winner' : 'Tapper'} of the ${label.toLowerCase()}">
+<path d="M30 70l-10 44 18-8 12 14 6-44zM70 70l10 44-18-8-12 14-6-44z" fill="${win ? '#FFD23F' : c}" ${s(3)}/>
 <path d="M50 4l10 8 13-2 5 12 12 5-2 13 8 10-8 10 2 13-12 5-5 12-13-2-10 8-10-8-13 2-5-12-12-5 2-13-8-10 8-10-2-13 12-5 5-12 13 2z" fill="#FFD23F" ${s(3)}/>
 <circle cx="50" cy="50" r="27" fill="${c}" ${s(3)}/>
-<path d="M50 30l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#fff" ${s(2.4)}/>
+${win ? `<text x="50" y="60" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,Arial,sans-serif" font-weight="900" font-size="30" fill="#fff" stroke="${INK}" stroke-width="2.4" paint-order="stroke">₦</text>` : `<path d="M50 30l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#fff" ${s(2.4)}/>`}
 <text x="50" y="76" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,Arial,sans-serif" font-weight="900" font-size="${label.length > 5 ? 9 : 11}" fill="#fff" stroke="${INK}" stroke-width="3" paint-order="stroke">${label}</text></svg>`;
 }
 

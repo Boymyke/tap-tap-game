@@ -34,10 +34,12 @@ export async function createChallenge(env, me, data) {
   }
   const open = Number((await env.DB.prepare("SELECT COUNT(*) n FROM challenges WHERE from_id=? AND to_id=? AND status='PENDING'").bind(me.id, to.id).first())?.n || 0);
   if (open) return json({ error: `You already sent ${to.username} a challenge. Wait for them to answer.`, field: 'to' }, 409);
+  // the same switches as a normal pool: players may buy time, Lapo baby rules, boosters
+  const opts = { time_topup: data.time_topup === true ? 1 : 0, lapo_rules: data.lapo_rules === true ? 1 : 0, boosters_allowed: data.boosters_allowed === false ? 0 : 1 };
   const id = uid();
   if (stake > 0 && !await debit(env, me.id, stake, { type: 'STAKE', reference: id, note: `Tap-off stake vs ${to.username}` })) return fundsError(`You need ${naira(stake)} in your wallet for this stake.`);
-  await env.DB.prepare('INSERT INTO challenges(id,from_id,to_id,stake_kobo,duration_seconds,status,expires_at) VALUES(?,?,?,?,?,?,?)')
-    .bind(id, me.id, to.id, stake, dur, 'PENDING', iso(Date.now() + EXPIRE_HOURS * 3600000)).run();
+  await env.DB.prepare('INSERT INTO challenges(id,from_id,to_id,stake_kobo,duration_seconds,status,expires_at,time_topup,lapo_rules,boosters_allowed) VALUES(?,?,?,?,?,?,?,?,?,?)')
+    .bind(id, me.id, to.id, stake, dur, 'PENDING', iso(Date.now() + EXPIRE_HOURS * 3600000), opts.time_topup, opts.lapo_rules, opts.boosters_allowed).run();
   await notify(env, to.id, `${me.username} challenged you to a ${dur < 120 ? dur + '-second' : dur / 60 + '-minute'} tap-off${stake ? ` for ${naira(stake)} each (winner takes ${naira(stake * 2)})` : ''}! Accept or decline.`, '/challenges');
   return json({ message: `Challenge sent to ${to.username}.${stake ? ` Your ${naira(stake)} stake is held until the match ends.` : ''}`, reload: true, id });
 }
@@ -87,7 +89,7 @@ export async function answerChallenge(env, me, id, action, data) {
       starts_at: iso(wait), ends_at: iso(wait + c.duration_seconds * 1000), kind: c.stake_kobo ? 'PAID' : 'FREE', audience: 'ALL', instant: 1, duration_seconds: c.duration_seconds,
       entry_fee_kobo: 0, prize_kobo: c.stake_kobo * 2, winners_count: 1, split: '[10000]', split_style: 'TOP', tie_rule: 'SPLIT', house_cut_pct: 0,
       is_private: 1, join_password: poolPassword(), max_players: 2, hashtag: code, created_by: c.from_id, status: 'WAITING', min_tier: 'LAPO',
-      boosters_allowed: 1, allow_own_pad: 1, time_topup: 0, challenge_id: c.id
+      boosters_allowed: c.boosters_allowed === 0 ? 0 : 1, lapo_rules: c.lapo_rules ? 1 : 0, allow_own_pad: 1, time_topup: c.time_topup ? 1 : 0, challenge_id: c.id
     };
     const cols = Object.keys(pool);
     await env.DB.batch([

@@ -5,7 +5,7 @@
 import { docLayout, LEGAL_TABS } from './pages.js';
 import { esc } from './theme.js';
 
-export const LEGAL_UPDATED = '9 October 2026';
+export const LEGAL_UPDATED = '13 October 2026';
 const contact = `<a href="/suggest">Suggest page</a>`;
 const FLAG = t => ({ flag: t });
 
@@ -17,7 +17,8 @@ const DOCS = {
       ['Pools', `<ul><li>Every pool has a start time, an end time, a prize (or none), an entry fee (or none), the number of winners, a tie rule and who can join (everybody, Lapo only, Mapo + Nepo, or Nepo only). All of this is shown on the pool before you join.</li>
 <li><strong>Free pools</strong> cost nothing. <strong>Paid pools</strong> take the entry fee from your wallet when you join; every fee is added to the prize. <strong>Sponsored pools</strong> are funded by a sponsor and are free to join.</li>
 <li><strong>Private pools</strong> need the password Tap Am generates for the creator.</li>
-<li>Once created, a pool can’t be deleted by its creator. Only Tap Am can cancel a pool; when that happens every entry fee goes back to the players’ wallets and any starting prize goes back to whoever funded it.</li></ul>`],
+<li><strong>Buying time:</strong> some pools (and tap-offs) let players buy extra time during the game. ₦10,000 adds 10 seconds to the clock for everybody. Once the time is added it can’t be taken back, but if the pool is cancelled or paused the money comes back.</li>
+<li>Once created, a pool can’t be deleted by its creator. Only Tap Am can cancel a pool; when that happens every entry fee goes back to the players’ wallets and any starting prize goes back to whoever funded it.</li></ul>`, FLAG('In-game time purchases are kept by Tap Am as a service fee; they are not added to the prize. The player-facing text describes only what is bought (extra seconds). Confirm with counsel whether Nigerian consumer law (FCCPA 2018) requires stating where this money goes.')],
       ['Taps and scores', `<ul><li>Taps only count while a pool is live, and only when they reach our server. Your app sends taps in small batches.</li>
 <li>Each tier has a top tapping speed our server counts (Lapo, Mapo and Nepo; the numbers are on the <a href="/plans">plans page</a>). Taps above that speed are dropped. Lapo babies tap with one finger at a time, Mapo babies with three, Nepo babies with any number.</li>
 <li>When a pool is set to count the same taps in many pools (Mapo up to 3, Nepo up to 10), one tap adds to every live pool you joined.</li>
@@ -33,7 +34,7 @@ const DOCS = {
 <li>If nobody taps at all, entry fees are refunded and any starting prize goes back to whoever funded it.</li>
 <li>Tap Am may keep a service fee on paid pools. If a pool has one, its percentage is shown on the pool before you join.</li>
 <li>Prizes are paid into your Winnings within moments of the pool ending. See <a href="/prizes">Prizes &amp; Withdrawals</a>.</li></ul>`, FLAG('Paid entry + cash prize contests may be regulated as gaming or promotional competitions by Nigerian state regulators (e.g. LSLGA in Lagos; FSGRN reciprocity). Confirm the licence or permit needed before enabling real-money paid pools and sponsored prizes.')],
-      ['Ranks and badges', `<p>Your rank goes up with lifetime taps, games played and wins. Top tappers of each day, week, month and year (Lagos time) get a badge when the period ends. Ranks, badges and leaderboards have no cash value.</p>`],
+      ['Ranks and badges', `<p>Your rank goes up with lifetime taps, games played and wins. Top tappers of each day, week, month and year (Lagos time) get a badge when the period ends, and so does the player who won the most prize money each day, month and year. Ranks, badges and leaderboards have no cash value.</p>`],
       ['Ads', `<p>Sponsors’ ads may pop up when you open a game, while you wait in the lobby, and when a game ends before your result. You can close each ad after 5 seconds. Ads never affect scores or results.</p>`],
       ['Live voice', `<p>Nepo babies who are in the top 3 of a pool can talk (the super admin can switch voice off); anyone in the pool can listen. Keep it clean: no hate, threats, harassment, private information or adverts. We don’t record voice.</p>`],
       ['Related rules', `<p>These rules work together with the <a href="/fair-play">Fair Play Policy</a>, <a href="/prizes">Prizes &amp; Withdrawals</a>, <a href="/account-rules">Account Suspension Rules</a> and our <a href="/terms">Terms</a>.</p>`]
@@ -137,10 +138,10 @@ const DOCS = {
 <li>To share your details with a sponsor <strong>only when you tick the consent box</strong> on that sponsor’s ad (consent — you can withdraw it by contacting the sponsor and us).</li>
 <li>To send codes and important account messages. We don’t send marketing emails unless you agree.</li></ul>
 <p>Automatic decisions: our server automatically drops taps above your tier’s speed and flags unusual play for a person to review. Small withdrawals may be paid automatically when there are no flags.</p>`],
-      ['Who can see it', `<ul><li><strong>Other players</strong> see your nickname, tier, rank character, badges and scores. Never your email, gender or country.</li>
+      ['Who can see it', `<ul><li><strong>Other players</strong> see your nickname, tier, rank character, badges, scores and the prize money you have won (on your profile, results and the Top winners board). Never your email, gender or country.</li>
 <li><strong>Sponsors</strong> see total views, taps and players for their pools and ads, and the contact details of players who chose to send them.</li>
 <li><strong>Service providers</strong> working for us: Cloudflare (hosting, database, live voice), Paystack (payments and payouts), our email provider (codes and alerts) and YouTube (when an ad is a YouTube video, YouTube receives your IP when the video loads).</li>
-<li><strong>Authorities</strong>, when the law requires it.</li></ul>`, FLAG('Sponsor lead sharing: confirm the consent wording, the sponsor’s status as an independent controller, and whether a data-sharing agreement with each sponsor is needed.')],
+<li><strong>Authorities</strong>, when the law requires it.</li></ul>`, FLAG('Sponsor lead sharing: confirm the consent wording, the sponsor’s status as an independent controller, and whether a data-sharing agreement with each sponsor is needed. Also: players can no longer hide their winnings and badges (all public since Oct 2026). Confirm the lawful basis under the Nigeria Data Protection Act 2023 for publishing each player’s prize total, and whether existing players must be told before the change.')],
       ['Where it is stored', `<p>Tap Am runs on Cloudflare’s global network, so your data may be processed outside Nigeria.</p>`, FLAG('Cross-border transfer: confirm the NDPA basis (adequacy, contract clauses or consent) for processing on Cloudflare outside Nigeria.')],
       ['How long we keep it', `<p>Account data stays while your account exists. Archived accounts can be restored for 30 days. Login sessions end after 30 days without use. Payment and withdrawal records are kept as long as the law requires. Ask us to delete your account and we delete or anonymise your data, except what we must keep for legal, fraud or fair-play reasons.</p>`],
       ['Your rights', `<p>You can ask to see, correct, delete or get a copy of your data, object to or restrict how we use it, and withdraw consent. Write to us through the ${contact}. You can also complain to the <strong>Nigeria Data Protection Commission (NDPC)</strong>.</p>`],

@@ -147,6 +147,8 @@ const freeId = r.j.id; ok(!!freeId, 'admin creates free pool', r.j);
 await A.post(`/api/pools/${freeId}/join`, {}); await B.post(`/api/pools/${freeId}/join`, {});
 await page(A, `/play?pools=${poolId},${freeId}`, { contains: ['game-data'] });
 await sleep(4500);
+r = await A.get('/pools'); ok(/live pools at once/.test(r.text), 'Pools page offers tapping in your live pools at once', null);
+r = await A.get('/dashboard'); ok(!/live pools at once/.test(r.text), 'home no longer shows it', null);
 r = await B.post('/api/tap', { pools: [poolId, freeId], taps: 5 });
 ok(r.status === 403 && r.j.code === 'UPGRADE', 'Lapo cannot tap 2 pools at once', r.j);
 r = await A.post(`/api/pools/${poolId}/boost`, { item: 'booster-2x' });
@@ -352,9 +354,8 @@ r = await admin.post('/api/admin/phrases/export', { password: ADMIN_PW }); ok((r
 r = await A.post('/api/admin/phrases/export', { password: 'Tapam2026x' }); ok(r.status >= 401, 'players cannot download phrases', r.status);
 
 await page(B, '/u/ada' + tag, { contains: ['ada' + tag, 'Won'] });
-r = await A.post('/api/prefs', { hideProfile: true }); ok(r.status === 200, 'A hides profile', r.j);
-await page(B, '/u/ada' + tag, { contains: ['keeps their winnings and badges private'] });
-r = await B.get('/u/ada' + tag); ok(!r.text.includes('>Won<'), 'hidden profile shows no winnings', null);
+r = await A.post('/api/prefs', { hideProfile: true }); ok(r.status === 200, 'old hide-profile setting is ignored', r.j);
+r = await B.get('/u/ada' + tag); ok(r.text.includes('>Won<') && !r.text.includes('private'), 'winnings stay public (no hide option)', null);
 await page(A, '/u/ada' + tag, { contains: ['Won'] });
 await page(B, '/players?q=ada' + tag, { contains: ['ada' + tag] });
 await page(B, '/winners'); await page(B, '/winners?p=WEEK'); await page(B, '/top?q=bola' + tag, { contains: ['bola' + tag] });

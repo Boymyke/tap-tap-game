@@ -2,7 +2,7 @@
 // super admin (at most once every 12 hours per problem) and explain what to do about each one.
 import { nowIso } from './lib.js';
 import { settings, num, lagosDay } from './core.js';
-import { gateway, testPayments } from './api/money.js';
+import { gateway, testPayments, paystackKeyCheck } from './api/money.js';
 import { emailConfigured, sendAlertEmail } from './email.js';
 
 const H = 3600000;
@@ -39,7 +39,12 @@ export async function runChecks(env) {
   const pl = n(players);
   add('scale', pl > 50000 ? 'warn' : 'ok', 'Traffic', `${pl.toLocaleString('en-NG')} player-games today · ${n(online).toLocaleString('en-NG')} people on the site right now.`,
     pl > 50000 ? 'Time to scale: check Workers, Durable Objects and D1 usage in the Cloudflare dashboard, turn on D1 read replication, and ask Cloudflare about an Enterprise plan.' : pl > 5000 ? 'Growing well. Keep an eye on the Cloudflare bill (Workers Paid plan).' : '');
-  add('payments', gateway(env) ? 'ok' : testPayments(env) ? 'warn' : 'crit', 'Payments', gateway(env) ? (gateway(env) === 'bachs' ? 'Bachs connected.' : 'Paystack connected.') : testPayments(env) ? 'Test mode: payments are simulated.' : 'Payments are switched off.', gateway(env) ? '' : 'Add the PAYSTACK_SECRET_KEY secret to the worker once your Paystack business account is live.');
+  const pk = gateway(env) === 'paystack' ? await paystackKeyCheck(env) : null;
+  if (pk) add('payments', !pk.ok ? 'crit' : pk.mode === 'live' ? 'ok' : 'warn', 'Payments',
+    !pk.ok ? `Paystack refused the secret key: ${pk.error}` : `Paystack ${pk.mode === 'live' ? 'live' : pk.mode === 'test' ? 'TEST' : ''} key works.${pk.balance !== null ? ` Paystack balance: ₦${(pk.balance / 100).toLocaleString('en-NG')}.` : ''}`,
+    !pk.ok ? 'Copy the Live Secret Key from Paystack → Settings → API Keys & Webhooks and paste it again as the PAYSTACK_SECRET_KEY secret on the worker.' : pk.mode === 'live' ? '' : 'This is not a live key (sk_live_…), so real cards won’t be charged. Paste the Live Secret Key.');
+  if (pk) checks[checks.length - 1].live = true;
+  else add('payments', gateway(env) ? 'ok' : testPayments(env) ? 'warn' : 'crit', 'Payments', gateway(env) ? 'Bachs connected.' : testPayments(env) ? 'Test mode: payments are simulated.' : 'Payments are switched off.', gateway(env) ? '' : 'Add the PAYSTACK_SECRET_KEY secret to the worker once your Paystack business account is live.');
   add('email', emailConfigured(env) ? 'ok' : 'warn', 'Email', emailConfigured(env) ? 'Sign-up and alert emails are being sent.' : (env.OTP_DEV_MODE === '1' ? 'No email service connected: sign-up codes show on screen (test mode).' : 'No email service connected: people sign up without an email code, and alerts and announcement emails are skipped.'), emailConfigured(env) ? '' : 'Add the ZeptoMail “Send Mail token” as the ZEPTOMAIL_TOKEN secret on the worker (EMAIL_FROM is no-reply@tapammm.live).');
   add('uploads', env.MEDIA ? 'ok' : 'warn', 'Picture uploads', env.MEDIA ? 'R2 storage connected.' : 'R2 storage is off, so ads, skins and slides can’t use uploaded pictures.', env.MEDIA ? '' : 'Turn on R2 in the Cloudflare dashboard and add the MEDIA bucket binding.');
   if (!s.alert_email) add('alertmail', 'warn', 'Alert emails', 'No alert email address set.', 'Add one in Admin → Overview → Settings.');
@@ -51,7 +56,7 @@ export async function healthSweep(env) {
   const { checks } = await runChecks(env);
   const s = await settings(env);
   const now = nowIso();
-  const bad = checks.filter(c => c.level !== 'ok' && !['payments', 'email', 'uploads', 'alertmail'].includes(c.key));   // setup items show on the page only
+  const bad = checks.filter(c => c.level !== 'ok' && !['email', 'uploads', 'alertmail'].includes(c.key) && !(c.key === 'payments' && !c.live));   // setup items show on the page only; a key Paystack refuses is emailed
   const toEmail = [];
   for (const c of bad) {
     const msg = `${c.title}: ${c.detail}${c.action ? ' → ' + c.action : ''}`;

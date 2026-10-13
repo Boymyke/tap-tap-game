@@ -22,7 +22,7 @@ class Client {
   get(p) { return this.req('GET', p); }
 }
 const db = sql => execSync(`npx wrangler d1 execute tap-am-ui-preview -c wrangler.preview.jsonc --local --command "${sql.replace(/"/g, '\\"')}"`, { stdio: 'ignore' });
-const cron = async () => { await fetch(BASE + '/__scheduled?cron=*/5+*+*+*+*'); await sleep(1500); };
+const cron = async () => { for (let i = 0; i < 5; i++) { try { await fetch(BASE + '/__scheduled?cron=*/5+*+*+*+*'); break; } catch { await sleep(2000); } } await sleep(1500); };
 async function signup(name) {
   const c = new Client(name), email = `${name.toLowerCase().replace(/_/g, '')}@example.com`;
   const st = await c.post('/api/signup/start', { nickname: name, email, password: PW, whatsapp: '08031234567', gender: 'MALE', country: 'NG', agree: true });
@@ -99,6 +99,26 @@ await admin.post(`/api/admin/pools/${tapPool}/settle`, {});
 r = await X.get(`/api/pools/${tapPool}/result`);
 ok(r.j.settled && r.j.rank === 1 && r.j.prize === 100000, 'X wins and takes both stakes (₦1,000)', r.j);
 r = await X.get('/challenges'); ok(r.text.includes('You won'), 'past tap-offs show the result');
+r = await X.post('/api/challenges', { to: 'yy_' + tag, duration: '60', time_topup: true, lapo_rules: true, boosters_allowed: false }); ok(r.status === 200, 'X sends a tap-off with options', r.j);
+r = await Y.get('/challenges'); ok(r.text.includes('Lapo baby rules') && r.text.includes('No boosters') && r.text.includes('Players can buy time'), 'Y sees the options');
+r = await Y.post(`/api/challenges/${r.text.match(/\/api\/challenges\/([0-9a-f-]{36})\/accept/)?.[1]}/accept`, {});
+const optPool = r.j.redirect?.split('=')[1];
+r = await X.get('/pool/' + optPool); ok(r.text.includes('Lapo baby rules:') && r.text.includes('No boosters in this pool.'), 'the tap-off pool uses the options', r.status);
+r = await X.get('/play?pools=' + optPool); ok(/"timeTopup":true/.test(r.text), 'players can buy time in that tap-off');
+r = await X.get('/pools'); ok(r.text.includes('href="/challenges"') && r.text.includes('Tap-off'), 'Tap-off button beside Create a pool on Pools');
+r = await X.get('/dashboard'); ok(r.text.includes('href="/challenges"'), 'Tap-off button on home');
+r = await X.get('/me'); ok(r.status === 200 && !r.text.includes('tile c-purple" href="/challenges"'), 'Tap-offs tile gone from Me');
+r = await X.get('/u/yy_' + tag); ok(r.text.includes('/challenges?to=yy_' + tag), 'profiles still have the challenge button');
+if (process.env.LOCAL_DB) {
+  console.log('Top winner badge');
+  const yday = new Date(Date.now() + 3600000 - 86400000).toISOString().slice(0, 10);
+  db(`UPDATE pools SET settled_at='${yday}T12:00:00.000Z' WHERE id='${tapPool}'`);
+  db(`UPDATE pool_entries SET prize_kobo=${Date.now()} WHERE pool_id='${tapPool}' AND prize_kobo>0`);
+  db(`DELETE FROM badges WHERE kind='WIN_DAY' AND period='D${yday}'`);
+  await cron();
+  r = await X.get('/me'); ok(r.text.includes('Top winner of the day'), 'yesterday’s top winner gets the badge', r.text.match(/Top winner[^<]*/)?.[0]);
+  r = await Y.get('/u/xx' + tag); ok(r.text.includes('Top winner of the day'), 'others see it on the profile');
+}
 
 console.log('Notifications');
 r = await Y.get('/notifications');
@@ -137,8 +157,13 @@ r = await X.post(`/api/pools/${clock}/topup`, { amount: '20,000', ingame: true }
 const st2 = await state(X, clock);
 ok(r.status === 200 && r.j.addedSeconds === 20 && Date.parse(st2.endsAt) - Date.parse(st.endsAt) === 20000, '₦20,000 adds 20 seconds', { r: r.j, before: st.endsAt, after: st2.endsAt });
 ok(total(await wallet(X)) === total(wx) - 2000000, '₦20,000 taken');
+ok(st2.prize === st.prize, 'buying time does not change the prize', { before: st.prize, after: st2.prize });
+r = await X.get('/wallet'); ok(r.text.includes('Extra game time'), 'wallet history says Extra game time');
+r = await X.get(`/play?pools=${clock}`); ok(!/goes into the prize/.test(r.text), 'the buy-time sheet makes no prize claim');
 r = await Z.post(`/api/pools/${clock}/topup`, { amount: '1,000' });
 ok(r.status === 200 && (await state(X, clock)).endsAt === st2.endsAt, 'adding from the pool page grows the prize but not the time', r.j);
+r = await admin.post(`/api/admin/pools/${clock}/cancel`, { confirm: true });
+ok(r.status === 200 && total(await wallet(X)) === total(wx), 'a cancelled pool gives back the time bought', { r: r.j, now: total(await wallet(X)), was: total(wx) });
 r = await admin.post('/api/pools', { name: 'NoClock ' + tag, start_mode: 'NOW', duration: '300', time_topup: false });
 r = await X.post(`/api/pools/${r.j.id}/topup`, { amount: '10,000', ingame: true }); ok(r.status === 409, 'pools can switch buying time off', r.j);
 

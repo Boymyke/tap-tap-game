@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS pool_invites (
 -- tap-offs, votes, block lists, error log, announcements (0010)
 CREATE TABLE IF NOT EXISTS pool_blocks (pool_id TEXT NOT NULL, user_id TEXT NOT NULL, blocked_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS pool_votes (pool_id TEXT NOT NULL, user_id TEXT NOT NULL, choice TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE);
-CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, from_id TEXT NOT NULL, to_id TEXT NOT NULL, stake_kobo INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 60, status TEXT NOT NULL DEFAULT 'PENDING', pool_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, responded_at TEXT, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, from_id TEXT NOT NULL, to_id TEXT NOT NULL, stake_kobo INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 60, status TEXT NOT NULL DEFAULT 'PENDING', pool_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, responded_at TEXT, expires_at TEXT NOT NULL, time_topup INTEGER NOT NULL DEFAULT 0, lapo_rules INTEGER NOT NULL DEFAULT 0, boosters_allowed INTEGER NOT NULL DEFAULT 1);
 CREATE INDEX IF NOT EXISTS idx_challenges_to ON challenges(to_id, status);
 CREATE INDEX IF NOT EXISTS idx_challenges_from ON challenges(from_id, status);
 CREATE INDEX IF NOT EXISTS idx_challenges_open ON challenges(status, expires_at);
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, promo_id TEXT NOT NULL, s
 CREATE TABLE IF NOT EXISTS backgrounds (id TEXT PRIMARY KEY, name TEXT NOT NULL, style TEXT NOT NULL DEFAULT 'LINEAR', color_a TEXT NOT NULL, color_b TEXT NOT NULL, image_url TEXT,
   active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS tap_stats (period TEXT NOT NULL, user_id TEXT NOT NULL, taps INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(period, user_id));
-CREATE TABLE IF NOT EXISTS badges (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, period TEXT NOT NULL, taps INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(kind, period));
+CREATE TABLE IF NOT EXISTS badges (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, period TEXT NOT NULL, taps INTEGER NOT NULL DEFAULT 0, amount_kobo INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(kind, period));
 CREATE TABLE IF NOT EXISTS metrics (key TEXT NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(key, day));
 CREATE TABLE IF NOT EXISTS alerts (key TEXT PRIMARY KEY, level TEXT NOT NULL, message TEXT NOT NULL, first_at TEXT NOT NULL, last_at TEXT NOT NULL, emailed_at TEXT, resolved_at TEXT);
 CREATE TABLE IF NOT EXISTS ads (id TEXT PRIMARY KEY, slot TEXT NOT NULL UNIQUE, title TEXT NOT NULL, image_url TEXT, target_url TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -118,6 +118,8 @@ CREATE INDEX IF NOT EXISTS idx_visitors_seen ON visitors(last_seen);
 CREATE INDEX IF NOT EXISTS idx_wtx_user ON wallet_transactions(user_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_tap_stats_user ON tap_stats(user_id, period);
 CREATE INDEX IF NOT EXISTS idx_topups_pool ON pool_topups(pool_id);
+CREATE TABLE IF NOT EXISTS pool_time_buys (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, user_id TEXT NOT NULL, amount_kobo INTEGER NOT NULL, seconds INTEGER NOT NULL DEFAULT 0, balance TEXT NOT NULL DEFAULT 'WALLET', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS idx_timebuys_pool ON pool_time_buys(pool_id);
 CREATE INDEX IF NOT EXISTS idx_auth_events_user ON auth_events(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_username_search ON users(username);
 CREATE INDEX IF NOT EXISTS idx_entries_prize ON pool_entries(prize_kobo);

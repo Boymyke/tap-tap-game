@@ -6,6 +6,8 @@ import { PATTERNS, patternBg } from './patterns.js';
 import { splitText, INSTANT_LEAD_MS } from '../game/pools.js';
 
 const pct = n => Math.round(Math.max(0, Math.min(1, n)) * 100);
+const TAPOFF_ICON = '🥊';
+const HEAD_CSS = '.pools-head{flex-wrap:wrap;gap:10px}.hbtns{display:flex;gap:8px;flex-wrap:nowrap;margin-left:auto}';
 const shareCardAttr = d => `data-share-card='${esc(JSON.stringify(d))}'`;
 
 export const HOME_CSS = `
@@ -37,6 +39,8 @@ export const HOME_CSS = `
 .codebox .ta-input{text-transform:uppercase;font-weight:800;letter-spacing:1px}
 .codebox .ta-input::placeholder{text-transform:none;letter-spacing:0}
 .bigcreate{width:100%;margin-top:12px;min-height:58px;font-size:20px}
+.bigrow{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:10px}
+.bigrow .bigcreate{padding-left:10px;padding-right:10px}
 .invite{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:18px}
 `;
 
@@ -74,13 +78,12 @@ ${count ? `<section class="slides" data-slides aria-roledescription="carousel" a
   <div class="row"><input class="ta-input" name="code" placeholder="Pool code, like TAPX7K2M" autocapitalize="characters" autocomplete="off" maxlength="12" aria-label="Pool code"><button class="btn btn--green" type="submit">Go</button></div>
   <p class="ta-error" data-err="code"></p>
 </form>
-${perk.create ? '<a class="btn btn--white btn--shine bigcreate" href="/pools/new">+ Create a pool</a>' : `<button type="button" class="btn btn--white bigcreate" ${upgradeAttrs('MAPO', 'Creating your own pool')}>${ICONS.lock} Create a pool</button>`}
+<div class="bigrow">${perk.create ? '<a class="btn btn--white btn--shine bigcreate" href="/pools/new">+ Create a pool</a>' : `<button type="button" class="btn btn--white bigcreate" ${upgradeAttrs('MAPO', 'Creating your own pool')}>${ICONS.lock} Create a pool</button>`}<a class="btn btn--gold bigcreate" href="/challenges">${TAPOFF_ICON} Tap-off</a></div>
 
 ${section('Sponsored pools', sponsored, '/pools?scope=sponsored', 'No sponsored pool right now. Brands dey come!')}
 ${section('Live pools', live, '/pools?scope=live', sponsored.length ? 'No other pool dey live now. The sponsored ones above dey run.' : 'No pool dey live now. Check the ones coming up.')}
 ${section('Coming up from players', upcoming, '/pools?scope=players-soon', perk.create ? 'Nothing coming up. <a href="/pools/new">Create the first one</a>.' : 'Nothing coming up yet.')}
 ${mine.length ? section('You don join', mine, '/pools?scope=mine', '') : ''}
-${mine.filter(p => p.state === 'live').length > 1 ? `<div class="actions">${perk.pools > 1 ? `<a class="btn btn--green btn--shine btn--block" href="/play?pools=${mine.filter(p => p.state === 'live').map(p => p.id).slice(0, perk.pools).join(',')}" data-no-swap>Tap in ${Math.min(perk.pools, mine.filter(p => p.state === 'live').length)} live pools at once</a>` : `<button type="button" class="btn btn--white btn--block" ${upgradeAttrs('MAPO', 'Tapping in many pools at once')}>${ICONS.lock} Tap in all your live pools at once</button>`}</div>` : ''}
 
 <h2 class="h2">Invite your personal person <a href="/invite">See who joined</a></h2>
 <section class="tcard invite c-sky">
@@ -102,19 +105,27 @@ function defaultSlides(perk) {
   ];
 }
 
+// "Tap in N live pools at once": shows when a player is in more than one live pool.
+function multiTap(liveIds, perk) {
+  if (!liveIds || liveIds.length < 2) return '';
+  return `<div class="multitap">${perk?.pools > 1 ? `<a class="btn btn--green btn--shine btn--block" href="/play?pools=${liveIds.slice(0, perk.pools).map(encodeURIComponent).join(',')}" data-no-swap>Tap in ${Math.min(perk.pools, liveIds.length)} live pools at once</a>` : `<button type="button" class="btn btn--white btn--block" ${upgradeAttrs('MAPO', 'Tapping in many pools at once')}>${ICONS.lock} Tap in all your live pools at once</button>`}</div>`;
+}
+
 // ── Pools list ──────────────────────────────────────────────────────────────
 export function poolsPage(ctx) {
-  const { user, scope, pools, wallet, perk, theme, bgCss, term = '', page = 1, hasNext = false } = ctx;
+  const { user, scope, pools, wallet, perk, theme, bgCss, term = '', page = 1, hasNext = false, liveIds = [] } = ctx;
   const sponsor = user.role === 'SPONSOR', admin = user.role === 'ADMIN';
   const tabs = [['open', 'Open'], ['live', 'Live'], ['sponsored', 'Sponsored'], ['players-soon', 'From players'], ['mine', 'Joined'], ...(perk?.create ? [['created', 'Created by me']] : []), ['recent', 'Results']];
   const canCreate = sponsor || admin || perk?.create;
   const createBtn = canCreate ? `<a class="btn btn--green btn--sm" href="/pools/new">+ Create a pool</a>` : `<button type="button" class="btn btn--white btn--sm" ${upgradeAttrs('MAPO', 'Creating a pool')}>${ICONS.lock} Create a pool</button>`;
-  const body = `<div class="headrow"><h1 class="h1">Pools</h1>${createBtn}</div>
+  const tapoffBtn = user.role === 'USER' ? `<a class="btn btn--gold btn--sm" href="/challenges">${TAPOFF_ICON} Tap-off</a>` : '';
+  const body = `<div class="headrow pools-head"><h1 class="h1">Pools</h1><div class="hbtns">${tapoffBtn}${createBtn}</div></div>
 <form class="psearch" method="get" action="/pools" role="search"><input type="hidden" name="scope" value="${esc(scope)}"><input class="ta-input" type="search" name="q" value="${esc(term)}" placeholder="Search pools by name, code or sponsor" maxlength="40" aria-label="Search pools" autocomplete="off"><button class="btn btn--green btn--sm" type="submit">Search</button></form>
 <nav class="tabs" aria-label="Pool lists">${tabs.map(([k, l]) => `<a href="/pools?scope=${k}${term ? '&q=' + encodeURIComponent(term) : ''}" ${k === scope ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+${user.role === 'USER' ? multiTap(liveIds, perk) : ''}
 ${term ? `<p class="sub" style="margin:-4px 2px 12px">${pools.length ? `Pools matching “${esc(term)}”` : ''} <a href="/pools?scope=${esc(scope)}" style="color:var(--green);font-weight:800">Clear search</a></p>` : ''}
 ${pools.length ? `<div class="pgrid">${pools.map(poolCard).join('')}</div>${pager(`/pools?scope=${encodeURIComponent(scope)}${term ? '&q=' + encodeURIComponent(term) : ''}`, page, hasNext)}` : term ? `<div class="empty">No pool matches “${esc(term)}”. Try another word or the pool code.</div>` : `<div class="empty">${scope === 'mine' ? 'You never join any pool yet. <a href="/pools">See open pools</a>.' : scope === 'recent' ? 'No results this week yet.' : scope === 'created' ? 'You never create a pool. <a href="/pools/new">Create one</a>.' : 'Nothing here right now. Check back soon.'}</div>`}`;
-  return appPage({ user, title: 'Pools', active: sponsor ? '/sponsor/pools' : admin ? '/admin/pools' : '/pools', body, wallet, theme, bgCss, css: '.psearch{display:flex;gap:8px;margin:0 2px 12px}.psearch .ta-input{flex:1;min-width:0;background:#fff}' });
+  return appPage({ user, title: 'Pools', active: sponsor ? '/sponsor/pools' : admin ? '/admin/pools' : '/pools', body, wallet, theme, bgCss, css: '.psearch{display:flex;gap:8px;margin:0 2px 12px}.psearch .ta-input{flex:1;min-width:0;background:#fff}.multitap{margin:0 0 14px}' + HEAD_CSS });
 }
 
 // ── Pool detail: join, lobby, instructions, results ─────────────────────────
@@ -196,7 +207,7 @@ export function poolPage(ctx) {
   const open = !p.paused && (p.state === 'soon' || p.state === 'live' || p.state === 'waiting');
   if (open && user?.role === 'ADMIN') action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Add time</h2><p class="muted" style="margin:0 0 10px;font-size:14px">${p.state === 'waiting' ? 'Makes the match run longer once it starts.' : `Ends ${esc(lagos(p.endsAt))}. Players see the new end time straight away.`}</p><div class="actions" style="margin-top:0">${[1, 5, 15, 30, 60].map(m => postBtn(`/api/admin/pools/${p.id}/extend`, `+${m < 60 ? m + ' min' : '1 hour'}`, { body: { minutes: m }, cls: 'btn--soft btn--sm' })).join('')}</div></div>`;
   if (open && isCreator) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Invite players</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Search by name. They get a notification with this pool${p.private ? ', and they can join without the password' : ''}.</p>${form(`/api/pools/${p.id}/invite`, playerPicker({ name: 'invites', label: 'Players', id: 'inv' }), { submit: 'Send invites', btn: 'btn--green' })}</div>`;
-  if (canTop) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Make the prize bigger</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Anybody can add money from their wallet to the prize. It goes to the winners and is not refunded once the pool starts (unless the pool is cancelled or paused). Adding here does not change the time${p.timeTopup ? ' — inside the game, every ₦10,000 also adds 10 seconds' : ''}.</p>${form(`/api/pools/${p.id}/topup`, `${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}`, { submit: 'Add to prize', btn: 'btn--gold' })}</div>`;
+  if (canTop) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Make the prize bigger</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Anybody can add money from their wallet to the prize. It goes to the winners and is not refunded once the pool starts (unless the pool is cancelled or paused). Adding here does not change the time${p.timeTopup ? ' — inside the game, players can buy more time (₦10,000 = +10 seconds)' : ''}.</p>${form(`/api/pools/${p.id}/topup`, `${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}`, { submit: 'Add to prize', btn: 'btn--gold' })}</div>`;
   const sp = p.split, tie = p.tie === 'SPLIT' ? 'Ties: tied players split the prize.' : 'Ties: whoever reached the score first wins.';
   const aud = { ALL: 'Everybody fit join.', LAPO: 'Lapo babies only.', MAPO: 'Mapo and Nepo babies only.', NEPO: 'Nepo babies only.' }[p.audience] || '';
   const instr = `<section class="panel instr" style="margin-top:14px"><h2>Pool instructions</h2><ul>
@@ -308,8 +319,8 @@ export function createPoolPage(ctx) {
     <div class="two">${field({ label: 'Day', name: 'start_date', type: 'date', value: lagosClock(nextSlot).slice(0, 10), attrs: `min="${minDay}" max="${maxDay}" required disabled` })}${field({ label: 'Time (Lagos)', name: 'start_time', type: 'time', value: lagosClock(nextSlot).slice(11, 16), attrs: 'step="300" required disabled' })}</div>
   </div>
   <div class="group" data-show="start_mode=INSTANT">
-    ${field({ label: 'Players needed to start', name: 'instant_players', value: '10', attrs: 'inputmode="numeric" autocomplete="off" maxlength="5" data-num', tip: 'The match waits until this many players join, then starts by itself. Nobody else can join once it is full.' })}
-    <div class="qchips" role="group" aria-label="Quick picks">${[2, 4, 10, 20, 50, 100].map(n => `<button type="button" class="qchip${n === 10 ? ' on' : ''}" data-n="${n}">${n} players</button>`).join('')}</div>
+    ${field({ label: 'Players needed to start', name: 'instant_players', value: '2', attrs: 'inputmode="numeric" autocomplete="off" maxlength="5" data-num', tip: 'The match waits until this many players join, then starts by itself. Nobody else can join once it is full.' })}
+    <div class="qchips" role="group" aria-label="Quick picks">${[2, 4, 10, 20, 50, 100].map(n => `<button type="button" class="qchip${n === 2 ? ' on' : ''}" data-n="${n}">${n} players</button>`).join('')}</div>
     <p class="ta-hint" style="margin:0">It starts ${INSTANT_LEAD_MS / 1000} seconds after the last seat fills. If it isn’t full within 24 hours, it’s cancelled and every entry fee goes back.</p>
   </div>
   ${choice({ label: 'How long does it run?', name: 'duration', options: [['60', '1 min'], ['300', '5 min'], ['900', '15 min'], ['1800', '30 min'], ['3600', '1 hour'], ...(admin ? [['86400', '1 day'], ['604800', '1 week'], ['2592000', '30 days'], ['31536000', '1 year'], ['CUSTOM', 'Custom']] : [])], value: '60' })}
@@ -330,7 +341,7 @@ export function createPoolPage(ctx) {
   <div data-show="start_mode=LATER" hidden>${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.', tip: 'The most people that can join. When the pool is full, nobody else can join. Leave it empty to let everybody in.' })}</div>
   ${playerPicker({ name: 'invites', label: 'Invite players <small>(optional)</small>', hint: 'Search by name and add as many as you like (50 at a time). They get a notification with the link, and invited players can join a private pool without the password.' })}
   ${playerPicker({ name: 'blocked', id: 'f-block', label: 'Block players from this pool <small>(optional)</small>', hint: 'Type a nickname. Blocked players can’t join or play in this pool.' })}
-  <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'time_topup', label: '<b>Let players buy more time during the game</b> (₦10,000 = +10 seconds)', checked: true })}<button type="button" class="tip" data-tip="During the game a button lets anybody add money to the prize. Every ₦10,000 also adds 10 seconds to the clock. Adding money from the pool page grows the prize but does not change the time." aria-label="More info">i</button></div>
+  <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'time_topup', label: '<b>Let players buy more time during the game</b> (₦10,000 = +10 seconds)', checked: true })}<button type="button" class="tip" data-tip="During the game, a button lets anybody buy more time: every ₦10,000 adds 10 seconds to the clock for everybody." aria-label="More info">i</button></div>
   <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'lapo_rules', label: '<b>Use Lapo baby rules</b> (level the game)' })}<button type="button" class="tip" data-tip="Everybody in this pool plays like a Lapo baby: one finger at a time, the Lapo tap speed, and only the boosters every player can use. Mapo and Nepo perks are switched off here, so it is a fair fight." aria-label="More info">i</button></div>
   ${canColour ? `${check({ name: 'custom_pad', label: `Set the tap area for this pool${sponsor ? ' (your brand colours)' : ''}` })}
   <div class="group" data-show="custom_pad=true">
