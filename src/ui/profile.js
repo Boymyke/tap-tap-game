@@ -67,8 +67,7 @@ ${taps ? tapsSection(taps) : ''}
 <div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start;margin-top:14px"></div>
 <h2 class="h2">Your stuff</h2>
 <div class="tiles">
-  ${tile('/challenges', 'Tap-offs', 'Challenge a player 1-on-1', 'c-purple')}
-  ${tile('/settings', 'Settings', 'Password, WhatsApp, privacy', 'c-ink')}
+  ${tile('/settings', 'Settings', 'Password, WhatsApp, emails', 'c-ink')}
   ${tile('/bag', 'My bag', 'Boosters and skins', 'c-orange')}
   ${tile('/ranks', 'Ranks', 'What every rank unlocks', 'c-pink')}
   ${tile(`/u/${encodeURIComponent(user.username)}`, 'My profile', 'See it like others do, and share it', 'c-sky')}
@@ -87,6 +86,7 @@ ${taps ? tapsSection(taps) : ''}
 // A badge with the taps that won it. Special badges (made by the super admin) show their meaning.
 function badgeFigure(b) {
   if (b.kind.startsWith('X:')) return `<figure title="${esc(b.smeaning || '')}"><span class="sbadge" style="background:${/^#[0-9a-fA-F]{6}$/.test(b.scolor || '') ? b.scolor : '#9161FF'}">${esc((b.slabel || b.sname || '?').slice(0, 3))}</span><figcaption>${esc(b.sname || 'Special badge')}${b.smeaning ? `<br><span style="font-weight:600">${esc(b.smeaning)}</span>` : ''}</figcaption></figure>`;
+  if (b.kind.startsWith('WIN_')) return `<figure>${badgeSvg(b.kind, { size: 52 })}<figcaption>Top winner of the ${esc(b.kind.slice(4).toLowerCase())}<br>${esc(b.period.slice(1))}<b>${esc(nairaShort(b.amount_kobo || 0))} won</b></figcaption></figure>`;
   const what = b.kind === 'ALL' ? 'era' : b.kind.toLowerCase();
   return `<figure>${badgeSvg(b.kind, { size: 52 })}<figcaption>Tapper of the ${what}<br>${esc(b.period.slice(1))}<b>${short(b.taps || 0)} taps</b></figcaption></figure>`;
 }
@@ -179,8 +179,8 @@ export function settingsPage(ctx) {
   ${form('/api/prefs', `${check({ name: 'vibrate', label: 'Vibrate on combos and milestones', checked: prefs.vibrate !== false })}${check({ name: 'muted', label: 'Start games with sound off', checked: !!prefs.muted })}`, { submit: 'Save' })}
 </div>
 <div class="panel set">
-  <h2>Privacy and emails</h2>
-  ${form('/api/prefs', `${check({ name: 'hideProfile', label: 'Hide my winnings and badges from other players (they still see my nickname and rank in games)', checked: !!user.hide_profile })}${check({ name: 'emailNews', label: 'Email me about new pools and offers', checked: !!user.email_news })}`, { submit: 'Save' })}
+  <h2>Emails</h2>
+  ${form('/api/prefs', `${check({ name: 'emailNews', label: 'Email me about new pools and offers', checked: !!user.email_news })}`, { submit: 'Save' })}
 </div>
 <div class="panel set">
   <h2>Change password</h2><p class="sub2">You need your 12-word recovery phrase. Other devices get logged out.</p>
@@ -289,18 +289,17 @@ ${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No player with that
 export function winnersPage(ctx) {
   const { user, period, rows, page, hasNext, term, theme, bgCss } = ctx;
   const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
-  const nm = r => r.hide_profile && r.id !== user?.id ? 'Hidden player' : nameTag(r.username, r.emoji);
-  const body = `<h1 class="h1">Top winners</h1><p class="sub">Who don chop the most prize money. Players who hide their profile show as “Hidden player”.</p>
+  const body = `<h1 class="h1">Top winners</h1><p class="sub">Who don chop the most prize money. The top winner of each day, month and year gets a badge.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/winners?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 <form class="row" method="get" action="/winners" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
-${rows.length ? `<div class="list">${rows.map(r => `<${r.hide_profile && r.id !== user?.id ? 'div' : `a href="/u/${esc(r.username)}"`} class="item ${user && r.id === user.id ? 'me' : ''}"><b style="min-width:44px;font:900 18px var(--display);color:var(--ink-soft)">#${short(r.pos)}</b><div class="grow"><div class="t">${nm(r)}</div><div class="s">${short(r.prizes)} prize${r.prizes == 1 ? '' : 's'}</div></div><b class="amt pos">${esc(nairaShort(r.won))}</b></${r.hide_profile && r.id !== user?.id ? 'div' : 'a'}>`).join('')}</div>${pager(`/winners?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`, page, hasNext)}` : '<div class="empty">No winners here yet.</div>'}`;
+${rows.length ? `<div class="list">${rows.map(r => `<a href="/u/${esc(r.username)}" class="item ${user && r.id === user.id ? 'me' : ''}"><b style="min-width:44px;font:900 18px var(--display);color:var(--ink-soft)">#${short(r.pos)}</b><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${short(r.prizes)} prize${r.prizes == 1 ? '' : 's'}</div></div><b class="amt pos">${esc(nairaShort(r.won))}</b></a>`).join('')}</div>${pager(`/winners?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`, page, hasNext)}` : '<div class="empty">No winners here yet.</div>'}`;
   return anyPage({ user, title: 'Top winners', active: '/me', body, theme, bgCss, description: 'The players who have won the most prize money on Tap Am.' });
 }
 
 // ── Find a player ───────────────────────────────────────────────────────────
 export function playersPage(ctx) {
   const { user, term, rows, theme, bgCss } = ctx;
-  const body = `<h1 class="h1">Find a player</h1><p class="sub">Search any nickname to see their rank, badges and winnings (unless they hide them).</p>
+  const body = `<h1 class="h1">Find a player</h1><p class="sub">Search any nickname to see their rank, badges and winnings.</p>
 <form class="row" method="get" action="/players" style="gap:8px;margin:0 0 14px"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Type a nickname" aria-label="Nickname" autocapitalize="none" minlength="2" autofocus><button class="btn btn--green" type="submit">Search</button></form>
 ${term ? (rows.length ? `<div class="list">${rows.map(r => `<a class="item" href="/u/${esc(r.username)}"><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name)} · ${esc(r.tierName)}</div></div><b class="amt">${short(r.lifetime_taps)}</b></a>`).join('')}</div>` : '<div class="empty">No player with that nickname.</div>') : ''}`;
   return anyPage({ user, title: 'Find a player', active: '/me', body, css: TOP_CSS, theme, bgCss });
@@ -319,7 +318,8 @@ const compact = n => {
 const nairaCompact = k => '₦' + compact(Number(k || 0) / 100);
 
 export function profilePage(ctx) {
-  const { user, p, own, hidden, won, prizes, badges, rank, origin, theme, bgCss } = ctx;
+  const { user, p, own, won, prizes, badges, rank, origin, theme, bgCss } = ctx;
+  const hidden = false;   // winnings and badges are public for every player
   const url = `${origin}/u/${p.username}`;
   const joined = lagosDate(p.created_at.includes('T') ? p.created_at : p.created_at.replace(' ', 'T') + 'Z');
   const card = { url, kind: 'profile', label: rank.current.name, title: p.username, line: `Rank ${rank.current.level} · ${p.tierName || 'Tap Am player'}`, color: '#9161FF', display: 'www.tapammm.live',
@@ -336,8 +336,7 @@ export function profilePage(ctx) {
     <div class="panel stat"><span class="k">Wins</span><span class="v">${esc(compact(p.wins))}</span></div>
   </div>
 </div>
-${hidden ? '<div class="empty" style="margin-top:14px">This player keeps their winnings and badges private.</div>' : badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
-${own ? `<p class="small muted" style="margin:14px 2px 0">${p.hide_profile ? 'Your winnings and badges are hidden from others.' : 'Everybody can see your winnings and badges.'} <a href="/settings" style="color:#fff;font-weight:800">Change in Settings</a></p>` : ''}
+${badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
 ${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div><div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start"></div>` : user?.role === 'USER' ? `<div class="actions"><a class="btn btn--gold" href="/challenges?to=${encodeURIComponent(p.username)}">🥊 Challenge ${esc(p.username)} to a tap-off</a></div>` : ''}`;
   const css = ME_CSS + `.pstats{display:grid;gap:10px;margin-top:14px}
 .pstats>*{margin:0}.pstats .grid>*{margin:0}

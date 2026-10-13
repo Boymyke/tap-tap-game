@@ -241,7 +241,6 @@ export async function handlePlayApi(req, env, path, user) {
       prefs.sound = snd.id;
     }
     const cols = [];
-    if (typeof data.hideProfile === 'boolean') cols.push(env.DB.prepare('UPDATE users SET hide_profile=? WHERE id=?').bind(data.hideProfile ? 1 : 0, user.id));
     if (typeof data.emailNews === 'boolean') cols.push(env.DB.prepare('UPDATE users SET email_news=? WHERE id=?').bind(data.emailNews ? 1 : 0, user.id));
     if (cols.length) await env.DB.batch(cols);
     if (typeof data.vibrate === 'boolean') prefs.vibrate = data.vibrate;

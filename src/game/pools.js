@@ -324,52 +324,67 @@ export async function computeSidePots(env, p) {
 }
 
 // ── add money to a pool's prize: any player (or the sponsor who made it) can add to any open pool ──
-// From the lobby/pool page it only grows the prize. From inside the game (ingame: true) on a pool that
-// allows it, every ₦10,000 also adds 10 seconds (the super admin can change the seconds).
+// From the lobby/pool page it grows the prize. From inside the game (ingame: true) on a pool that allows it,
+// the player buys more time instead: every ₦10,000 adds 10 seconds (the super admin can change the seconds).
+// Time bought is a fee kept by Tap Am — it never touches the prize pot.
 export async function topUpPool(env, user, pool, d) {
   const amount = clampInt(toKobo(d.amount), 0, 1000000000, 0);
   const ingame = d.ingame === true;
-  if (amount < (ingame ? TOPUP_STEP_KOBO : 10000)) return json({ error: ingame ? `Add at least ${naira(TOPUP_STEP_KOBO)} to add time.` : 'Add at least ₦100.', field: 'amount' }, 400);
+  if (amount < (ingame ? TOPUP_STEP_KOBO : 10000)) return json({ error: ingame ? `Buy at least ${naira(TOPUP_STEP_KOBO)} of time.` : 'Add at least ₦100.', field: 'amount' }, 400);
   if (user.role === 'SPONSOR' && pool.created_by !== user.id) return json({ error: 'Sponsors can add money to their own pools.' }, 403);
   const state = poolState(pool);
   if (state === 'ended' || state === 'cancelled' || pool.status === 'PAUSED') return json({ error: 'This pool no dey take money now.' }, 409);
-  const s = await settings(env);
-  const secsPer = clampInt(num(s, 'topup_seconds_per_step', 10), 1, 600, 10);
-  const addSecs = ingame ? Math.floor(amount / TOPUP_STEP_KOBO) * secsPer : 0;
-  if (ingame && (!pool.time_topup || state !== 'live')) return json({ error: state !== 'live' ? 'Time can only be bought while the game is live.' : 'This pool doesn’t allow buying time. Add to the prize from the pool page instead.' }, 409);
+  if (ingame && (!pool.time_topup || state !== 'live')) return json({ error: state !== 'live' ? 'Time can only be bought while the game is live.' : 'This pool doesn’t allow buying time.' }, 409);
   if (user.role === 'USER' && !user.adult_confirmed_at) { if (d.adult !== true) return adultError(); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
   const from = d.from === 'WINNINGS' && user.role === 'USER' ? 'WINNINGS' : 'WALLET';
-  if (!await debit(env, user.id, amount, { balance: from, type: 'POOL_TOPUP', reference: pool.id, note: pool.name + (addSecs ? ` (+${addSecs}s)` : '') })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
-  // One statement: the prize (and the clock) only grow while the pool is still open — for time, only while
-  // more than 3 seconds are left — otherwise the money goes back. The record is written in the same
-  // transaction, so a pause or cancel can always find (and refund) it.
-  const now = nowIso(), soon = iso(Date.now() + 3000);
+  if (ingame) return buyTime(env, user, pool, amount, from);
+  if (!await debit(env, user.id, amount, { balance: from, type: 'POOL_TOPUP', reference: pool.id, note: pool.name })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
+  // One statement: the prize only grows while the pool is still open, otherwise the money goes back. The
+  // record is written in the same transaction, so a pause or cancel can always find (and refund) it.
   const [r] = await env.DB.batch([
-    addSecs
-      ? env.DB.prepare(`UPDATE pools SET prize_kobo=prize_kobo+?, ends_at=strftime('%Y-%m-%dT%H:%M:%fZ', ends_at, '+' || ? || ' seconds'), duration_seconds=COALESCE(duration_seconds,0)+?
-          WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED','WAITING') AND time_topup=1 AND starts_at<=? AND ends_at>?`).bind(amount, addSecs, addSecs, pool.id, now, soon)
-      : env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, now),
+    env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, nowIso()),
     env.DB.prepare('INSERT INTO pool_topups(id,pool_id,user_id,amount_kobo,balance) SELECT ?,?,?,?,? WHERE changes()>0').bind(uid(), pool.id, user.id, amount, from)]);
-  if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Pool closed before the top-up' }); return json({ error: addSecs ? 'Too late — the game is ending. Your money is back.' : 'This pool don close. Your money is back.' }, 409); }
-  if (addSecs) {
-    const fresh = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(pool.id).first();
-    await initRoom(env, fresh);   // the game room moves its end time and its settle alarm
-    return json({ message: `${naira(amount)} added to the prize and +${addSecs}s on the clock!`, endsAt: fresh.ends_at, addedSeconds: addSecs, prize: fresh.prize_kobo });
-  }
+  if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Pool closed before the top-up' }); return json({ error: 'This pool don close. Your money is back.' }, 409); }
   return json({ message: `You added ${naira(amount)} to the prize!`, reload: true });
 }
 
-// Money that came from players (entry fees + top-ups), to give back when a pool is cancelled or paused.
+// In-game: buy more time for everybody. The clock only moves while the game is live with more than 3 seconds
+// left; otherwise the money goes back. The purchase record is written in the same transaction as the clock
+// change, so a pause or cancel can always find (and refund) it.
+async function buyTime(env, user, pool, amount, from) {
+  const s = await settings(env);
+  const secsPer = clampInt(num(s, 'topup_seconds_per_step', 10), 1, 600, 10);
+  const addSecs = Math.floor(amount / TOPUP_STEP_KOBO) * secsPer;
+  if (!await debit(env, user.id, amount, { balance: from, type: 'TIME_BUY', reference: pool.id, note: `${pool.name} (+${addSecs}s)` })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
+  const now = nowIso(), soon = iso(Date.now() + 3000);
+  const [r] = await env.DB.batch([
+    env.DB.prepare(`UPDATE pools SET ends_at=strftime('%Y-%m-%dT%H:%M:%fZ', ends_at, '+' || ? || ' seconds'), duration_seconds=COALESCE(duration_seconds,0)+?
+      WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED','WAITING') AND time_topup=1 AND starts_at<=? AND ends_at>?`).bind(addSecs, addSecs, pool.id, now, soon),
+    env.DB.prepare('INSERT INTO pool_time_buys(id,pool_id,user_id,amount_kobo,seconds,balance) SELECT ?,?,?,?,?,? WHERE changes()>0').bind(uid(), pool.id, user.id, amount, addSecs, from)]);
+  if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Game ended before the time was added' }); return json({ error: 'Too late — the game is ending. Your money is back.' }, 409); }
+  const fresh = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(pool.id).first();
+  await initRoom(env, fresh);   // the game room moves its end time and its settle alarm
+  return json({ message: `+${addSecs}s on the clock for everybody!`, endsAt: fresh.ends_at, addedSeconds: addSecs });
+}
+
+// Money that came from players (entry fees + prize top-ups), to give back when a pool is cancelled or paused.
 async function playerMoney(env, pool) {
   const fees = (await env.DB.prepare("SELECT e.user_id, e.paid_kobo AS amount, COALESCE((SELECT t.balance FROM wallet_transactions t WHERE t.user_id=e.user_id AND t.reference=e.pool_id AND t.type='ENTRY_FEE' ORDER BY t.created_at DESC LIMIT 1), 'WALLET') AS src FROM pool_entries e WHERE e.pool_id=? AND e.paid_kobo>0").bind(pool.id).all()).results;
   const tops = (await env.DB.prepare('SELECT user_id, amount_kobo AS amount, balance AS src FROM pool_topups WHERE pool_id=?').bind(pool.id).all()).results;
   return { fees, tops, total: [...fees, ...tops].reduce((a, x) => a + Number(x.amount), 0) };
 }
+// Returns the money that was in the prize pot (entry fees + prize top-ups). Time bought in the game is not
+// part of the pot, but the game didn't finish, so it goes back too (claimed row by row, so it can't pay twice).
 export async function refundPlayers(env, pool, why) {
   const { fees, tops, total } = await playerMoney(env, pool);
   for (const e of [...fees.map(x => ({ ...x, kind: 'entry' })), ...tops.map(x => ({ ...x, kind: 'prize top-up' }))]) {
     const bal = e.src === 'WINNINGS' ? 'WINNINGS' : 'WALLET';
     await credit(env, e.user_id, Number(e.amount), { balance: bal, type: 'REFUND', reference: pool.id, note: `${why}: ${pool.name}` });
+  }
+  const buys = (await env.DB.prepare('SELECT id, user_id, amount_kobo AS amount, balance AS src FROM pool_time_buys WHERE pool_id=?').bind(pool.id).all()).results;
+  for (const b of buys) {
+    const gone = await env.DB.prepare('DELETE FROM pool_time_buys WHERE id=?').bind(b.id).run();
+    if (gone.meta.changes) await credit(env, b.user_id, Number(b.amount), { balance: b.src === 'WINNINGS' ? 'WINNINGS' : 'WALLET', type: 'REFUND', reference: pool.id, note: `${why}: time bought in ${pool.name}` });
   }
   return total;
 }

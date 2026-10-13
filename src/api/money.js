@@ -36,6 +36,24 @@ async function ps(env, method, path, body) {
   return data.data;
 }
 
+// Health check: does Paystack accept the secret key? Reads the balance (read-only). Cached for 10 minutes.
+// Never returns or logs the key itself — only whether it is a live or test key.
+let psCheck = null;
+export async function paystackKeyCheck(env) {
+  if (!paystackOn(env)) return null;
+  if (psCheck && Date.now() - psCheck.at < 600000) return psCheck.res;
+  const key = String(env.PAYSTACK_SECRET_KEY);
+  const mode = key.startsWith('sk_live_') ? 'live' : key.startsWith('sk_test_') ? 'test' : 'unknown';
+  let res;
+  try {
+    const bal = await Promise.race([ps(env, 'GET', '/balance'), new Promise((_, no) => setTimeout(() => no(new Error('Paystack did not answer in 8 seconds')), 8000))]);
+    const ngn = (Array.isArray(bal) ? bal : []).find(b => b.currency === 'NGN');
+    res = { ok: true, mode, balance: ngn ? Number(ngn.balance) : null };
+  } catch (e) { res = { ok: false, mode, error: String(e?.message || e).slice(0, 160) }; }
+  psCheck = { at: Date.now(), res };
+  return res;
+}
+
 const PURPOSE = { MAPO: { month: 'MAPO_MONTH', year: 'MAPO_YEAR' }, NEPO: { month: 'NEPO_MONTH', year: 'NEPO_YEAR' } };
 const fromPurpose = p => { const m = /^(MAPO|NEPO)_(MONTH|YEAR)$/.exec(p || ''); return m ? { tier: m[1], plan: m[2] === 'YEAR' ? 'year' : 'month' } : null; };
 

@@ -321,7 +321,7 @@
       });
     }
 
-    /* ── add money during the game (bottom right): every ₦10,000 adds 10 seconds for everybody ── */
+    /* ── buy time during the game (bottom right): every ₦10,000 adds 10 seconds for everybody ── */
     var cashBtn = $('cash-btn'), cashAmt = 10000;
     function paintCash() { cashBtn.hidden = !(focus.timeTopup && stateOf(focus) === 'live'); }
     setInterval(paintCash, 1000);
@@ -332,7 +332,7 @@
       TA.api('/api/pools/' + encodeURIComponent(p.id) + '/topup', Object.assign({ amount: cashAmt, ingame: true, from: $('cash-win').checked ? 'WINNINGS' : 'WALLET' }, extra || {})).then(function (j) {
         go.classList.remove('is-loading');
         if (!j._ok) { if (j.code === 'ADULT') { TA.askAdult(function () { sendCash({ adult: true }); }); return; } TA.fail(j); return; }
-        if (j.endsAt) p.ends = Date.parse(j.endsAt); if (j.prize) p.prize = j.prize;
+        if (j.endsAt) p.ends = Date.parse(j.endsAt);
         closeSheets(); party('+' + (j.addedSeconds || 10) + 's!'); TA.toast(j.message); paintMeta && paintMeta();
       });
     }

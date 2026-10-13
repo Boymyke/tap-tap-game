@@ -228,12 +228,12 @@ export function playPage(ctx) {
 <footer class="gm-foot">
   <button type="button" class="boostbtn" id="boost-btn" aria-label="Boosters"><span class="ic">×2</span><span>Boost</span><span class="cnt" id="boost-count">0</span></button>
   <span class="grow"></span>
-  <button type="button" class="cashbtn" id="cash-btn" aria-label="Add money to the prize" hidden><span class="ic">₦+</span><span>Add time</span></button>
+  <button type="button" class="cashbtn" id="cash-btn" aria-label="Buy more time" hidden><span class="ic">₦+</span><span>Add time</span></button>
 </footer>
 <div class="tips" id="tips" aria-live="polite"></div>
 </div>
 <div class="gsheet" id="boost-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="bo-h"><h2 id="bo-h">Boosters <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p>Each booster multiplies every tap for some seconds. Use as many as you like — they run one after the other, and a stronger one jumps the queue.</p><div id="boost-list"></div><div class="actions"><a class="btn btn--soft btn--sm" href="/store">Get boosters</a>${me.calc ? '<a class="btn btn--soft btn--sm" href="/calc">Calculator</a>' : ''}</div></div></div>
-<div class="gsheet" id="cash-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="ca-h"><h2 id="ca-h">Add money, get time <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p>Your money goes into the prize pool, and every <b>₦10,000</b> adds <b>10 seconds</b> to the clock for everybody. It can’t be taken back.</p>
+<div class="gsheet" id="cash-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="ca-h"><h2 id="ca-h">Buy more time <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p>Every <b>₦10,000</b> adds <b>10 seconds</b> to the clock for everybody in this game. It can’t be taken back once the time is added.</p>
 <div class="amts" id="cash-amts"><button type="button" data-amt="10000" aria-pressed="true">₦10k<small>+10s</small></button><button type="button" data-amt="20000" aria-pressed="false">₦20k<small>+20s</small></button><button type="button" data-amt="50000" aria-pressed="false">₦50k<small>+50s</small></button></div>
 <label class="ta-check" style="margin:4px 0 10px"><input type="checkbox" id="cash-win"><span>Pay from my winnings instead of my wallet</span></label>
 <div class="actions"><button type="button" class="btn btn--green btn--block" id="cash-go">Add ₦10,000 (+10s)</button></div></div></div>

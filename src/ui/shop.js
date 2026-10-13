@@ -159,7 +159,7 @@ if(mp){var f=mp.closest('form');function pad(){var c=f.padColor.value,k=(f.query
 }
 
 // ── Wallet ──────────────────────────────────────────────────────────────────
-const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' , GIFT_SENT: 'Sent to a player', GIFT_RECEIVED: 'From a player', CONVERT: 'Winnings to wallet', BOX_REWARD: 'Mystery box', POOL_TOPUP: 'Added to a prize', EMAIL_BLAST: 'Pool email to players', STAKE: 'Tap-off stake' };
+const TX = { FUND: 'Added money', ENTRY_FEE: 'Pool entry', PRIZE: 'Prize won', STORE: 'Store', NEPO: 'Nepo subscription', PLAN: 'Plan', WITHDRAW: 'Withdrawal', WITHDRAW_REFUND: 'Withdrawal refund', REFUND: 'Refund', POOL_PRIZE: 'Pool prize funding', ADMIN_ADJUST: 'Adjustment' , GIFT_SENT: 'Sent to a player', GIFT_RECEIVED: 'From a player', CONVERT: 'Winnings to wallet', BOX_REWARD: 'Mystery box', POOL_TOPUP: 'Added to a prize', TIME_BUY: 'Extra game time', EMAIL_BLAST: 'Pool email to players', STAKE: 'Tap-off stake' };
 export const txLabel = t => TX[t] || t;
 export function walletPage(ctx) {
   const { user, wallet, tx, page, hasNext, withdrawals, minWithdraw, banks, payMode, flash, perDay, theme, bgCss, tierKey, dayCap = 100000000 } = ctx;

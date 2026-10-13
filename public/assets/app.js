@@ -554,7 +554,7 @@
       document.title = doc.title;
       cur.replaceWith(document.adoptNode(app));
       var menuNew = doc.getElementById('menu'), menuCur = document.getElementById('menu'); if (menuNew && menuCur) menuCur.replaceWith(document.adoptNode(menuNew));
-      if (opts.replace) history.replaceState({ ta: 1 }, '', url); else if (!opts.pop) history.pushState({ ta: 1 }, '', url);
+      if (opts.replace) history.replaceState({ ta: 1, i: navIdx() }, '', url); else if (!opts.pop) { history.pushState({ ta: 1 }, '', url); backed(false); }
       if (!opts.pop) window.scrollTo(0, 0);
       $$('script[data-page]', doc).forEach(function (old) { var s = document.createElement('script'); s.nonce = NONCE; s.setAttribute('data-page', ''); s.textContent = old.textContent; document.body.appendChild(s); s.remove(); });
       delete cache[url];
@@ -566,9 +566,36 @@
       TA.toast(TA.isOnline() ? 'That page no load. Try again.' : 'Your internet don cut. Check your connection.', 'err');
     }).then(function () { if (seq === navSeq) { document.documentElement.classList.remove('is-nav'); progress(false); } });
   };
-  window.addEventListener('popstate', function () { depth(-1); if (document.body.classList.contains('app-body')) TA.go(location.pathname + location.search, { pop: true }); });
-
   /* ── back button ─────────────────────────────────────────────────── */
+  // Back (the phone's back button, the browser's, or [data-back]) goes to the previous page once.
+  // Pressing back again takes you to your home page instead of further back through old pages.
+  // Every history entry carries an index (i), so back and forward can be told apart.
+  function store(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, String(v)); } catch (e) {} return null; }
+  function navIdx(v) { if (v !== undefined) store('ta-idx', v); return Number(store('ta-idx') || 0); }
+  function backed(v) { if (v !== undefined) store('ta-backed', v ? '1' : '0'); return store('ta-backed') === '1'; }
+  function homePath() {
+    if (document.body.classList.contains('is-game')) return '/dashboard';
+    var a = document.querySelector('.app-bar .ta-logo') || document.querySelector('a.ta-logo'); return (a && a.getAttribute('href')) || '/';
+  }
+  function samePage(p) { try { return new URL(p, location.href).pathname === location.pathname; } catch (e) { return false; } }
+  // Called whenever the user lands on an older page. Returns true when we sent them home instead.
+  function onBack() {
+    if (backed()) {   // second back in a row: home
+      var h = homePath();
+      if (!samePage(h)) { if (document.body.classList.contains('app-body')) TA.go(h, { replace: true }); else location.replace(h); return true; }
+      return false;
+    }
+    backed(true);
+    return false;
+  }
+  function stateIdx() { return history.state && typeof history.state.i === 'number' ? history.state.i : null; }
+  window.addEventListener('popstate', function () {
+    var i = stateIdx(), isBack = i === null || i < navIdx();
+    depth(isBack ? -1 : 1); if (i !== null) navIdx(i);
+    if (isBack && onBack()) return;
+    if (!isBack) backed(false);
+    if (document.body.classList.contains('app-body')) TA.go(location.pathname + location.search, { pop: true });
+  });
   // [data-back] goes to the previous page when it was a page of this site in this tab,
   // otherwise to the link's own href (the role's home page).
   function depth(delta) {
@@ -579,11 +606,25 @@
   (function () {
     var nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0], type = nav ? nav.type : 'navigate';
     var sameSite = false; try { sameSite = !!document.referrer && new URL(document.referrer).origin === location.origin; } catch (e) {}
-    if (type === 'navigate') { if (sameSite) depth(1); else try { sessionStorage.setItem('ta-depth', '0'); } catch (e) {} }
-    else if (type === 'back_forward') depth(-1);
+    if (type === 'navigate') {
+      if (sameSite) depth(1); else try { sessionStorage.setItem('ta-depth', '0'); } catch (e) {}
+      backed(false);
+      if (history.replaceState) try { var n = navIdx() + 1; history.replaceState({ ta: 1, i: n }, ''); navIdx(n); } catch (e) {}
+    } else if (type === 'back_forward') {
+      var i = stateIdx(), isBack = i === null || i < navIdx();
+      depth(isBack ? -1 : 1); if (i !== null) navIdx(i);
+      if (isBack) onBack(); else backed(false);
+    }
   })();
+  // pages restored from the browser's back/forward cache don't re-run scripts
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    var i = stateIdx(), isBack = i === null || i < navIdx();
+    if (i !== null) navIdx(i);
+    if (isBack) onBack(); else backed(false);
+  });
   var pushState = history.pushState;
-  history.pushState = function () { depth(1); return pushState.apply(history, arguments); };
+  history.pushState = function (st, t, u) { depth(1); var n = navIdx() + 1; navIdx(n); return pushState.call(history, Object.assign({}, st || {}, { ta: 1, i: n }), t, u); };
   function goBack(fallback) { if (depth() > 0 && history.length > 1) history.back(); else TA.go(fallback || '/'); }
   TA.back = goBack;
   document.addEventListener('click', function (e) {

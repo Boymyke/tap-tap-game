@@ -101,7 +101,7 @@ async function recentWinners(env) {
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
   const rows = (await env.DB.prepare(`SELECT u.username, u.prefs, pe.prize_kobo, p.name FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
     WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>? ORDER BY p.settled_at DESC LIMIT 20`).bind(since).all()).results;
-  winCache = rows.map(r => ({ who: parseJson(r.prefs, {}).hideProfile ? 'A player' : maskName(r.username), amount: Number(r.prize_kobo), pool: r.name }));
+  winCache = rows.map(r => ({ who: maskName(r.username), amount: Number(r.prize_kobo), pool: r.name }));
   winAt = Date.now();
   return winCache;
 }
@@ -112,7 +112,7 @@ const TIPS = [
   ['⚡', 'Instant matches start the moment the last seat fills.'], ['🎯', 'Daily instant match at 1 PM and 8 PM — bring your squad.'],
   ['🥊', 'New: Tap-offs! Challenge any player 1-on-1.'], ['👆', 'Two fingers beat one. Mapo babies tap in 3 pools at once.'],
   ['🚀', 'Boosters stack one after the other — a stronger one jumps the queue.'], ['🎁', 'Free mystery boxes drop for active players.'],
-  ['🏆', 'Top tappers of the day, week and month get badges.'], ['🍚', 'VS pools: pick Jollof or Fried rice. The side with more taps takes the whole pot.'],
+  ['🏆', 'Top tappers of the day, week and month get badges.'], ['💰', 'The top winner of each day, month and year gets a winner badge.'], ['🍚', 'VS pools: pick Jollof or Fried rice. The side with more taps takes the whole pot.'],
   ['⏱', 'In some games, ₦10,000 adds 10 seconds to the clock for everybody.'], ['🔒', 'Private pools: invite your people by name, no password needed.'],
   ['📣', 'Sponsors: put your brand on a pool and reach every player who joins.'], ['🎙', 'Nepo babies in the top 3 fit talk live during a match.'],
   ['📊', 'The booster calculator tells you which booster takes you to the top.'], ['🔁', 'Lost the network? Your taps wait and send when you’re back.'],
@@ -396,8 +396,10 @@ async function route(req, env, url, path, user) {
       const scope = ['open', 'live', 'sponsored', 'players-soon', 'mine', 'created', 'recent'].includes(q.get('scope')) ? q.get('scope') : 'open';
       const term = String(q.get('q') || '').trim().replace(/^#/, '').slice(0, 40);
       const pg = pageNum(q);
-      const rows = (await listStmt(env, user, { scope, limit: 31, offset: (pg - 1) * 30, q: term }).all()).results;
-      return html(poolsPage({ ...b, scope, term, page: pg, hasNext: rows.length > 30, pools: rows.slice(0, 30).map(poolPublic) }));
+      const [list, mine] = await env.DB.batch([listStmt(env, user, { scope, limit: 31, offset: (pg - 1) * 30, q: term }), listStmt(env, user, { scope: 'mine', limit: 30 })]);
+      const rows = list.results;
+      const liveIds = user.role === 'USER' ? mine.results.map(poolPublic).filter(p => p.state === 'live').map(p => p.id) : [];
+      return html(poolsPage({ ...b, scope, term, page: pg, hasNext: rows.length > 30, pools: rows.slice(0, 30).map(poolPublic), liveIds }));
     }
     case '/pools/new': {
       if (user.role === 'USER' && !b.perk?.create) return go(req, '/plans');
@@ -433,6 +435,7 @@ async function route(req, env, url, path, user) {
       return html(bagPage({ ...b, inv, nepo: b.tierKey === 'NEPO', paid: b.tierKey === 'MAPO' || b.tierKey === 'NEPO', prefs: parseJson(user.prefs, {}), patterns }));
     }
     case '/wallet': {
+      if (user.role === 'ADMIN') return go(req, homeFor(user));   // the super admin has no wallet; money is managed in the admin pages
       const pg = pageNum(q);
       const [tx, wd] = await env.DB.batch([
         env.DB.prepare('SELECT type,amount_kobo,balance,note,created_at FROM wallet_transactions WHERE user_id=? ORDER BY created_at DESC LIMIT 21 OFFSET ?').bind(user.id, (pg - 1) * 20),
@@ -452,7 +455,7 @@ async function route(req, env, url, path, user) {
       const y = /^\d{4}$/.test(q.get('y') || '') ? q.get('y') : thisYear;
       const m = /^(0[1-9]|1[0-2])$/.test(q.get('m') || '') ? q.get('m') : (y === thisYear ? keys.MONTH.slice(6) : '12');
       const [badges, days, months, years, today, month] = await env.DB.batch([
-        env.DB.prepare('SELECT b.kind,b.period,b.taps,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind=\'X:\' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE \'X:%\' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40').bind(user.id),
+        env.DB.prepare('SELECT b.kind,b.period,b.taps,b.amount_kobo,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind=\'X:\' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE \'X:%\' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40').bind(user.id),
         env.DB.prepare('SELECT period,taps FROM tap_stats WHERE user_id=? AND period>=? AND period<=? ORDER BY period').bind(user.id, `D${y}-${m}-01`, `D${y}-${m}-31`),
         env.DB.prepare('SELECT period,taps FROM tap_stats WHERE user_id=? AND period>=? AND period<=? ORDER BY period').bind(user.id, `M${y}-01`, `M${y}-12`),
         env.DB.prepare("SELECT substr(period,2,4) AS y FROM tap_stats WHERE user_id=? AND period LIKE 'Y%' ORDER BY period DESC").bind(user.id),
@@ -522,12 +525,12 @@ function periodStart(period) {
   if (period === 'YEAR') return new Date(Date.UTC(l.getUTCFullYear(), 0, 1) - 3600000).toISOString();
   return '0000';
 }
-// Top winners: prize money won per player (from settled pools). Hidden profiles show as "Hidden player".
+// Top winners: prize money won per player (from settled pools). Winnings are public.
 async function topWinners(env, period, { limit = 50, offset = 0, term = '' } = {}) {
   const like = term ? likeEsc(term) + '%' : '';
-  return (await env.DB.prepare(`SELECT * FROM (SELECT u.id, u.username, u.emoji, u.rank_level, u.hide_profile, SUM(pe.prize_kobo) AS won, COUNT(*) AS prizes, ROW_NUMBER() OVER (ORDER BY SUM(pe.prize_kobo) DESC) AS pos
+  return (await env.DB.prepare(`SELECT * FROM (SELECT u.id, u.username, u.emoji, u.rank_level, SUM(pe.prize_kobo) AS won, COUNT(*) AS prizes, ROW_NUMBER() OVER (ORDER BY SUM(pe.prize_kobo) DESC) AS pos
     FROM pool_entries pe JOIN pools p ON p.id=pe.pool_id JOIN users u ON u.id=pe.user_id
-    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>=? AND u.status='ACTIVE' GROUP BY u.id) WHERE (?='' OR (username LIKE ? ESCAPE '\\' AND hide_profile=0)) ORDER BY pos LIMIT ? OFFSET ?`).bind(periodStart(period), like, like, limit + 1, offset).all()).results;
+    WHERE pe.prize_kobo>0 AND p.settled_at IS NOT NULL AND p.settled_at>=? AND u.status='ACTIVE' GROUP BY u.id) WHERE (?='' OR username LIKE ? ESCAPE '\\') ORDER BY pos LIMIT ? OFFSET ?`).bind(periodStart(period), like, like, limit + 1, offset).all()).results;
 }
 async function winnersRoute(env, q, user) {
   const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
@@ -537,7 +540,7 @@ async function winnersRoute(env, q, user) {
   return html(winnersPage({ user, period, term, page: pg, hasNext: rows.length > 50, rows: rows.slice(0, 50), theme: b.theme, bgCss: b.bgCss }));
 }
 
-// Player search + public profiles. Players can hide their winnings and badges.
+// Player search + public profiles. Winnings and badges are public.
 async function playersRoute(env, q, user) {
   const term = String(q.get('q') || '').trim().slice(0, 24);
   const rows = term.length >= 2 ? (await env.DB.prepare("SELECT username, emoji, rank_level, tier, tier_until, lifetime_taps FROM users WHERE role='USER' AND status='ACTIVE' AND username LIKE ? ESCAPE '\\' ORDER BY lifetime_taps DESC LIMIT 30").bind(likeEsc(term) + '%').all()).results : [];
@@ -546,16 +549,15 @@ async function playersRoute(env, q, user) {
   return html(playersPage({ user, term, rows: rows.map(r => ({ ...r, rank_name: ranks.find(x => x.level === r.rank_level)?.name || '', tierName: tierLabel(r) })), theme: b.theme, bgCss: b.bgCss }));
 }
 async function profileRoute(env, url, nick, user) {
-  const p = await env.DB.prepare("SELECT id, username, emoji, rank_level, tier, tier_until, lifetime_taps, games_played, wins, hide_profile, created_at, role, status FROM users WHERE username=?").bind(nick).first();
+  const p = await env.DB.prepare("SELECT id, username, emoji, rank_level, tier, tier_until, lifetime_taps, games_played, wins, created_at, role, status FROM users WHERE username=?").bind(nick).first();
   if (!p || p.role !== 'USER' || p.status !== 'ACTIVE') return html(errorPage(404, { user }), 404);
   const own = user?.id === p.id;
-  const hidden = !!p.hide_profile && !own;
-  const [won, badges] = hidden ? [null, { results: [] }] : await Promise.all([
+  const [won, badges] = await Promise.all([
     env.DB.prepare('SELECT COALESCE(SUM(prize_kobo),0) n, COUNT(*) c FROM pool_entries WHERE user_id=? AND prize_kobo>0').bind(p.id).first(),
-    env.DB.prepare("SELECT b.kind,b.period,b.taps,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all()]);
+    env.DB.prepare("SELECT b.kind,b.period,b.taps,b.amount_kobo,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all()]);
   const ranks = await allRanks(env);
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
-  return html(profilePage({ user, p: { ...p, tierName: tierLabel(p) }, own, hidden, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
+  return html(profilePage({ user, p: { ...p, tierName: tierLabel(p) }, own, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
 }
 
 // Public results page for a finished pool (anyone with the link can see it; it's made to be shared).
@@ -563,9 +565,9 @@ async function resultsRoute(req, env, url, id, user) {
   const p = await env.DB.prepare('SELECT * FROM pools WHERE id=? OR hashtag=?').bind(id, String(id).toUpperCase()).first();
   if (!p) return html(errorPage(404, { user }), 404);
   if (!p.settled_at || p.status === 'CANCELLED') return go(req, user ? `/pool/${p.id}` : '/');
-  const rows = (await env.DB.prepare(`SELECT pe.user_id, u.username n, u.hide_profile, pe.taps s, pe.prize_kobo prize, pe.side_choice side, pe.final_rank
+  const rows = (await env.DB.prepare(`SELECT pe.user_id, u.username n, pe.taps s, pe.prize_kobo prize, pe.side_choice side, pe.final_rank
     FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? AND pe.taps>0 ORDER BY pe.taps DESC, pe.reached_at ASC LIMIT 10`).bind(p.id).all()).results
-    .map(r => ({ n: r.n, s: r.s, side: r.side, me: r.user_id === user?.id, prize: r.hide_profile && r.user_id !== user?.id ? 0 : r.prize }));   // players who hide their winnings stay hidden
+    .map(r => ({ n: r.n, s: r.s, side: r.side, me: r.user_id === user?.id, prize: r.prize }));
   const players = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pool_entries WHERE pool_id=?').bind(p.id).first())?.n || 0);
   let vs = null;
   if (p.vs_split && p.side_a) {
@@ -691,7 +693,9 @@ async function adminRoute(req, env, url, path, user) {
       (SELECT COUNT(*) FROM promos WHERE approved=0 AND reject_reason IS NULL) pendingAds,
       (SELECT COUNT(*) FROM slides WHERE status='REQUESTED') pendingSlides,
       (SELECT COUNT(*) FROM suggestions WHERE kind='POOL' AND status='NEW') poolIdeas,
-      (SELECT COALESCE(SUM(n),0) FROM metrics WHERE key='taps' AND day=?) tapsToday`).bind(now, now, now, now, lagosDay()).first();
+      (SELECT COALESCE(SUM(n),0) FROM metrics WHERE key='taps' AND day=?) tapsToday,
+      (SELECT COALESCE(SUM(amount_kobo),0) FROM pool_time_buys) timeBought,
+      (SELECT COALESCE(SUM(amount_kobo),0) FROM pool_time_buys WHERE created_at>=?) timeBoughtToday`).bind(now, now, now, now, lagosDay(), new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19)).first();
     const audit = (await env.DB.prepare('SELECT action,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 15').all()).results;
     const errors24 = Number((await env.DB.prepare('SELECT COUNT(*) n FROM error_log WHERE created_at>?').bind(new Date(Date.now() - 86400000).toISOString()).first())?.n || 0);
     return html(adminHome({ ...b, stats: s, settings: await settings(env), audit, errors24 }));
