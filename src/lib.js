@@ -35,14 +35,14 @@ export function html(body, status = 200, headers = {}) {
     body = body.replaceAll('__NONCE__', nonce);
     h['content-security-policy'] = [
       "default-src 'self'",
-      `script-src 'nonce-${nonce}'`,
+      `script-src 'nonce-${nonce}' https://js.paystack.co https://checkout.paystack.com`,   // Paystack's checkout popup
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https:",
-      "connect-src 'self'",
+      "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://*.pusher.com wss://*.pusher.com",
       "worker-src 'self'",
       "manifest-src 'self'",
-      "frame-src https://www.youtube-nocookie.com",
+      "frame-src https://www.youtube-nocookie.com https://checkout.paystack.com https://js.paystack.co",
       "frame-ancestors 'none'",
       "base-uri 'none'",
       "form-action 'self'",
