@@ -389,9 +389,15 @@ export async function handleMoneyApi(req, env, path, user) {
     const bank = (await banksFor(env)).find(b => b[0] === String(data.bank_code));
     if (!bank) return json({ error: 'Pick your bank.', field: 'bank_code' }, 400);
     if (!/^\d{10}$/.test(String(data.account_number || ''))) return json({ error: 'Account number must be 10 digits.', field: 'account_number' }, 400);
-    const name = String(data.account_name || '').trim().slice(0, 80);
-    if (name.length < 3) return json({ error: 'Enter the account name.', field: 'account_name' }, 400);
+    let name = String(data.account_name || '').trim().slice(0, 80);
     { const pw = await passwordOk(env, user.id, data.password); if (!pw.ok) return pwError(pw); }
+    // With Paystack, the bank confirms the account and its name; the name typed in the form is never trusted.
+    if (paystackOn(env) && !useBachs(env)) {
+      try { const d = await ps(env, 'GET', `/bank/resolve?account_number=${data.account_number}&bank_code=${encodeURIComponent(bank[0])}`); name = String(d?.account_name || '').trim().slice(0, 80); }
+      catch (e) { console.error('withdraw resolve', e?.message); name = ''; }
+      if (name.length < 3) return json({ error: 'We no fit confirm this account with the bank. Check the account number and the bank.', field: 'account_number' }, 400);
+    }
+    if (name.length < 3) return json({ error: 'Enter the account name.', field: 'account_name' }, 400);
     // At most ₦1m (admin setting) a day leaves as withdrawals.
     const dayCap = num(s, 'withdraw_daily_max_kobo', 100000000);
     const dayStart0 = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();

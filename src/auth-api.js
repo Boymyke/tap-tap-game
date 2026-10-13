@@ -360,6 +360,7 @@ export async function handleAuthApi(req, env, path) {
       env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(userId),
       env.DB.prepare("DELETE FROM email_codes WHERE purpose='reset' AND email=?").bind(email)
     ]);
+    await logAuth(env, userId, 'PASSWORD_RESET', req);
     const sid = await createSession(userId, env);
     return json({ message: 'Password changed' }, 200, { 'set-cookie': sessionCookie(sid) });
   }

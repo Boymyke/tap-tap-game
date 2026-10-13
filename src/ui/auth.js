@@ -200,6 +200,7 @@ function show(name){
 tabs.login.addEventListener('click',function(e){e.preventDefault();show('login')});
 tabs.signup.addEventListener('click',function(e){e.preventDefault();show('signup')});
 document.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-go'))})});
+if(location.hash==='#reset-email')show('forgot-email');
 
 // the eye buttons (show / hide password) are handled for every page in app.js
 
