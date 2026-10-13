@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   lifetime_taps INTEGER NOT NULL DEFAULT 0, games_played INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0, rank_level INTEGER NOT NULL DEFAULT 1,
   referral_code TEXT UNIQUE, referred_by TEXT, referral_count INTEGER NOT NULL DEFAULT 0,
   equipped_skin TEXT NOT NULL DEFAULT 'skin-boy', prefs TEXT NOT NULL DEFAULT '{}',
-  date_of_birth TEXT, terms_accepted_at TEXT, terms_version TEXT, email_verified_at TEXT,
+  date_of_birth TEXT, terms_accepted_at TEXT, terms_version TEXT, email_verified_at TEXT, whatsapp TEXT,
   gender TEXT, country TEXT, archived_at TEXT, adult_confirmed_at TEXT, emoji TEXT, emoji_meaning TEXT,
   email_news INTEGER NOT NULL DEFAULT 0, hide_profile INTEGER NOT NULL DEFAULT 0, seed_hash TEXT, seed_salt TEXT, seed_enc TEXT, seed_set_at TEXT, last_free_box_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS pools (
   is_private INTEGER NOT NULL DEFAULT 0, join_password TEXT, sponsor_user_id TEXT, sponsor_name TEXT,
   theme_color TEXT, skin_url TEXT, game_type TEXT NOT NULL DEFAULT 'STANDARD', side_a TEXT, side_b TEXT,
   promo_id TEXT, bg_color TEXT, split_style TEXT NOT NULL DEFAULT 'TOP', vs_split INTEGER NOT NULL DEFAULT 0, pad_pattern TEXT, allow_own_pad INTEGER NOT NULL DEFAULT 0, lapo_rules INTEGER NOT NULL DEFAULT 0, paused_players TEXT,
-  instant INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER,
+  instant INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER, time_topup INTEGER NOT NULL DEFAULT 0, challenge_id TEXT, pause_mode TEXT, paused_left_ms INTEGER, vote_until TEXT,
   settled_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS pool_entries (
   pool_id TEXT NOT NULL, user_id TEXT NOT NULL, taps INTEGER NOT NULL DEFAULT 0, raw_taps INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS pool_entries (
 CREATE TABLE IF NOT EXISTS pool_invites (
   pool_id TEXT NOT NULL, user_id TEXT NOT NULL, invited_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
+
+-- tap-offs, votes, block lists, error log, announcements (0010)
+CREATE TABLE IF NOT EXISTS pool_blocks (pool_id TEXT NOT NULL, user_id TEXT NOT NULL, blocked_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS pool_votes (pool_id TEXT NOT NULL, user_id TEXT NOT NULL, choice TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, from_id TEXT NOT NULL, to_id TEXT NOT NULL, stake_kobo INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 60, status TEXT NOT NULL DEFAULT 'PENDING', pool_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, responded_at TEXT, expires_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_challenges_to ON challenges(to_id, status);
+CREATE INDEX IF NOT EXISTS idx_challenges_from ON challenges(from_id, status);
+CREATE INDEX IF NOT EXISTS idx_challenges_open ON challenges(status, expires_at);
+CREATE TABLE IF NOT EXISTS error_log (id TEXT PRIMARY KEY, area TEXT NOT NULL, message TEXT NOT NULL, detail TEXT, hint TEXT, stack TEXT, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_error_log_time ON error_log(created_at);
+CREATE TABLE IF NOT EXISTS announcements (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, link TEXT, audience TEXT NOT NULL DEFAULT 'ALL', overlay INTEGER NOT NULL DEFAULT 0, email TEXT NOT NULL DEFAULT 'NO', active INTEGER NOT NULL DEFAULT 1, created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS announcement_seen (user_id TEXT NOT NULL, ann_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, ann_id));
+CREATE TABLE IF NOT EXISTS email_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref_id TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'ALL', service INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'QUEUED', cursor TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, done_at TEXT);
 
 -- ── money ───────────────────────────────────────────────────────────────────
 -- balance_kobo = wallet (money you add; spend-only)   winnings_kobo = withdrawable
@@ -123,9 +136,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral ON users(referral_code);
 INSERT OR IGNORE INTO settings(key,value) VALUES
   ('landing_demo_pools','1'), ('email_blast_kobo','2500000'), ('lapo_pools_per_day','3'), ('transfer_daily_max_kobo','5000000'), ('free_box_days','3'), ('overload','0'), ('nepo_monthly_kobo','5000000'), ('nepo_yearly_kobo','50000000'), ('mapo_monthly_kobo','350000'), ('mapo_yearly_kobo','3500000'),
   ('min_withdraw_lapo_kobo','1000000'), ('min_withdraw_mapo_kobo','750000'), ('min_withdraw_nepo_kobo','500000'), ('starter_boosters','3'), ('nepo_bonus_boosters','5'), ('mapo_bonus_boosters','3'),
-  ('referral_batch','10'), ('max_multi_pools','10'), ('max_multi_pools_mapo','3'), ('voice_min_rank','56'), ('voice_top_n','5'), ('house_cut_pct','0'),
+  ('referral_batch','10'), ('max_multi_pools','10'), ('max_multi_pools_mapo','3'), ('voice_min_rank','56'), ('voice_top_n','3'), ('house_cut_pct','0'),
   ('tap_rate_lapo','15'), ('tap_rate_mapo','25'), ('tap_rate_nepo','40'), ('tap_limits_on','0'), ('tap_limit_daily','20000'), ('tap_limit_monthly','400000'),
-  ('auto_payouts','0'), ('auto_payout_max_kobo','5000000'), ('auto_payout_min_age_days','7'), ('alert_email',''), ('withdrawals_per_day','1'), ('instant_wait_hours','24');
+  ('auto_payouts','0'), ('auto_payout_max_kobo','5000000'), ('auto_payout_min_age_days','7'), ('alert_email',''), ('withdrawals_per_day','1'), ('instant_wait_hours','24'), ('withdraw_daily_max_kobo','100000000'), ('mapo_pools_per_day','20'), ('nepo_pools_per_day','50'), ('topup_seconds_per_step','10'), ('vote_continue_pct','50'), ('vote_hours','1'), ('voice_on','1'), ('stakes_on','0'), ('signups_paused','0');
 
 INSERT OR IGNORE INTO store_items(id,name,description,kind,price_kobo,multiplier,duration_seconds,audience,min_rank,config,giftable,sort,per_game_limit) VALUES
   ('booster-small','Small Chops 1.5×','Small push: 1.5× taps for 15 seconds.','BOOSTER',5000,1.5,15,'ALL',1,'{"color":"#21D4C8"}',1,0,0),

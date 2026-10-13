@@ -115,7 +115,7 @@ export async function currentUser(req, env) {
   if (!tokenOk(token)) return null;
   const id = await sha256Hex(token);
   const row = await env.DB.prepare(`SELECT u.id,u.username,u.email,u.role,u.tier,u.tier_until,u.status,u.lifetime_taps,u.games_played,u.wins,u.rank_level,u.referral_code,u.referral_count,
-      u.equipped_skin,u.prefs,u.gender,u.country,u.adult_confirmed_at,u.emoji,u.emoji_meaning,u.email_news,u.hide_profile,u.seed_set_at,u.last_free_box_at,u.created_at,s.expires_at,
+      u.equipped_skin,u.prefs,u.gender,u.country,u.whatsapp,u.adult_confirmed_at,u.emoji,u.emoji_meaning,u.email_news,u.hide_profile,u.seed_set_at,u.last_free_box_at,u.created_at,s.expires_at,
       COALESCE(w.balance_kobo,0) AS w_balance, COALESCE(w.winnings_kobo,0) AS w_winnings,
       (SELECT COUNT(*) FROM notifications n WHERE n.user_id=u.id AND n.read=0) AS unread
     FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN wallets w ON w.user_id=u.id WHERE s.id=?`).bind(id).first();
@@ -178,3 +178,44 @@ export async function allow(env, key, limit, windowSeconds) {
   return Number(row?.count || 1) <= limit;
 }
 export const clearLimit = (env, key) => env.DB.prepare('DELETE FROM auth_throttle WHERE key=?').bind(key).run();
+
+// Re-checks a signed-in player's password before money leaves their account (withdraw, send, convert,
+// stake). Rate-limited so a stolen session can't guess it. Returns { ok } or { error, status }.
+export async function passwordOk(env, userId, password) {
+  password = String(password ?? '');
+  if (!password) return { error: 'Enter your password to confirm it is you.', status: 400 };
+  if (!await allow(env, 'pwcheck:' + userId, 10, 900)) return { error: 'Too many password tries. Wait 15 minutes.', status: 429 };
+  const row = await env.DB.prepare('SELECT password_hash,password_salt,password_iter FROM users WHERE id=?').bind(userId).first();
+  if (!row || password.length > 128) return { error: 'Wrong password.', status: 401 };
+  const hp = await hashPassword(password, row.password_salt, row.password_iter || LEGACY_PBKDF2_ITERATIONS);
+  return safeEqual(hp.hash, row.password_hash) ? { ok: true } : { error: 'Wrong password.', status: 401 };
+}
+
+// ── error log for the super admin: what happened, when, where, and what to do ──
+const HINTS = [
+  [/zeptomail|EMAIL_NOT_CONFIGURED|resend/i, 'Email could not be sent. Check that ZEPTOMAIL_TOKEN is set on the worker and that tapammm.live is verified in ZeptoMail (Mail Agents → Domains).'],
+  [/paystack/i, 'Paystack refused or did not answer. Check PAYSTACK_SECRET_KEY on the worker and the Paystack dashboard (account status, IP whitelist off). Players were not charged unless Paystack confirmed it.'],
+  [/D1_|SQLITE|database|no such (table|column)/i, 'The database refused a request. If it says "no such column/table", a database update (migration) is missing: apply the newest file in /migrations to this database.'],
+  [/room|durable object|exceeded|overloaded|timeout|timed out/i, 'The game servers were too busy or slow. If it happens a lot, use "Server problem: pause all games" on the admin home, then restart when the Health page is green.'],
+  [/realtime|calls/i, 'Live voice (Cloudflare Realtime) failed. Check CALLS_APP_ID and CALLS_APP_TOKEN, or switch voice off in Settings.']
+];
+export const errorHint = msg => (HINTS.find(([re]) => re.test(msg)) || [null, 'Not a known problem. If it keeps happening, send the details and the time to your developer.'])[1];
+export async function logError(env, area, err, detail = {}) {
+  try {
+    const message = String(err?.message || err || 'Unknown error').slice(0, 500);
+    await env.DB.prepare('INSERT INTO error_log(id,area,message,detail,hint,stack,created_at) VALUES(?,?,?,?,?,?,?)')
+      .bind(crypto.randomUUID(), String(area).slice(0, 60), message, JSON.stringify(detail).slice(0, 2000), errorHint(message + ' ' + area), String(err?.stack || '').slice(0, 2000), new Date().toISOString()).run();
+  } catch (e) { console.error('logError failed', e?.message); }
+}
+
+// Small in-memory cache per worker instance for shared, slow-changing reads (landing stats, featured
+// pools, top boards). Never used for anything personal or money-related.
+const memoStore = new Map();
+export async function memo(key, ttlMs, fn) {
+  const hit = memoStore.get(key);
+  if (hit && hit.until > Date.now()) return hit.value;
+  const value = await fn();
+  memoStore.set(key, { value, until: Date.now() + ttlMs });
+  if (memoStore.size > 500) memoStore.delete(memoStore.keys().next().value);
+  return value;
+}

@@ -68,6 +68,11 @@ ${logoBlock()}
       <div class="ta-pw"><input class="ta-input" id="su-pw" name="password" type="password" autocomplete="new-password" minlength="${PASSWORD_MIN}" maxlength="${PASSWORD_MAX}" placeholder="make am strong o" required aria-describedby="e-su-pw">${eyeButton('su-pw')}</div>
       ${err('e-su-pw')}
     </div>
+    <div class="ta-field">
+      <label class="ta-label" for="su-wa">WhatsApp number</label>
+      <input class="ta-input" id="su-wa" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="0803 123 4567" required aria-describedby="e-su-wa">
+      ${err('e-su-wa')}
+    </div>
     ${sponsor ? '' : `<div class="ta-field">
       <span class="ta-label" id="su-gender-label">You be</span>
       ${genderChoice()}
@@ -79,13 +84,28 @@ ${logoBlock()}
       ${err('e-su-country')}
     </div>
     <label class="ta-check"><input type="checkbox" id="su-agree" name="agree" required aria-describedby="e-su-agree">
-      <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a>, <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/rules" target="_blank" rel="noopener">Game Rules</a>. Tap Am stores my nickname, email, gender and country and game activity to run my account. If I’m under 18, a parent or guardian agrees.</span>
+      <span>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a>, <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/rules" target="_blank" rel="noopener">Game Rules</a>. Tap Am stores my nickname, email, WhatsApp number, gender, country and game activity to run my account. If I’m under 18, a parent or guardian agrees.</span>
     </label>
     ${err('e-su-agree')}
     <label class="ta-check" style="margin-top:8px"><input type="checkbox" id="su-news" name="email_news"><span>Email me about new pools and offers (optional). Turn it off any time in Settings.</span></label>
     <div class="ta-msg" role="alert"></div>
     <button class="ta-btn ta-btn--shine" type="submit" data-label="Oya, create my account">Oya, create my account</button>
     ${sponsor ? '' : '<p class="ta-note" style="margin:10px 0 0;text-align:center">Be a brand? <a href="/signup?type=sponsor">Sign up as a sponsor</a></p>'}
+  </form>
+
+  <form method="post" class="ta-form ta-step" id="v-verify" novalidate hidden>
+    ${back('Change my details', 'signup')}
+    <h2>Check your email</h2>
+    <p class="ta-sub">We sent a 6-digit code to <b data-email></b>. Enter it to confirm your email and create your account. No see am? Check Spam or Promotions.</p>
+    <p class="ta-testcode" data-test hidden></p>
+    <div class="ta-field">
+      <label class="ta-label" for="vf-code">Code</label>
+      <input class="ta-input ta-otp" id="vf-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required aria-describedby="e-vf-code">
+      ${err('e-vf-code')}
+    </div>
+    <div class="ta-msg" role="alert"></div>
+    <button class="ta-btn ta-btn--shine" type="submit" data-label="Confirm and create account">Confirm and create account</button>
+    <button class="ta-btn-ghost" type="button" data-resend="signup">Send new code</button>
   </form>
 
   <form method="post" class="ta-form ta-step" id="v-phrase" novalidate hidden>
@@ -165,7 +185,7 @@ ${poweredBy()}
 var COMMON=${JSON.stringify(COMMON_PASSWORDS)},RESERVED=${JSON.stringify(RESERVED_NICKNAMES)},PMIN=${PASSWORD_MIN},PMAX=${PASSWORD_MAX},EMAX=${EMAIL_MAX};
 var EMAIL_RE=/^[^\\s@<>()[\\]\\\\,;:"]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.[A-Za-z]{2,}$/;
 var $=function(id){return document.getElementById(id)};
-var views={login:$('v-login'),signup:$('v-signup'),phrase:$('v-phrase'),forgot:$('v-forgot'),'forgot-email':$('v-forgot-email'),reset:$('v-reset')};
+var views={login:$('v-login'),signup:$('v-signup'),verify:$('v-verify'),phrase:$('v-phrase'),forgot:$('v-forgot'),'forgot-email':$('v-forgot-email'),reset:$('v-reset')};
 var tabs={login:$('tab-login'),signup:$('tab-signup')},tabBar=$('tabs');
 var state={email:'',purpose:'signup',timer:null};
 
@@ -174,7 +194,7 @@ function show(name){
   var isTab=name==='login'||name==='signup';
   tabBar.hidden=!isTab;
   if(isTab){for(var t in tabs)tabs[t].setAttribute('aria-selected',t===name);if(location.pathname!=='/'+name)history.replaceState(null,'','/'+name);}
-  document.title=({login:'Login',signup:'Sign up',phrase:'Recovery phrase',forgot:'Forgot password','forgot-email':'Email code',reset:'New password'})[name]+' | Tap Am';
+  document.title=({login:'Login',signup:'Sign up',verify:'Check your email',phrase:'Recovery phrase',forgot:'Forgot password','forgot-email':'Email code',reset:'New password'})[name]+' | Tap Am';
   var first=views[name].querySelector('input:not([type=checkbox])');if(first&&name!=='login'&&name!=='signup')setTimeout(function(){first.focus()},30);
 }
 tabs.login.addEventListener('click',function(e){e.preventDefault();show('login')});
@@ -214,9 +234,10 @@ var suChecks={
   gender:function(){if(!$('su-gender'))return true;return setErr(su.querySelectorAll('input[name=gender]'),'e-su-gender',genderVal()?'':'Pick one.')},
   country:function(){return setErr($('su-country'),'e-su-country',$('su-country').value?'':'Pick your country.')},
   agree:function(){return setErr($('su-agree'),'e-su-agree',$('su-agree').checked?'':'Tick the box to agree before you continue.')},
+  whatsapp:function(){var v=$('su-wa').value.replace(/[\\s\\-().]/g,'');return setErr($('su-wa'),'e-su-wa',!v?'Enter your WhatsApp number.':/^(0\\d{10}|234\\d{10}|\\+[1-9]\\d{7,14})$/.test(v)?'':'Enter a WhatsApp number like 0803 123 4567 or +234 803 123 4567.')},
   company:function(){var c=$('su-company');if(!c)return true;var v=c.value.trim();return setErr(c,'e-su-company',v.length<2?'Enter your company or brand name.':'')}
 };
-var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),gender:su.querySelector('input[name=gender]'),country:$('su-country'),agree:$('su-agree'),company:$('su-company')};
+var suFieldEl={nickname:$('su-name'),email:$('su-email'),password:$('su-pw'),whatsapp:$('su-wa'),gender:su.querySelector('input[name=gender]'),country:$('su-country'),agree:$('su-agree'),company:$('su-company')};
 var touched={};
 $('su-name').addEventListener('blur',function(){if(this.value)touched.nickname=1;if(touched.nickname)suChecks.nickname()});
 $('su-email').addEventListener('blur',function(){if(this.value)touched.email=1;if(touched.email)suChecks.email()});
@@ -226,16 +247,20 @@ $('su-email').addEventListener('input',function(){if(touched.email)suChecks.emai
 $('su-pw').addEventListener('input',function(){if(touched.password)suChecks.password()});
 su.querySelectorAll('input[name=gender]').forEach(function(r){r.addEventListener('change',function(){suChecks.gender()})});
 $('su-agree').addEventListener('change',function(){suChecks.agree()});
+$('su-wa').addEventListener('blur',function(){if(this.value)touched.whatsapp=1;if(touched.whatsapp)suChecks.whatsapp()});
 
 su.addEventListener('submit',function(e){e.preventDefault();msg(su);
-  var order=($('su-company')?['company']:[]).concat(['nickname','email','password','gender','country','agree']),firstBad=null;
+  var order=($('su-company')?['company']:[]).concat(['nickname','email','password','whatsapp','gender','country','agree']),firstBad=null;
   order.forEach(function(k){touched[k]=1;if(!suChecks[k]()&&!firstBad)firstBad=k});
   if(firstBad){suFieldEl[firstBad].focus();return;}
   var email=$('su-email').value.trim().toLowerCase();
-  post(su,'/api/signup',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,
+  state.email=email;state.purpose='signup';
+  post(su,'/api/signup/start',{nickname:$('su-name').value.trim(),email:email,password:$('su-pw').value,whatsapp:$('su-wa').value,
     gender:genderVal(),country:$('su-country').value,agree:true,email_news:$('su-news').checked,accountType:su.getAttribute('data-type'),company:$('su-company')?$('su-company').value.trim():'',ref:su.getAttribute('data-ref')},function(j){
+      if(j.step==='verify'){openCodeView('verify',j);return;}
       showPhrase(j.phrase,j.redirect);
-    },function(j){var ids={nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',gender:'e-su-gender',country:'e-su-country',agree:'e-su-agree',company:'e-su-company'};
+    },function(j){if(j.step==='verify'){openCodeView('verify',j);if(j.retryAfter)startCooldown(views.verify,j.retryAfter);return true;}
+      var ids={whatsapp:'e-su-wa',nickname:'e-su-name',email:'e-su-email',password:'e-su-pw',gender:'e-su-gender',country:'e-su-country',agree:'e-su-agree',company:'e-su-company'};
       if(j.field&&ids[j.field]&&suFieldEl[j.field]){setErr(j.field==='gender'?su.querySelectorAll('input[name=gender]'):suFieldEl[j.field],ids[j.field],j.error);suFieldEl[j.field].focus();return true;}});
 });
 
@@ -264,6 +289,12 @@ document.querySelectorAll('[data-resend]').forEach(function(b){b.addEventListene
     startCooldown(v,j.resendIn||60);
   },function(j){if(j.retryAfter){startCooldown(v,j.retryAfter);}},b);
 })});
+
+views.verify.addEventListener('submit',function(e){e.preventDefault();var v=views.verify,c=$('vf-code');msg(v);
+  if(!/^\\d{6}$/.test(c.value)){setErr(c,'e-vf-code','Enter the 6-digit code from your email.');c.focus();return;}
+  post(v,'/api/signup/verify',{email:state.email,code:c.value},function(j){showPhrase(j.phrase,j.redirect);},
+    function(j){if(j.field==='code'){setErr(c,'e-vf-code',j.error);c.focus();return true;}});
+});
 
 // ── recovery phrase (after sign-up) ──
 var phraseText='',goTo='/dashboard';

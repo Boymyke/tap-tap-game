@@ -30,8 +30,10 @@ async function page(c, path, { status = 200, contains = [] } = {}) {
 }
 async function signup(name, extra = {}) {
   const c = new Client(name);
-  const s = await c.post('/api/signup', { nickname: name, email: `${name}@example.com`, password: 'Tapam2026x', gender: 'FEMALE', country: 'NG', agree: true, ...extra });
-  ok(s.status === 200 && c.cookie && String(s.j.phrase || '').split(' ').length === 12, `${name} signs up and gets a 12-word recovery phrase`, s.j);
+  const st = await c.post('/api/signup/start', { nickname: name, email: `${name}@example.com`, password: 'Tapam2026x', whatsapp: '0803' + String(Math.floor(Math.random() * 1e7)).padStart(7, '0'), gender: 'FEMALE', country: 'NG', agree: true, ...extra });
+  ok(st.status === 200 && st.j.step === 'verify' && /^\d{6}$/.test(st.j.testCode || '') && !c.cookie, `${name} gets an email code (no account yet)`, st.j);
+  const s = await c.post('/api/signup/verify', { email: `${name}@example.com`, code: st.j.testCode });
+  ok(s.status === 200 && c.cookie && String(s.j.phrase || '').split(' ').length === 12, `${name} confirms the code and gets a 12-word recovery phrase`, s.j);
   c.phrase = s.j.phrase;
   return c;
 }
@@ -42,7 +44,7 @@ const ADMIN_ID = process.env.ADMIN_ID || 'bossadmin', ADMIN_PW = process.env.ADM
 let r = await admin.post('/api/setup-admin', { setupKey: SETUP, username: ADMIN_ID, email: `${ADMIN_ID}@example.com`, password: ADMIN_PW });
 if (r.status === 409) { r = await admin.post('/api/admin/login', { identifier: ADMIN_ID, password: ADMIN_PW }); }
 ok(admin.cookie, 'admin session', r.j);
-const bad1 = await new Client('x').post('/api/signup', { nickname: 'nodob' + tag, email: `nodob${tag}@example.com`, password: 'Tapam2026x', agree: true, country: 'NG' });
+const bad1 = await new Client('x').post('/api/signup', { nickname: 'nodob' + tag, email: `nodob${tag}@example.com`, password: 'Tapam2026x', whatsapp: '08031234567', agree: true, country: 'NG' });
 ok(bad1.status === 400 && bad1.j.field === 'gender', 'sign-up needs gender', bad1.j);
 const A = await signup('ada' + tag);
 const B = await signup('bola' + tag, { ref: '' });
@@ -70,11 +72,11 @@ await page(new Client('anon'), '/ranks', { contains: ['JJC'] });
 
 console.log('Tiers and gates');
 for (let i = 1; i <= 3; i++) {
-  r = await B.post('/api/pools', { name: 'Lapo try ' + i, starts_at: new Date(Date.now() + 600000).toISOString(), ends_at: new Date(Date.now() + 1200000).toISOString(), ack: true, theme_color: '#FF0000', bg_color: '#00FF00', pad_pattern: 'flowers', custom_pad: true, lapo_rules: i === 1 });
+  r = await B.post('/api/pools', { name: 'Lapo try ' + i, starts_at: new Date(Date.now() + 600000).toISOString(), duration: '900', ack: true, theme_color: '#FF0000', bg_color: '#00FF00', pad_pattern: 'flowers', custom_pad: true, lapo_rules: i === 1 });
   ok(r.status === 200, `Lapo creates pool ${i} of 3 today`, r.j);
   if (i === 1) { const pl = await B.get('/pool/' + r.j.id); ok(!pl.text.includes('#FF0000') && !pl.text.includes('#00FF00') && pl.text.includes('Lapo rules'), 'players cannot set pool colours; Lapo rules shown', null); }
 }
-r = await B.post('/api/pools', { name: 'Lapo try 4', starts_at: new Date(Date.now() + 600000).toISOString(), ends_at: new Date(Date.now() + 1200000).toISOString(), ack: true });
+r = await B.post('/api/pools', { name: 'Lapo try 4', starts_at: new Date(Date.now() + 600000).toISOString(), duration: '900', ack: true });
 ok(r.status === 403 && r.j.code === 'UPGRADE', 'Lapo blocked after 3 pools a day', r.j);
 r = await A.post('/api/prefs', { theme: 'ocean' });
 ok(r.status === 403, 'app themes switched off', r.j);
@@ -105,7 +107,7 @@ r = await A.post('/api/prefs', { padPattern: 'nonsense' }); ok(r.status === 400,
 await page(A, '/bag', { contains: ['Your tap area', 'data-bag-filter', '#123456'] });
 r = await A.post('/api/pools', { name: 'Too short ' + tag, starts_at: new Date(Date.now() + 60000).toISOString(), ends_at: new Date(Date.now() + 90000).toISOString(), ack: true });
 ok(r.status === 400 && r.j.field === 'ends_at' && /60 seconds/.test(r.j.error), 'pools run at least 60 seconds', r.j);
-r = await A.post('/api/pools', { name: 'Pad pool ' + tag, starts_at: new Date(Date.now() + 600000).toISOString(), ends_at: new Date(Date.now() + 1200000).toISOString(), ack: true, custom_pad: true, theme_color: '#FF4FA3', pad_pattern: 'flowers', allow_own_pad: false });
+r = await A.post('/api/pools', { name: 'Pad pool ' + tag, starts_at: new Date(Date.now() + 600000).toISOString(), duration: '900', ack: true, custom_pad: true, theme_color: '#FF4FA3', pad_pattern: 'flowers', allow_own_pad: false });
 ok(r.status === 200, 'Nepo creates a pool (tap area settings ignored)', r.j);
 r = await A.get('/pools/new'); ok(r.status === 200 && !r.text.includes('name="pad_pattern"') && !r.text.includes('name="theme_color"') && r.text.includes('lapo_rules'), 'Nepo create page: no colour or tap area options', null);
 await page(A, '/dashboard');
@@ -120,9 +122,9 @@ r = await A.post('/api/store/buy', { item: 'booster-10x', qty: 1 });
 ok(r.status === 403 && r.j.need === 'RANK', 'rank-locked booster', r.j);
 
 console.log('VS paid pool');
-const start = new Date(Date.now() + 4000).toISOString(), end = new Date(Date.now() + 66000).toISOString();
+const startMs = Date.now() + 4000, start = new Date(startMs).toISOString(), end = new Date(startMs + 60000).toISOString();
 r = await A.post('/api/pools', { name: 'Jollof War ' + tag, kind: 'PAID', entry_fee: '1,000', prize: '2,000', starts_at: start, ends_at: end, audience: 'ALL', game_type: 'MATCH', side_a: 'Jollof', side_b: 'Fried rice', winners: 2, split_style: 'TOP', tie_rule: 'FIRST', max_players: '', boosters_allowed: true, ack: true, theme_color: '#FF4FA3', bg_color: '#123456' });
-ok(r.status === 200 && r.j.id, 'Nepo creates paid VS pool (2 winners/side)', r.j);
+ok(r.status === 200 && r.j.id, 'Nepo creates paid VS pool', r.j);
 const poolId = r.j.id, code = r.j.code;
 r = await B.post('/api/pools/find', { code });
 ok(r.j.redirect === '/pool/' + poolId, 'find pool by code');
@@ -167,6 +169,7 @@ r = await B.post('/api/tap', { pools: [poolId], taps: 200 });
 ok(r.j.results[poolId].rejected > 0, 'Lapo speed cap drops extra taps', r.j.results[poolId]);
 r = await A.get(`/api/pools/${poolId}/board?n=10`);
 ok(r.j.top?.length === 3 && r.j.teams?.Jollof > 0, 'live board + teams', r.j);
+const teams = r.j.teams || {};
 r = await A.get('/api/calc?rate=8');
 ok(r.status === 200 && Array.isArray(r.j.pools), 'calculator works for Nepo', r.j);
 console.log('  … waiting for the pool to end');
@@ -175,28 +178,35 @@ r = await admin.post(`/api/admin/pools/${poolId}/settle`, {});
 ok(r.status === 200, 'settled', r.j);
 await page(A, '/pool/' + poolId, { contains: ['Final board'] });
 const wA = (await A.get('/api/wallet')).j.wallet, wB = (await B.get('/api/wallet')).j.wallet, wC = (await C.get('/api/wallet')).j.wallet;
-// pot: fees Jollof 1000, Fried rice 2000, seed 2000 → Jollof 1000+1000=2000, Fried rice 2000+1000=3000 (kobo ×100)
-ok(wA.winnings_kobo === 200000, 'Jollof side pot ₦2,000 to its only player', wA);
-ok(wB.winnings_kobo + wC.winnings_kobo === 300000 && wB.winnings_kobo > wC.winnings_kobo, 'Fried rice pot ₦3,000 split top-heavy between 2 winners', { b: wB.winnings_kobo, c: wC.winnings_kobo });
+// pot: fees 3 × ₦1,000 + ₦2,000 seed = ₦5,000. The side with more taps takes it all, shared by taps.
+ok(wA.winnings_kobo + wB.winnings_kobo + wC.winnings_kobo === 500000, 'the whole ₦5,000 pot is paid out', { a: wA.winnings_kobo, b: wB.winnings_kobo, c: wC.winnings_kobo });
+if ((teams.Jollof || 0) > (teams['Fried rice'] || 0)) ok(wA.winnings_kobo === 500000 && wB.winnings_kobo === 0, 'Jollof had more taps: its only player takes the whole pot', { teams, a: wA.winnings_kobo });
+else ok(wA.winnings_kobo === 0 && wB.winnings_kobo > wC.winnings_kobo && wC.winnings_kobo > 0, 'Fried rice had more taps: its players share the pot by taps', { teams, b: wB.winnings_kobo, c: wC.winnings_kobo });
+r = await A.get(`/api/pools/${poolId}/result`); ok(r.status === 200 && r.j.settled && r.j.vs?.winners?.length === 1, 'result shows the winning side', r.j);
+await page(new Client('anon'), `/pool/${poolId}/results`, { contains: ['Final results', 'WINNERS', 'Share results'] });
 await page(A, '/top', { contains: ['ada' + tag] });
 
 console.log('Withdrawals');
 await admin.post(`/api/admin/users/${bId}/wallet`, { amount: '20,000', balance: 'WINNINGS', note: 'test top-up' });
 r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test' });
+ok(r.status === 400 && r.j.field === 'password', 'withdrawal needs your password', r.j);
+r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test', password: 'Wrong2026x' });
+ok(r.status === 401 && r.j.field === 'password', 'wrong password refused', r.j);
+r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test', password: 'Tapam2026x' });
 ok(r.status === 200, 'B withdraws ₦10,000', r.j);
 const wd = (await admin.get(AP + '/withdrawals')).text.match(/\/api\/admin\/withdrawals\/([0-9a-f-]{36})\/reject/)?.[1];
 r = await admin.post(`/api/admin/withdrawals/${wd}/reject`, {}); ok(r.status === 400 && r.j.field === 'note', 'payout reject needs a reason', r.j);
 r = await admin.post(`/api/admin/withdrawals/${wd}/reject`, { note: 'Wrong account name' }); ok(r.status === 200, 'payout rejected with a reason', r.j);
 await page(B, '/wallet', { contains: ['Reason: Wrong account name'] });
-r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test' });
+r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test', password: 'Tapam2026x' });
 ok(r.status === 200, 'rejected one does not count toward the daily limit', r.j);
 await admin.post(`/api/admin/withdrawals/${(await admin.get(AP + '/withdrawals')).text.match(/\/api\/admin\/withdrawals\/([0-9a-f-]{36})\/paid/)?.[1]}/paid`, {});
-r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test' });
+r = await B.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Bola Test', password: 'Tapam2026x' });
 ok(r.status === 429, 'one withdrawal a day', r.j);
 const cId = (await admin.get(AP + '/users?q=chi' + tag)).text.match(USERS_RE)?.[1];
 await admin.post(`/api/admin/users/${cId}/wallet`, { amount: '50,000', balance: 'WINNINGS', note: 'race test' });
 const cBefore = (await C.get('/api/wallet')).j.wallet.winnings_kobo;
-const race = await Promise.all(Array.from({ length: 5 }, () => C.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Chi Test', adult: true })));
+const race = await Promise.all(Array.from({ length: 5 }, () => C.post('/api/withdraw', { amount: '10,000', bank_code: '058', account_number: '0123456789', account_name: 'Chi Test', adult: true, password: 'Tapam2026x' })));
 const cAfter = (await C.get('/api/wallet')).j.wallet.winnings_kobo;
 ok(race.filter(x => x.status === 200).length === 1 && cBefore - cAfter === 1000000, '5 parallel withdrawals: exactly one goes through, money taken once', { statuses: race.map(x => x.status), cBefore, cAfter });
 r = await A.get('/wallet/history.csv');
@@ -214,14 +224,14 @@ ok(r.status === 200, 'sponsor creates YouTube ad', r.j);
 let adPage = await S.get('/sponsor/ads'); const adId = adPage.text.match(/data-preview-ad="([0-9a-f-]{36})"/)?.[1];
 r = await S.get('/api/promo?preview=' + adId); ok(r.j.promo?.preview, 'sponsor previews own ad', r.j);
 r = await A.get('/api/promo?preview=' + adId); ok(!r.j.promo, 'players cannot preview others’ ads');
-r = await S.post('/api/pools', { name: 'Brand pool ' + tag, prize: '10,000', with_ad: 'YES', promo_id: adId, starts_at: new Date(Date.now() + 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), ack: true });
+r = await S.post('/api/pools', { name: 'Brand pool ' + tag, prize: '10,000', with_ad: 'YES', promo_id: adId, starts_at: new Date(Date.now() + 60000).toISOString(), duration: '3600', ack: true });
 ok(r.status === 400 && r.j.field === 'promo_id', 'pool with unapproved ad refused', r.j);
 await page(admin, AP + '/ads', { contains: ['Cold drinks ' + tag] });
 r = await admin.post(`/api/admin/promos/${adId}/approve`, {}); ok(r.status === 200, 'admin approves ad');
 await S.post('/api/wallet/fund', { amount: 100000, ack: true });
-r = await S.post('/api/pools', { name: 'Cheap brand ' + tag, prize: '5,000', starts_at: new Date(Date.now() + 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), ack: true });
+r = await S.post('/api/pools', { name: 'Cheap brand ' + tag, prize: '5,000', starts_at: new Date(Date.now() + 60000).toISOString(), duration: '3600', ack: true });
 ok(r.status === 400 && r.j.field === 'prize', 'sponsor prize must be at least ₦10,000', r.j);
-r = await S.post('/api/pools', { name: 'Brand pool ' + tag, prize: '10,000', email_blast: 'ALL', with_ad: 'YES', promo_id: adId, starts_at: new Date(Date.now() + 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(), ack: true, theme_color: '#00C957', bg_color: '#002211' });
+r = await S.post('/api/pools', { name: 'Brand pool ' + tag, prize: '10,000', email_blast: 'ALL', with_ad: 'YES', promo_id: adId, starts_at: new Date(Date.now() + 60000).toISOString(), duration: '3600', ack: true, theme_color: '#00C957', bg_color: '#002211' });
 ok(r.status === 200, 'sponsor creates pool with ad + colours', r.j);
 const brandPool = r.j.id;
 await A.post(`/api/pools/${brandPool}/join`, {});
@@ -285,7 +295,7 @@ await page(S, '/invite', { contains: ['signup?ref=', 'Invite people'] });
 for (const p of ['/merch', '/badges', '/slides', '/withdrawals']) await page(admin, AP + p);
 
 console.log('Money, boxes, codes, accounts');
-const later = () => ({ starts_at: new Date(Date.now() + 600000).toISOString(), ends_at: new Date(Date.now() + 1200000).toISOString() });
+const later = () => ({ starts_at: new Date(Date.now() + 600000).toISOString(), duration: '900' });
 r = await A.post('/api/pools', { name: 'Top up pool ' + tag, kind: 'PAID', entry_fee: '200', ...later(), ack: true });
 const topPool = r.j.id; ok(!!topPool, 'paid pool for top-ups', r.j);
 const bWallet = async () => (await B.get('/api/wallet')).j.wallet;
@@ -293,7 +303,6 @@ const b0 = await bWallet();
 r = await B.post(`/api/pools/${topPool}/join`, {}); ok(r.status === 200, 'B joins paid pool (₦200)', r.j);
 r = await B.post(`/api/pools/${topPool}/topup`, { amount: '50' }); ok(r.status === 400, 'top-up at least ₦100', r.j);
 r = await B.post(`/api/pools/${topPool}/topup`, { amount: '500' }); ok(r.status === 200, 'B adds ₦500 to the prize', r.j);
-r = await B.post(`/api/pools/${brandPool}/topup`, { amount: '500' }); ok(r.status === 403, 'no top-ups on pools that are not paid', r.j);
 await page(B, '/pool/' + topPool, { contains: ['₦700'] });
 r = await A.post(`/api/admin/pools/${topPool}/pause`, {}); ok(r.status === 403 || r.status === 401, 'players cannot pause pools', r.status);
 r = await admin.post(`/api/admin/pools/${topPool}/pause`, {}); ok(r.status === 200, 'admin pauses pool', r.j);
@@ -302,10 +311,11 @@ r = await B.post(`/api/pools/${topPool}/join`, {}); ok(r.status >= 400, 'cannot 
 r = await admin.post(`/api/admin/pools/${topPool}/pause`, {}); ok(r.status === 409, 'pausing twice does nothing', r.j);
 r = await admin.post(`/api/admin/pools/${topPool}/restart`, { minutes: 5 }); ok(r.status === 200, 'admin restarts pool', r.j);
 r = await B.post(`/api/pools/${topPool}/join`, {}); ok(r.status === 200, 'B joins again after restart', r.j);
+r = await B.post(`/api/pools/${brandPool}/topup`, { amount: '500' }); ok(r.status === 200, 'anybody can add to any pool, even ones they did not make', r.j);
 
 r = await A.post('/api/store/buy', { item: 'box-basic', qty: 1 }); ok(r.status === 200, 'buy a mystery box', r.j);
-r = await A.post('/api/box/open', { item: 'box-basic' }); ok(r.status === 200 && r.j.reward?.kind, 'open the box: server picks the reward', r.j);
-for (let i = 0; i < 5 && r.status === 200; i++) r = await A.post('/api/box/open', { item: 'box-basic' });
+r = await A.post('/api/box/open', { item: 'box-basic' }); ok(r.status === 200 && r.j.reward?.kind && r.j.reward.kind !== 'WALLET', 'open the box: server picks a booster or skin (never money)', r.j);
+for (let i = 0; i < 5 && r.status === 200; i++) { r = await A.post('/api/box/open', { item: 'box-basic' }); if (r.status === 200 && r.j.reward?.kind === 'WALLET') ok(false, 'a box paid out money', r.j); }
 ok(r.status === 409, 'opening stops when you run out of boxes', r.j);
 r = await B.post('/api/box/open', { item: 'box-nepo' }); ok(r.status === 409, 'cannot open a box you never had', r.j);
 await page(A, '/store?tab=BOX', { contains: ['Mystery box'] });
@@ -323,10 +333,11 @@ r = await B.post('/api/wallet/send', { to: 'ada' + tag, amount: '200', adult: tr
 r = await S.post('/api/wallet/send', { to: 'ada' + tag, amount: '200' }); ok(r.status === 403, 'sponsors cannot send money to players', r.j);
 const cw = (await C.get('/api/wallet')).j.wallet;
 r = await C.post('/api/wallet/convert', { amount: '1,000' }); ok(r.status === 400 && r.j.field === 'ack', 'converting winnings needs the tick', r.j);
-r = await C.post('/api/wallet/convert', { amount: '1,000', ack: true }); ok(r.status === 200, 'C moves ₦1,000 winnings to wallet', r.j);
+r = await C.post('/api/wallet/convert', { amount: '1,000', ack: true }); ok(r.status === 400 && r.j.field === 'password', 'converting needs your password', r.j);
+r = await C.post('/api/wallet/convert', { amount: '1,000', ack: true, password: 'Tapam2026x' }); ok(r.status === 200, 'C moves ₦1,000 winnings to wallet', r.j);
 const cw2 = (await C.get('/api/wallet')).j.wallet;
 ok(cw2.winnings_kobo === cw.winnings_kobo - 100000 && cw2.balance_kobo === cw.balance_kobo + 100000, 'winnings down, wallet up by the same amount', { cw, cw2 });
-r = await C.post('/api/wallet/convert', { amount: '99,999,999', ack: true }); ok(r.status === 409, 'cannot convert more than you have', r.j);
+r = await C.post('/api/wallet/convert', { amount: '99,999,999', ack: true, password: 'Tapam2026x' }); ok(r.status === 409, 'cannot convert more than you have', r.j);
 
 const anon = new Client('anon-reset');
 r = await anon.post('/api/password/recover', { identifier: 'bola' + tag, phrase: 'abandon '.repeat(11) + 'about', password: 'NewPass2026x' }); ok(r.status === 401, 'wrong recovery phrase refused', r.j);

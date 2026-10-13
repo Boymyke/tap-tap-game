@@ -1,7 +1,8 @@
 // Wallet funding, Mapo/Nepo subscriptions and withdrawals through Paystack (Bachs available as a second
 // gateway) and a test mode for the preview. The server only ever credits money it has confirmed with the
 // payment gateway itself (signed webhook or a direct lookup), never because the browser says so.
-import { json, readJson, allow, uid, nowIso, hex, safeEqual } from '../lib.js';
+import { json, readJson, allow, uid, nowIso, hex, safeEqual, passwordOk } from '../lib.js';
+const pwError = r => json({ error: r.error, field: 'password' }, r.status);
 import { tierOf, requireRole, credit, debit, moveMoney, getWallet, giveItem, notify, settings, num, naira, loadUser, clampInt, toKobo, fundsError, adultError, lagosDay, metricStmt } from '../core.js';
 import { perks, PLANS, tierName } from '../tiers.js';
 import { bachsOn, bachs, toDecimal, decimalToKobo, bachsWebhookOk, bachsBanks } from '../bachs.js';
@@ -319,6 +320,7 @@ export async function handleMoneyApi(req, env, path, user) {
     if (!to) return json({ error: 'No player with that nickname.', field: 'to' }, 404);
     if (to.id === user.id) return json({ error: 'You no fit send money to yourself.', field: 'to' }, 400);
     if (Date.now() - Date.parse(me.created_at.replace(' ', 'T') + (me.created_at.includes('T') ? '' : 'Z')) < 86400000) return json({ error: 'New accounts can send money after 24 hours.' }, 403);
+    { const pw = await passwordOk(env, user.id, data.password); if (!pw.ok) return pwError(pw); }
     const cap = num(s, 'transfer_daily_max_kobo', 5000000);
     const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19);
     const sent = -Number((await env.DB.prepare("SELECT COALESCE(SUM(amount_kobo),0) n FROM wallet_transactions WHERE user_id=? AND type='GIFT_SENT' AND created_at>=?").bind(user.id, dayStart).first())?.n || 0);
@@ -339,10 +341,11 @@ export async function handleMoneyApi(req, env, path, user) {
   if (path === '/api/wallet/convert' && req.method === 'POST') {
     if (me.role !== 'USER') return json({ error: 'Only players have winnings.' }, 403);
     const { data, response } = await readJson(req); if (response) return response;
-    if (!await allow(env, 'convert:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    if (!await allow(env, 'convert:' + user.id, 60, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
     const kobo = clampInt(toKobo(data.amount), 0, 10000000000, 0);
     if (kobo < 10000) return json({ error: 'Move at least ₦100.', field: 'amount' }, 400);
     if (data.ack !== true) return json({ error: 'Tick the box: money moved to your wallet can’t be withdrawn.', field: 'ack' }, 400);
+    { const pw = await passwordOk(env, user.id, data.password); if (!pw.ok) return pwError(pw); }
     const ok = await moveMoney(env, { from: user.id, to: user.id, amount: kobo, fromBal: 'WINNINGS', toBal: 'WALLET', outType: 'CONVERT', inType: 'CONVERT', outNote: 'Winnings to wallet', inNote: 'From winnings' });
     if (!ok) return json({ error: `You don’t have ${naira(kobo)} in winnings.`, field: 'amount' }, 409);
     return json({ message: `Moved ${naira(kobo)} from winnings to your wallet.`, reload: true });
@@ -370,6 +373,12 @@ export async function handleMoneyApi(req, env, path, user) {
     if (!/^\d{10}$/.test(String(data.account_number || ''))) return json({ error: 'Account number must be 10 digits.', field: 'account_number' }, 400);
     const name = String(data.account_name || '').trim().slice(0, 80);
     if (name.length < 3) return json({ error: 'Enter the account name.', field: 'account_name' }, 400);
+    { const pw = await passwordOk(env, user.id, data.password); if (!pw.ok) return pwError(pw); }
+    // At most ₦1m (admin setting) a day leaves as withdrawals.
+    const dayCap = num(s, 'withdraw_daily_max_kobo', 100000000);
+    const dayStart0 = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();
+    const outToday = Number((await env.DB.prepare("SELECT COALESCE(SUM(amount_kobo),0) n FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status NOT IN ('REJECTED','FAILED')").bind(user.id, dayStart0).first())?.n || 0);
+    if (dayCap > 0 && outToday + kobo > dayCap) return json({ error: `You fit withdraw up to ${naira(dayCap)} a day. You have ${naira(Math.max(0, dayCap - outToday))} left today.`, field: 'amount' }, 400);
     const pending = await env.DB.prepare("SELECT 1 FROM withdrawals WHERE user_id=? AND status IN ('PENDING','PROCESSING')").bind(user.id).first();
     if (pending) return json({ error: 'You get one withdrawal wey still dey process. Wait for it to finish.' }, 409);
     const id = uid();
@@ -378,8 +387,9 @@ export async function handleMoneyApi(req, env, path, user) {
     const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();
     const claim = await env.DB.prepare(`INSERT INTO withdrawals(id,user_id,amount_kobo,bank_name,bank_code,account_number,account_name,status)
       SELECT ?,?,?,?,?,?,?,'HOLD' WHERE NOT EXISTS (SELECT 1 FROM withdrawals WHERE user_id=? AND status IN ('HOLD','PENDING','PROCESSING'))
-      AND (SELECT COUNT(*) FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status!='REJECTED') < ?`)
-      .bind(id, user.id, kobo, bank ? bank[1] : null, String(data.bank_code), String(data.account_number), name, user.id, user.id, dayStart, perDay).run();
+      AND (SELECT COUNT(*) FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status!='REJECTED') < ?
+      AND (? = 0 OR (SELECT COALESCE(SUM(amount_kobo),0) FROM withdrawals WHERE user_id=? AND datetime(created_at)>=datetime(?) AND status NOT IN ('REJECTED','FAILED')) + ? <= ?)`)
+      .bind(id, user.id, kobo, bank ? bank[1] : null, String(data.bank_code), String(data.account_number), name, user.id, user.id, dayStart, perDay, dayCap, user.id, dayStart, kobo, dayCap).run();
     if (!claim.meta.changes) return json({ error: 'You get one withdrawal wey still dey process, or you don withdraw today. Try again tomorrow.' }, 409);
     const ok = await debit(env, user.id, kobo, { balance: 'WINNINGS', type: 'WITHDRAW', reference: id, note: `${bank ? bank[1] : data.bank_code} ${String(data.account_number).slice(-4)}` });
     if (!ok) { await env.DB.prepare("DELETE FROM withdrawals WHERE id=? AND status='HOLD'").bind(id).run(); return json({ error: 'You no get reach that much for your winnings.', field: 'amount' }, 402); }

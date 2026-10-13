@@ -38,27 +38,24 @@ export function computePrizes(pool, ranked) {
   const cut = Math.max(0, Math.min(50, Number(pool.house_cut_pct || 0)));
   const pot = Math.floor(Number(pool.prize_kobo || 0) * (100 - cut) / 100);
   if (pool.vs_split && pool.side_a && pool.side_b) {
-    // VS pools: each side has its own pot (its players' entry fees + half of any starting prize).
-    // The top tappers on each side share their side's pot. An empty side's half goes to the other side.
+    // VS pools: the side with more taps wins the WHOLE pot, and everyone on that side who tapped shares it
+    // by their taps (more taps, bigger share). If both sides end level, each side shares half.
     const sides = [pool.side_a, pool.side_b];
-    const fees = Object.fromEntries(sides.map(s => [s, 0]));
-    for (const p of ranked) if (fees[p.side] !== undefined) fees[p.side] += Number(p.paid || 0);
-    const feeTotal = fees[sides[0]] + fees[sides[1]];
-    const seed = Math.max(0, Number(pool.prize_kobo || 0) - feeTotal);
-    const has = s => ranked.some(p => p.side === s && p.score > 0);
-    const potFor = s => {
-      const other = sides.find(x => x !== s);
-      let raw = fees[s] + Math.floor(seed / 2);
-      if (!has(other)) raw += fees[other] + (seed - Math.floor(seed / 2));
-      return has(s) ? Math.floor(raw * (100 - cut) / 100) : 0;
-    };
-    const prizes = new Map(), positions = new Map(), sidePots = {};
-    for (const s of sides) {
-      sidePots[s] = potFor(s);
-      const r = sharePot(sidePots[s], ranked.filter(p => p.side === s), split, pool.tie_rule);
-      r.prizes.forEach((v, k) => prizes.set(k, v)); r.positions.forEach((v, k) => positions.set(k, v));
+    const total = Object.fromEntries(sides.map(x => [x, ranked.filter(p => p.side === x).reduce((a, p) => a + Math.max(0, p.score), 0)]));
+    const winners = total[sides[0]] === total[sides[1]] ? sides.filter(x => total[x] > 0) : [total[sides[0]] > total[sides[1]] ? sides[0] : sides[1]];
+    const prizes = new Map(), positions = new Map(), sidePots = Object.fromEntries(sides.map(x => [x, 0]));
+    for (const x of sides) ranked.filter(p => p.side === x && p.score > 0).forEach((p, i) => positions.set(p.uid, i + 1));
+    if (pot > 0 && winners.length) {
+      winners.forEach((x, wi) => {
+        const share = winners.length === 1 ? pot : wi === 0 ? Math.floor(pot / 2) : pot - Math.floor(pot / 2);
+        sidePots[x] = share;
+        const team = ranked.filter(p => p.side === x && p.score > 0);
+        let given = 0;
+        for (const p of team) { const amt = Math.floor(share * p.score / total[x]); if (amt > 0) { prizes.set(p.uid, amt); given += amt; } }
+        if (team.length && share > given) prizes.set(team[0].uid, (prizes.get(team[0].uid) || 0) + share - given);   // rounding leftovers to the side's top tapper
+      });
     }
-    return { pot, prizes, positions, sidePots };
+    return { pot, prizes, positions, sidePots, sideTaps: total, winners };
   }
   const r = sharePot(pot, ranked, split, pool.tie_rule);
   return { pot, ...r };
@@ -71,10 +68,6 @@ export async function settlePool(env, poolId, ranked) {
   const claim = await env.DB.prepare("UPDATE pools SET settled_at=?, status='COMPLETED' WHERE id=? AND settled_at IS NULL AND status NOT IN ('PAUSED','WAITING')").bind(new Date().toISOString(), poolId).run();
   if (!claim.meta.changes) return { skipped: true };
 
-  if (pool.vs_split) {   // entry fees per player decide each side's pot
-    const paid = Object.fromEntries((await env.DB.prepare('SELECT user_id, paid_kobo FROM pool_entries WHERE pool_id=?').bind(poolId).all()).results.map(r => [r.user_id, r.paid_kobo]));
-    ranked = ranked.map(p => ({ ...p, paid: paid[p.uid] || 0 }));
-  }
   const { prizes, positions } = computePrizes(pool, ranked);
   const keys = periodKeys(new Date(pool.ends_at));
   const stmts = [];
@@ -86,7 +79,8 @@ export async function settlePool(env, poolId, ranked) {
       .bind(p.score, p.raw, p.raw, p.reachedAt ? new Date(p.reachedAt).toISOString() : null, finalRank, prizes.get(p.uid) || 0, p.boosts || 0, poolId, p.uid));
     if (p.raw > 0) {
       totalRaw += p.raw;
-      stmts.push(env.DB.prepare('UPDATE users SET lifetime_taps=lifetime_taps+?,games_played=games_played+1,wins=wins+? WHERE id=?').bind(p.raw, finalRank === 1 ? 1 : 0, p.uid));
+      const won = pool.vs_split ? (prizes.get(p.uid) || 0) > 0 : finalRank === 1;
+      stmts.push(env.DB.prepare('UPDATE users SET lifetime_taps=lifetime_taps+?,games_played=games_played+1,wins=wins+? WHERE id=?').bind(p.raw, won ? 1 : 0, p.uid));
       for (const k of [keys.DAY, keys.WEEK, keys.MONTH, keys.YEAR]) stmts.push(env.DB.prepare('INSERT INTO tap_stats(period,user_id,taps) VALUES(?,?,?) ON CONFLICT(period,user_id) DO UPDATE SET taps=taps+excluded.taps').bind(k, p.uid, p.raw));
     }
     if (p.flagged > 3) stmts.push(env.DB.prepare('INSERT INTO audit_logs(id,admin_user_id,action,detail) VALUES(?,?,?,?)').bind(crypto.randomUUID(), null, 'anticheat.flag', JSON.stringify({ pool: poolId, user: p.uid, flagged: p.flagged, raw: p.raw })));

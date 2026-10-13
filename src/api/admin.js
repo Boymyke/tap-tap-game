@@ -2,17 +2,22 @@
 import { json, readJson, uid, nowIso, allow } from '../lib.js';
 import { requireRole, credit, debit, giveItem, notify, audit, clampInt, clearSettingsCache, naira, toKobo, settings } from '../core.js';
 import { clearRankCache, generateRanks, recalcRank } from '../game/ranks.js';
-import { roomCall, poolState, pausePool, restartPool, cancelPool, extendPool } from '../game/pools.js';
+import { roomCall, poolState, pausePool, restartPool, cancelPool, extendPool, votePause, openVotes } from '../game/pools.js';
 import { processWithdrawal, activateTier } from './money.js';
 import { sendAlertEmail } from '../email.js';
+import { createAnnouncement, emailPool } from '../game/announce.js';
 import { isPattern } from '../ui/patterns.js';
 import { decryptPhrase, canKeepCopies } from '../phrase.js';
 import { hashPassword, safeEqual } from '../lib.js';
 
 const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_kobo', 'nepo_monthly_kobo', 'nepo_yearly_kobo', 'min_withdraw_lapo_kobo', 'min_withdraw_mapo_kobo', 'min_withdraw_nepo_kobo',
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
-  'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day', 'email_blast_kobo', 'lapo_pools_per_day', 'transfer_daily_max_kobo', 'free_box_days'];
-const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts'];
+  'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day', 'email_blast_kobo', 'lapo_pools_per_day', 'transfer_daily_max_kobo', 'free_box_days',
+  'mapo_pools_per_day', 'nepo_pools_per_day', 'withdraw_daily_max_kobo', 'topup_seconds_per_step', 'vote_continue_pct', 'vote_hours', 'instant_wait_hours',
+  'voice_on', 'stakes_on', 'signups_paused', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
+const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'signups_paused'];
+// Link settings: only https links on the expected site (empty = hidden).
+const LINK_KEYS = { whatsapp_community: ['chat.whatsapp.com', 'whatsapp.com', 'wa.me'], social_twitter: ['x.com', 'twitter.com'], social_instagram: ['instagram.com'], social_tiktok: ['tiktok.com'] };
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
 // Exactly one emoji (one grapheme, and it must be a pictograph — no letters or numbers).
@@ -110,26 +115,29 @@ export async function handleAdminApi(req, env, path, user) {
   }
 
   // ── pools ──
-  // ── server overload: pause every live / upcoming pool (money + boosters back), restart later ──
+  // ── server problem: pause every live / upcoming pool with scores and money kept; when the servers are
+  //    fine, open a vote (continue or restart). Sign-ups and new pools are off while paused. ──
   if (path === '/api/admin/overload/pause-all' && req.method === 'POST') {
     const { data } = await body();
     if (data?.confirm !== true) return json({ error: 'Tick confirm to pause every live and upcoming pool.', field: 'confirm' }, 400);
-    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED','WAITING') AND ends_at>? LIMIT 200").bind(nowIso()).all()).results;
+    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED','WAITING') AND ends_at>? LIMIT 300").bind(nowIso()).all()).results;
     let n = 0, players = 0;
-    for (const p of pools) { const r = await pausePool(env, p); if (r.paused) { n++; players += r.players; } }
+    for (const p of pools) { const r = await votePause(env, p); if (r.paused) { n++; players += r.players; } }
     await env.DB.prepare("INSERT INTO settings(key,value) VALUES('overload','1') ON CONFLICT(key) DO UPDATE SET value='1'").run(); clearSettingsCache();
     await audit(env, user.id, 'overload.pause', { pools: n, players });
-    return json({ message: `Paused ${n} pool${n === 1 ? '' : 's'}. ${players} players got their money and boosters back.`, reload: true });
+    return json({ message: `Paused ${n} pool${n === 1 ? '' : 's'}. ${players} players were told their scores are safe. Sign-ups and new pools are off until you open the vote.`, reload: true });
   }
   if (path === '/api/admin/overload/restart-all' && req.method === 'POST') {
     const { data } = await body();
     const minutes = clampInt(data?.minutes, 1, 1440, 10);
-    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE status='PAUSED' LIMIT 200").all()).results;
+    const s = await settings(env);
+    const pools = (await env.DB.prepare("SELECT * FROM pools WHERE status='PAUSED' AND COALESCE(pause_mode,'REFUND')='REFUND' LIMIT 200").all()).results;
     let n = 0;
-    for (const p of pools) if ((await restartPool(env, p, minutes)).restarted) n++;
+    for (const p of pools) if ((await restartPool(env, p, minutes)).restarted) n++;   // pools paused one by one with refunds
+    const v = await openVotes(env, Math.max(0.05, Math.min(24, Number(s.vote_hours || 1))));
     await env.DB.prepare("INSERT INTO settings(key,value) VALUES('overload','0') ON CONFLICT(key) DO UPDATE SET value='0'").run(); clearSettingsCache();
-    await audit(env, user.id, 'overload.restart', { pools: n, minutes });
-    return json({ message: `Restarted ${n} pool${n === 1 ? '' : 's'}. They start in ${minutes} minutes.`, reload: true });
+    await audit(env, user.id, 'overload.restart', { refundPoolsRestarted: n, votesOpened: v.opened, until: v.until });
+    return json({ message: `Back online. ${v.opened} paused match${v.opened === 1 ? '' : 'es'} now have a vote open until ${new Date(Date.parse(v.until) + 3600000).toISOString().slice(11, 16)} (Lagos).${n ? ` ${n} other pool${n === 1 ? '' : 's'} restart in ${minutes} minutes.` : ''}`, reload: true });
   }
   const pm = path.match(/^\/api\/admin\/pools\/([^/]+)\/(settle|cancel|pause|restart|extend)$/);
   if (pm && req.method === 'POST') {
@@ -444,6 +452,31 @@ export async function handleAdminApi(req, env, path, user) {
     return json({ message: 'Done', reload: true });
   }
 
+  // ── announcements, emails ──
+  if (path === '/api/admin/announcements' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const r = await createAnnouncement(env, user, data);
+    if (r.status === 200) await audit(env, user.id, 'announce', { title: data.title, audience: data.audience, overlay: data.overlay, email: data.email });
+    return r;
+  }
+  const anm = path.match(/^\/api\/admin\/announcements\/([0-9a-f-]{36})\/stop$/);
+  if (anm && req.method === 'POST') {
+    await env.DB.prepare('UPDATE announcements SET active=0 WHERE id=?').bind(anm[1]).run();
+    await audit(env, user.id, 'announce.stop', anm[1]);
+    return json({ message: 'Pop-up stopped.', reload: true });
+  }
+  if (path === '/api/admin/email-pool' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const r = await emailPool(env, user, data);
+    if (r.status === 200) await audit(env, user.id, 'email.pool', data);
+    return r;
+  }
+  if (path === '/api/admin/errors/clear' && req.method === 'POST') {
+    await env.DB.prepare('DELETE FROM error_log').run();
+    await audit(env, user.id, 'errors.clear', '');
+    return json({ message: 'Error log cleared.', reload: true });
+  }
+
   // ── settings ──
   if (path === '/api/admin/settings' && req.method === 'POST') {
     const { data, response } = await body(); if (response) return response;
@@ -453,6 +486,11 @@ export async function handleAdminApi(req, env, path, user) {
       let v = data[k];
       if (k.endsWith('_kobo')) v = String(clampInt(toKobo(v), 0, 1e12, 0));
       else if (BOOL_KEYS.includes(k)) v = v === true || v === '1' ? '1' : '0';
+      else if (LINK_KEYS[k]) {
+        v = String(v || '').trim();
+        if (v) { let u; try { u = new URL(v); } catch { u = null; } const host = u && u.hostname.replace(/^www\./, '');
+          if (!u || u.protocol !== 'https:' || !LINK_KEYS[k].some(h => host === h || host.endsWith('.' + h))) return json({ error: `Paste the full https:// link from ${LINK_KEYS[k][0]}.`, field: k }, 400); v = u.href.slice(0, 300); }
+      }
       else if (k === 'alert_email') { v = String(v || '').trim().toLowerCase(); if (v && !v.split(',').every(e => EMAIL_RE.test(e.trim()))) return json({ error: 'Enter valid email addresses, separated by commas.', field: k }, 400); }
       else v = String(clampInt(String(v).replace(/,/g, ''), 0, 1e9, 0));
       stmts.push(env.DB.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, v));

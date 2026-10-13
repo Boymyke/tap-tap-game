@@ -21,7 +21,8 @@ const sign = (raw, ts = Math.floor(Date.now() / 1000)) => ({ 'x-bachs-timestamp'
 const hook = (type, data, ts) => { const raw = JSON.stringify({ id: 'evt_' + Math.random(), type, data }); return new Client('bachs').req('POST', '/api/bachs/webhook', raw, { 'content-type': 'application/json', origin: 'https://bachs.io', ...sign(raw, ts) }); };
 
 const A = new Client('payer');
-let r = await A.post('/api/signup', { nickname: 'pay' + tag, email: `pay${tag}@example.com`, password: 'Tapam2026x', gender: 'MALE', country: 'NG', agree: true });
+let r = await A.post('/api/signup', { nickname: 'pay' + tag, email: `pay${tag}@example.com`, password: 'Tapam2026x', whatsapp: '08031234567', gender: 'MALE', country: 'NG', agree: true });
+if (r.j.step === 'verify') r = await A.post('/api/signup/verify', { email: `pay${tag}@example.com`, code: r.j.testCode });
 ok(r.status === 200, 'sign up', r.j);
 const bal = async () => (await A.get('/api/wallet')).j.wallet;
 r = await A.post('/api/wallet/fund', { amount: '5,000', ack: true, adult: true });
@@ -57,9 +58,9 @@ const uid = (await admin.get(AP + '/users?q=pay' + tag)).text.match(new RegExp(A
 await admin.post(`/api/admin/users/${uid}/wallet`, { amount: '20,000', balance: 'WINNINGS', note: 'payout test' });
 r = await A.post('/api/bank/resolve', { bank_code: '058', account_number: '0123456789' });
 ok(r.j.account_name === 'BOLA TEST', 'account name looked up with Bachs', r.j);
-r = await A.post('/api/withdraw', { amount: '10,000', bank_code: '999999', account_number: '0123456789', account_name: 'Bola Test' });
+r = await A.post('/api/withdraw', { amount: '10,000', bank_code: '999999', account_number: '0123456789', account_name: 'Bola Test', password: 'Tapam2026x' });
 ok(r.status === 400 && r.j.field === 'bank_code', 'bank must be on the Bachs list', r.j);
-r = await A.post('/api/withdraw', { amount: '10,000', bank_code: '090267', account_number: '0123456789', account_name: 'Bola Test' });
+r = await A.post('/api/withdraw', { amount: '10,000', bank_code: '090267', account_number: '0123456789', account_name: 'Bola Test', password: 'Tapam2026x' });
 ok(r.status === 200, 'withdraw ₦10,000 to Kuda (Bachs bank code)', r.j);
 const wid = (await admin.get(AP + '/withdrawals')).text.match(/\/api\/admin\/withdrawals\/([0-9a-f-]{36})\/transfer/)?.[1];
 r = await admin.post(`/api/admin/withdrawals/${wid}/transfer`, {});

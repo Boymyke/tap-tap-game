@@ -22,8 +22,10 @@ class Client {
 }
 async function signup(name) {
   const c = new Client(name);
-  const s = await c.post('/api/signup', { nickname: name, email: `${name.replace(/_/g, '')}@example.com`, password: 'Tapam2026x', gender: 'FEMALE', country: 'NG', agree: true });
-  ok(s.status === 200 && c.cookie, `${name} signs up`, s.j);
+  const email = `${name.replace(/_/g, '')}@example.com`;
+  const st = await c.post('/api/signup/start', { nickname: name, email, password: 'Tapam2026x', whatsapp: '+2348031234567', gender: 'FEMALE', country: 'NG', agree: true });
+  const s = await c.post('/api/signup/verify', { email, code: st.j.testCode });
+  ok(s.status === 200 && c.cookie, `${name} signs up`, { st: st.j, s: s.j });
   return c;
 }
 const lagos = ms => new Date(ms + 3600000).toISOString();   // Lagos wall clock in UTC fields
@@ -66,8 +68,15 @@ st = await state(P1, r.j.id);
 ok(r.status === 200 && Date.parse(st.endsAt) - Date.parse(st.startsAt) === 9000000, 'custom length 2.5 hours', st);
 r = await admin.post('/api/pools', { name: 'Tiny ' + tag, start_mode: 'NOW', duration: '30' });
 ok(r.status === 400 && r.j.field === 'duration', 'less than a minute refused', r.j);
-r = await admin.post('/api/pools', { name: 'Huge ' + tag, start_mode: 'NOW', duration: 'CUSTOM', custom_len: '8', custom_unit: 'DAY' });
-ok(r.status === 400 && r.j.field === 'custom_len', 'more than 7 days refused', r.j);
+r = await admin.post('/api/pools', { name: 'Huge ' + tag, start_mode: 'NOW', duration: 'CUSTOM', custom_len: '400', custom_unit: 'DAY' });
+ok(r.status === 400 && r.j.field === 'custom_len', 'more than a year refused', r.j);
+r = await admin.post('/api/pools', { name: 'Month ' + tag, start_mode: 'LATER', start_date: tmr, start_time: '10:00', duration: '2592000' });
+st = await state(P1, r.j.id);
+ok(r.status === 200 && Date.parse(st.endsAt) - Date.parse(st.startsAt) === 2592000000, 'super admin can run a pool for 30 days', { r: r.j, st });
+r = await P4.post('/api/pools', { name: 'Long ' + tag, start_mode: 'INSTANT', instant_players: '2', duration: 'CUSTOM', custom_len: '2', custom_unit: 'HOUR', ack: true });
+ok(r.status === 400 && r.j.field === 'duration', 'players can’t set custom lengths', r.j);
+r = await P4.post('/api/pools', { name: 'Day ' + tag, start_mode: 'INSTANT', instant_players: '2', duration: '86400', ack: true });
+ok(r.status === 400, 'players can’t pick 1-day games', r.j);
 r = await admin.post('/api/pools', { name: 'Now ' + tag, start_mode: 'NOW', duration: '300' });
 st = await state(P1, r.j.id);
 ok(r.status === 200 && st.state === 'live' && Math.abs(Date.parse(st.endsAt) - Date.now() - 300000) < 15000, 'start now for 5 min is live', st);
@@ -172,7 +181,7 @@ ok(r.status === 200, 'newly invited player joins', r.j);
 
 console.log('Pages');
 r = await P1.get('/pools/new');
-ok(r.status === 200 && ['name="start_mode"', 'value="INSTANT"', 'name="start_date"', 'name="duration"', 'data-picker'].every(x => r.text.includes(x)) && !/undefined|NaN/.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'create page has the new start + invite controls');
+ok(r.status === 200 && ['name="start_mode"', 'value="INSTANT" checked', 'name="start_date"', 'name="duration"', 'value="60" checked', 'name="blocked"', 'name="time_topup"', 'data-picker'].every(x => r.text.includes(x)) && !r.text.includes('value="NOW"') && !r.text.includes('value="CUSTOM"') && !/undefined|NaN/.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'create page has the new start + invite controls');
 r = await admin.get('/pool/' + ip);
 ok(r.status === 200 && r.text.includes('/extend'), 'admin sees add-time buttons on the pool page');
 

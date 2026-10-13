@@ -49,7 +49,7 @@ export function comparison(s) {
     ['Tap sounds (unlock more as you rank up)', false, true, true],
     ['Backgrounds', false, false, true],
     ['Gift boosters to friends', false, false, true],
-    ['Talk live in games (Para Para Boy rank, top 5)', false, false, true],
+    ['Talk live in games (when you are top 3 in the pool)', false, false, true],
     ['Tap skins', 'Boy + girl', 'Boy + girl', 'All skins'],
     ['Withdraw winnings from', naira(L.minWithdraw), naira(M.minWithdraw), naira(N.minWithdraw)]
   ];

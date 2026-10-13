@@ -13,7 +13,7 @@
     var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
     var fmtN = function (n) { return TA.short(n); };
 
-    var pools = D.pools.map(function (p) { return { id: p.id, name: p.name, starts: Date.parse(p.startsAt), ends: Date.parse(p.endsAt), boosters: p.boosters, sideA: p.sideA, sideB: p.sideB, side: p.side, prize: p.prize, sponsor: p.sponsor, kind: p.kind, lapoRules: !!p.lapoRules, score: 0, rank: 0, total: 0, mult: 1, multUntil: 0, queued: 0, used: {}, ended: p.state === 'ended' || p.state === 'cancelled', seenTop: 999, top: [], near: [] }; });
+    var pools = D.pools.map(function (p) { return { id: p.id, name: p.name, starts: Date.parse(p.startsAt), ends: Date.parse(p.endsAt), boosters: p.boosters, sideA: p.sideA, sideB: p.sideB, side: p.side, prize: p.prize, sponsor: p.sponsor, kind: p.kind, lapoRules: !!p.lapoRules, timeTopup: !!p.timeTopup, score: 0, rank: 0, total: 0, mult: 1, multUntil: 0, queued: 0, used: {}, ended: p.state === 'ended' || p.state === 'cancelled', seenTop: 999, top: [], near: [] }; });
     var byId = {}; pools.forEach(function (p) { byId[p.id] = p; });
     var focus = pools[0];
     var boosters = D.boosters || [];
@@ -64,7 +64,8 @@
       netTimer = setTimeout(function () { netEl.hidden = true; }, 1600);
     }
     window.addEventListener('offline', function () { setNet(true); });
-    window.addEventListener('online', function () { setNet(false); flush(); loadBoard(); });
+    document.addEventListener('ta:offline', function () { setNet(true); });
+    document.addEventListener('ta:online', function () { setNet(false); flush(); loadBoard(); });
     if (!TA.isOnline()) setNet(true);
 
     /* ── tapping ── */
@@ -263,23 +264,49 @@
       boostBtn.disabled = !focus.boosters || st === 'ended';
       boostBtn.title = !focus.boosters ? 'Boosters are off for this pool' : '';
     }
-    boostBtn.addEventListener('click', function () {
+    // The sheet lists the boosters you own first, 6 to a page, then up to 3 you don't have (buy and use in one tap).
+    var bPage = 0, PER = 6;
+    function boostRow(b) {
+      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'bopt' + (b.lock ? ' locked' : '') + (!b.owned && !b.lock ? ' buy' : ''); btn.style.setProperty('--c', b.color || '#2E8BFF');
+      var limitHit = b.perGame && (focus.used[b.id] || 0) >= b.perGame;
+      btn.innerHTML = '<span class="m"></span><span class="t"></span><span class="q"></span>';
+      btn.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
+      btn.querySelector('.t').appendChild(document.createTextNode(b.name));
+      var sm = document.createElement('small'); sm.textContent = b.lock ? 'Locked: ' + b.lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
+      var q = btn.querySelector('.q');
+      if (b.lock) q.textContent = b.lock.need === 'RANK' ? 'Rank up' : 'Upgrade';
+      else if (!b.owned) { q.textContent = 'Buy ' + TA.naira(b.price); q.className = 'q buyq'; }
+      else q.textContent = '×' + b.qty;
+      if (b.owned && !b.lock && (b.qty < 1 || limitHit)) btn.disabled = true;
+      btn.addEventListener('click', function () { if (b.lock) { closeSheets(); TA.upgrade(b.lock.need || 'MAPO', b.name); return; } if (!b.owned || b.qty < 1) buyAndUse(b, btn); else useBooster(b); });
+      return btn;
+    }
+    function paintBoostList() {
       var list = $('boost-list'); list.textContent = '';
-      if (!boosters.length) { var p = document.createElement('p'); p.textContent = 'You no get any booster. Buy some for the store.'; list.appendChild(p); }
-      boosters.forEach(function (b) {
-        var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'bopt' + (b.lock ? ' locked' : ''); btn.style.setProperty('--c', b.color || '#2E8BFF');
-        var limitHit = b.perGame && (focus.used[b.id] || 0) >= b.perGame;
-        btn.innerHTML = '<span class="m"></span><span class="t"></span><span class="q"></span>';
-        btn.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
-        btn.querySelector('.t').appendChild(document.createTextNode(b.name));
-        var sm = document.createElement('small'); sm.textContent = b.lock ? 'Locked: ' + b.lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
-        btn.querySelector('.q').textContent = b.lock ? (b.lock.need === 'RANK' ? 'Rank up' : 'Upgrade') : '×' + b.qty;
-        if (!b.lock && (b.qty < 1 || limitHit)) btn.disabled = true;
-        btn.addEventListener('click', function () { if (b.lock) { closeSheets(); TA.upgrade(b.lock.need || 'MAPO', b.name); return; } useBooster(b); });
-        list.appendChild(btn);
+      var mine = boosters.filter(function (b) { return b.owned; }), more = boosters.filter(function (b) { return !b.owned; });
+      var pages = Math.max(1, Math.ceil(mine.length / PER)); bPage = Math.min(bPage, pages - 1);
+      if (!mine.length) { var p = document.createElement('p'); p.textContent = 'You no get any booster yet. Buy one below and it goes to work straight away.'; list.appendChild(p); }
+      mine.slice(bPage * PER, bPage * PER + PER).forEach(function (b) { list.appendChild(boostRow(b)); });
+      if (pages > 1) {
+        var pg = document.createElement('div'); pg.className = 'bpager';
+        var prev = document.createElement('button'); prev.type = 'button'; prev.className = 'btn btn--soft btn--sm'; prev.textContent = 'Back'; prev.disabled = bPage === 0; prev.onclick = function () { bPage--; paintBoostList(); };
+        var lbl = document.createElement('span'); lbl.textContent = 'Page ' + (bPage + 1) + ' of ' + pages;
+        var next = document.createElement('button'); next.type = 'button'; next.className = 'btn btn--soft btn--sm'; next.textContent = 'More'; next.disabled = bPage >= pages - 1; next.onclick = function () { bPage++; paintBoostList(); };
+        pg.appendChild(prev); pg.appendChild(lbl); pg.appendChild(next); list.appendChild(pg);
+      }
+      if (more.length) { var h = document.createElement('div'); h.className = 'bsub'; h.textContent = 'You don’t have these yet'; list.appendChild(h); more.forEach(function (b) { list.appendChild(boostRow(b)); }); }
+    }
+    boostBtn.addEventListener('click', function () { bPage = 0; paintBoostList(); openSheet('boost-sheet'); });
+    // Buy one from the store (server checks the price, your tier and your wallet), then use it right away.
+    function buyAndUse(b, btn, extra) {
+      if (btn) btn.classList.add('is-loading');
+      TA.api('/api/store/buy', Object.assign({ item: b.id, qty: 1 }, extra || {})).then(function (j) {
+        if (btn) btn.classList.remove('is-loading');
+        if (!j._ok) { if (j.code === 'ADULT' || (j.error && /18 or older/.test(j.error))) { TA.askAdult(function () { buyAndUse(b, btn, { adult: true }); }); return; } TA.fail(j); return; }
+        b.qty = (b.qty || 0) + 1; b.owned = true; paintBoostBtn(); useBooster(b);
       });
-      openSheet('boost-sheet');
-    });
+    }
+    TA.buyAndUseBooster = buyAndUse;
     var boosting = false;
     function useBooster(b, fromTip) {
       if (boosting) return; boosting = true;
@@ -288,10 +315,28 @@
         boosting = false;
         if (!j._ok) { TA.fail(j); return; }
         p.mult = j.mult; p.multUntil = j.multUntil; p.queued = j.queued || 0; b.qty--; p.used[b.id] = (p.used[b.id] || 0) + 1;
+        if (!document.getElementById('boost-sheet').hidden) paintBoostList();
         if (j.mult === b.mult && !j.queued) party(String(b.mult).replace(/\.0$/, '') + '× BOOST!'); else TA.toast(j.message || 'Booster queued');
         paintBoostBtn(); if (!fromTip) clearTips();
       });
     }
+
+    /* ── add money during the game (bottom right): every ₦10,000 adds 10 seconds for everybody ── */
+    var cashBtn = $('cash-btn'), cashAmt = 10000;
+    function paintCash() { cashBtn.hidden = !(focus.timeTopup && stateOf(focus) === 'live'); }
+    setInterval(paintCash, 1000);
+    cashBtn.addEventListener('click', function () { openSheet('cash-sheet'); });
+    $('cash-amts').addEventListener('click', function (e) { var b = e.target.closest('[data-amt]'); if (!b) return; cashAmt = Number(b.getAttribute('data-amt')); $('cash-amts').querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); $('cash-go').textContent = 'Add ' + TA.naira(cashAmt * 100) + ' (+' + (cashAmt / 1000) + 's)'; });
+    function sendCash(extra) {
+      var p = focus, go = $('cash-go'); go.classList.add('is-loading');
+      TA.api('/api/pools/' + encodeURIComponent(p.id) + '/topup', Object.assign({ amount: cashAmt, ingame: true, from: $('cash-win').checked ? 'WINNINGS' : 'WALLET' }, extra || {})).then(function (j) {
+        go.classList.remove('is-loading');
+        if (!j._ok) { if (j.code === 'ADULT') { TA.askAdult(function () { sendCash({ adult: true }); }); return; } TA.fail(j); return; }
+        if (j.endsAt) p.ends = Date.parse(j.endsAt); if (j.prize) p.prize = j.prize;
+        closeSheets(); party('+' + (j.addedSeconds || 10) + 's!'); TA.toast(j.message); paintMeta && paintMeta();
+      });
+    }
+    $('cash-go').addEventListener('click', function () { sendCash(); });
 
     /* ── booster tips (Mapo + Nepo): the calculator in the game. Up to 3 cards slide in from the left now
        and then: "Use Turbo 2× → you'll reach the top 2". Tap a card to use that booster; that card leaves. ── */
@@ -314,24 +359,27 @@
       if (!top.length || focus.rank === 1) return;
       var shown = {}; open.forEach(function (c) { shown[c.getAttribute('data-b')] = 1; shown['r' + c.getAttribute('data-r')] = 1; });
       var picks = [];
-      boosters.forEach(function (b) { if (!usable(b) || shown[b.id]) return; var r = reachWith(b, rate, my, top); if (r && !shown['r' + r]) picks.push({ b: b, r: r }); });
+      boosters.forEach(function (b) { if (shown[b.id] || b.lock || (focus.lapoRules && !b.everybody)) return; if (b.owned && !usable(b)) return; var r = reachWith(b, rate, my, top); if (r && !shown['r' + r]) picks.push({ b: b, r: r }); });
       if (!picks.length) return;
-      picks.sort(function (a, b) { return a.r - b.r || a.b.mult - b.b.mult; });
+      // boosters you already own win a tie with ones you'd have to buy
+      picks.sort(function (a, b) { return a.r - b.r || (b.b.owned && b.b.qty > 0) - (a.b.owned && a.b.qty > 0) || a.b.mult - b.b.mult; });
       var pick = picks[0];
       // prefer the cheapest booster that still reaches a new rank
-      for (var i = 0; i < picks.length; i++) if (picks[i].r === pick.r && picks[i].b.mult < pick.b.mult) pick = picks[i];
+      for (var i = 0; i < picks.length; i++) if (picks[i].r === pick.r && (picks[i].b.owned && picks[i].b.qty > 0) === (pick.b.owned && pick.b.qty > 0) && picks[i].b.mult < pick.b.mult) pick = picks[i];
       showTip(pick.b, pick.r);
     }
     function showTip(b, rank) {
       lastTipAt = Date.now();
       var c = document.createElement('button'); c.type = 'button'; c.className = 'tipcard'; c.setAttribute('data-b', b.id); c.setAttribute('data-r', String(rank));
       c.style.setProperty('--c', b.color || '#2E8BFF');
-      c.innerHTML = '<span class="m"></span><span class="tx"><b></b><span></span></span><span class="go">Use</span>';
+      var have = b.owned && b.qty > 0;
+      c.innerHTML = '<span class="m"></span><span class="tx"><b></b><span></span></span><span class="go"></span>';
+      c.querySelector('.go').textContent = have ? 'Use' : 'Buy ' + TA.naira(b.price);
       c.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
       c.querySelector('.tx b').textContent = b.name;
       c.querySelector('.tx span').textContent = rank === 1 ? 'You go reach #1' : 'You go reach the top ' + rank;
       c.setAttribute('aria-label', 'Use ' + b.name + '. ' + c.querySelector('.tx span').textContent);
-      c.addEventListener('click', function () { dropTip(c); useBooster(b, true); });
+      c.addEventListener('click', function () { dropTip(c); if (have) useBooster(b, true); else buyAndUse(b, null); });
       tipsEl.appendChild(c);
       requestAnimationFrame(function () { requestAnimationFrame(function () { c.classList.add('in'); }); });
       setTimeout(function () { dropTip(c); }, 14000);
@@ -412,14 +460,25 @@
         var t = document.createElement('div'); t.className = 'ttl'; t.textContent = rankTitle(p.rank);
         var big = document.createElement('div'); big.className = 'big'; big.textContent = fmtN(p.score);
         var sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = p.rank ? 'You finish #' + p.rank + ' of ' + fmtN(p.total) + '. Prizes land for your winnings in a few seconds.' : 'You no tap for this one. Next time!';
+        var won = document.createElement('div'); won.className = 'sub'; won.textContent = p.rank ? 'Counting the prizes…' : '';
         var act = document.createElement('div'); act.className = 'actions';
-        var a1 = document.createElement('a'); a1.className = 'btn btn--green btn--shine'; a1.href = '/pool/' + encodeURIComponent(p.id); a1.textContent = 'See results';
+        var a1 = document.createElement('a'); a1.className = 'btn btn--green btn--shine'; a1.href = '/pool/' + encodeURIComponent(p.id) + '/results'; a1.textContent = 'See & share results';
         var a2 = document.createElement('a'); a2.className = 'btn btn--white'; a2.href = '/pools'; a2.textContent = 'Play another';
         act.appendChild(a1); act.appendChild(a2);
-        [t, big, sub, act].forEach(function (n) { endEl.appendChild(n); });
+        [t, big, sub, won, act].forEach(function (n) { endEl.appendChild(n); });
         endEl.hidden = false;
+        if (p.rank) showWinnings(p, won, 0);
         if (p.rank && p.rank <= 3) party(p.rank === 1 ? 'WINNER!' : 'PODIUM!'); else { buzz(80); S.thud(); }
         checkRankUp();
+      });
+    }
+    // After the pool is paid out, show exactly how much you won (or that this one paid nothing).
+    function showWinnings(p, el, tries) {
+      TA.api('/api/pools/' + encodeURIComponent(p.id) + '/result', undefined, 'GET').then(function (j) {
+        if (!j._ok || !j.settled) { if (tries < 12) setTimeout(function () { showWinnings(p, el, tries + 1); }, 2500); else el.textContent = 'Prizes are being counted. Check the results page in a minute.'; return; }
+        el.textContent = '';
+        if (j.prize > 0) { var w = document.createElement('div'); w.className = 'won'; w.textContent = 'You won ' + TA.naira(j.prize) + '!'; el.appendChild(w); var n = document.createElement('div'); n.textContent = 'It don land for your winnings.' + (j.vs && j.vs.winners && j.vs.winners.length === 1 ? ' Team ' + j.vs.winners[0] + ' won!' : ''); el.appendChild(n); if (TA.celebrate) TA.celebrate('You won!', TA.naira(j.prize)); }
+        else el.textContent = (j.vs && j.vs.winners && j.vs.winners.length === 1 ? 'Team ' + j.vs.winners[0] + ' won this one. ' : '') + 'No prize for you this time — run am back!';
       });
     }
     function checkRankUp() {

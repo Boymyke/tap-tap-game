@@ -205,6 +205,7 @@ export function landingPage({ user, pools, stats, look = pickLanding() }) {
       <div class="deck" id="deck" aria-live="off">${pools.map(poolCard).join('')}</div>
       <div class="dots" id="dots">${pools.length > 1 ? pools.map((p, i) => `<button type="button" aria-label="Show ${esc(p.name)}" aria-current="${i === 0}"></button>`).join('') : ''}</div>
     </section>` : ''}
+    <div class="socials" data-socials hidden></div>
   </aside>
 </main>
 </div>

@@ -26,7 +26,7 @@ export async function processEmailBlasts(env, origin) {
     let sent = 0;
     for (const u of users) {
       try {
-        const msg = poolNewsEmail({ pool: b.name, sponsor: b.sponsor || 'A sponsor', url: `${origin}/pool/${b.pool_id}`, prize: b.prize_kobo ? naira(b.prize_kobo) : '', unsub: `${origin}/unsub?u=${encodeURIComponent(u.id)}&t=${await unsubToken(env, u.id)}` });
+        const msg = poolNewsEmail({ site: origin, pool: b.name, sponsor: b.sponsor || 'Tap Am', url: `${origin}/pool/${b.pool_id}`, prize: b.prize_kobo ? naira(b.prize_kobo) : '', unsub: `${origin}/unsub?u=${encodeURIComponent(u.id)}&t=${await unsubToken(env, u.id)}` });
         const r = await sendMail(env, u.email, msg); if (r.sent || r.test) sent++;
       } catch (e) { console.error('blast email', e?.message); }
     }

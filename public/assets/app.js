@@ -91,10 +91,17 @@
     if (online) hideTimer = setTimeout(function () { bar.hidden = true; }, 2800);
     document.documentElement.classList.toggle('is-offline', !online);
   }
-  TA.isOnline = function () { return navigator.onLine !== false; };
-  window.addEventListener('offline', function () { showNet(false); document.dispatchEvent(new Event('ta:offline')); });
-  window.addEventListener('online', function () { showNet(true); document.dispatchEvent(new Event('ta:online')); });
-  TA.netFailed = function () { if (!TA.isOnline()) showNet(false); };
+  TA.isOnline = function () { return navigator.onLine !== false && !netIsDown; };
+  // "No network" shows on a real failure too (phones often say "online" with no data), then a small
+  // check runs every few seconds; the moment the server answers, the banner says so and goes away.
+  var netIsDown = false, probeT = 0;
+  function down() { if (!netIsDown) { netIsDown = true; showNet(false); document.dispatchEvent(new Event('ta:offline')); } clearTimeout(probeT); probeT = setTimeout(probe, 3000); }
+  function up() { clearTimeout(probeT); if (netIsDown) { netIsDown = false; showNet(true); document.dispatchEvent(new Event('ta:online')); } }
+  function probe() { fetch('/api/ping?t=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' }).then(function (r) { if (r.ok) up(); else down(); }, down); }
+  window.addEventListener('offline', down);
+  window.addEventListener('online', probe);
+  TA.netFailed = down;
+  TA.netOk = up;
 
   /* ── install (add to home screen) ────────────────────────────────── */
   var deferred = null;
@@ -203,7 +210,7 @@
   /* ── JSON API helper ─────────────────────────────────────────────── */
   TA.api = function (url, body, method) {
     return fetch(url, { method: method || 'POST', credentials: 'same-origin', headers: body !== undefined ? { 'content-type': 'application/json' } : {}, body: body !== undefined ? JSON.stringify(body) : undefined })
-      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j._ok = r.ok; j._status = r.status; return j; }); })
+      .then(function (r) { if (netIsDown) up(); return r.json().catch(function () { return {}; }).then(function (j) { j._ok = r.ok; j._status = r.status; return j; }); })
       .catch(function () { TA.netFailed(); return { _ok: false, error: TA.isOnline() ? 'Network wahala. Try again.' : 'Your internet don cut. Check your connection.' }; });
   };
   function after(j, el) {
@@ -309,7 +316,7 @@
   // QR code + share card live in a separate file, loaded only when needed.
   function shareCard(b) {
     b.classList.add('is-loading');
-    loadScript('/assets/share.js?v=8').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
+    loadScript('/assets/share.js?v=10').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
       .catch(function () { b.classList.remove('is-loading'); TA.toast('Could not load the share card. Check your connection.', 'err'); });
   }
   function loadScript(src) {
@@ -588,18 +595,72 @@
   function winners() {
     if (!document.querySelector('[data-winners]') || winners.on) return; winners.on = true;
     fetch('/api/winners', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
-      var list = (j && j.winners) || []; if (!list.length) return;
+      // real wins (names partly hidden) and today's Tap Am tips, taking turns
+      var wins = (j && j.winners) || [], tips = (j && j.tips) || [], list = [];
+      for (var k = 0; k < Math.max(wins.length, tips.length); k++) { if (wins[k]) list.push(wins[k]); if (tips[k]) list.push(tips[k]); }
+      if (!list.length) return;
       var i = 0, el = document.createElement('div'); el.className = 'wtoast'; el.setAttribute('role', 'status'); el.hidden = true; document.body.appendChild(el);
       function show() {
         if (document.hidden) return;
         var w = list[i++ % list.length];
-        el.innerHTML = '<span class="wt-ic" aria-hidden="true">\u20A6</span><span><b></b> just won <b class="wt-amt"></b><small></small></span>';
+        if (w.text) { el.innerHTML = '<span class="wt-ic" aria-hidden="true"></span><span></span>'; el.children[0].textContent = w.icon || '👆'; el.children[1].textContent = w.text; }
+        else {
+        el.innerHTML = '<span class="wt-ic" aria-hidden="true">\u20A6</span><span><b></b> won <b class="wt-amt"></b><small></small></span>';
         el.querySelector('b').textContent = w.who; el.querySelector('.wt-amt').textContent = TA.naira(w.amount); el.querySelector('small').textContent = 'in ' + w.pool;
+        }
         el.hidden = false; el.classList.remove('out'); void el.offsetWidth; el.classList.add('in');
         setTimeout(function () { el.classList.add('out'); setTimeout(function () { el.hidden = true; }, 400); }, 4500);
       }
       setTimeout(show, 3000); setInterval(show, 11000);
     }).catch(function () {});
+  }
+
+  /* ── long lists: <div data-paginate="12"> shows 12 at a time with Back / More (items with data-off are filtered out) ── */
+  function paginate(box) {
+    var per = Number(box.getAttribute('data-paginate')) || 10, items = Array.prototype.slice.call(box.children);
+    var on = items.filter(function (c) { return !c.hasAttribute('data-off'); });
+    var pages = Math.max(1, Math.ceil(on.length / per)), pg = Math.min(box._page || 0, pages - 1); box._page = pg;
+    items.forEach(function (c) { c.hidden = true; });
+    on.slice(pg * per, pg * per + per).forEach(function (c) { c.hidden = false; });
+    var bar = box._bar;
+    if (!bar) { bar = document.createElement('nav'); bar.className = 'pager'; bar.setAttribute('aria-label', 'Pages'); box.parentNode.insertBefore(bar, box.nextSibling); box._bar = bar; }
+    bar.hidden = pages < 2 || box.hidden; bar.textContent = '';
+    if (pages < 2) return;
+    var mk = function (label, to, dis) { var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn--white btn--sm'; b.textContent = label; b.disabled = dis; b.addEventListener('click', function () { box._page = to; paginate(box); var top = box.getBoundingClientRect().top + scrollY - 90; if (top < scrollY) scrollTo({ top: top, behavior: 'smooth' }); }); return b; };
+    var lbl = document.createElement('span'); lbl.textContent = 'Page ' + (pg + 1) + ' of ' + pages;
+    bar.appendChild(mk('Back', pg - 1, pg === 0)); bar.appendChild(lbl); bar.appendChild(mk('More', pg + 1, pg >= pages - 1));
+  }
+  TA.paginate = paginate;
+
+  /* ── our socials and WhatsApp community (links set by the super admin) ── */
+  var SOC = { whatsapp: ['Join our WhatsApp community', '<path d="M3.5 20.5l1.2-4.3A8.5 8.5 0 1112 20.5a8.4 8.4 0 01-4-1z" fill="none" stroke="currentColor" stroke-width="2"/>'], twitter: ['X', '<path d="M4 4l16 16M20 4L4 20" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'], instagram: ['Instagram', '<rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/>'], tiktok: ['TikTok', '<path d="M14 3v11a4 4 0 11-4-4M14 3c.5 3 2.5 5 5.5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'] };
+  var linksP = null;
+  function socials() {
+    var spots = $$('[data-socials]'); if (!spots.length) return;
+    linksP = linksP || fetch('/api/links', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; });
+    linksP.then(function (L) {
+      spots.forEach(function (box) {
+        if (box._done) return; box._done = true; box.textContent = '';
+        var only = box.getAttribute('data-socials');
+        Object.keys(SOC).forEach(function (k) {
+          var href = L[k]; if (!href || !/^https:\/\//.test(href) || (only && only !== k)) return;
+          var a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; if (k === 'whatsapp') a.className = 'wa';
+          a.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + SOC[k][1] + '</svg><span></span>'; a.querySelector('span').textContent = SOC[k][0]; box.appendChild(a);
+        });
+        box.hidden = !box.children.length;
+      });
+    });
+  }
+
+  /* ── announcements from the Tap Am team: a pop-up once, on app pages only (never during a game) ── */
+  function announcement() {
+    if (!document.body.classList.contains('app-body') || document.body.classList.contains('is-game') || announcement.on) return; announcement.on = true;
+    TA.api('/api/announcement', undefined, 'GET').then(function (j) {
+      var a = j && j.announcement; if (!a) return;
+      var d = dialog('<h3></h3><p></p><div class="actions"><button type="button" class="btn btn--green" data-yes>Got it</button></div>', function (e, close) { if (!e || e.target.closest('[data-yes]') || e.target.closest('[data-go]')) { close(); TA.api('/api/announcements/' + a.id + '/seen', {}); } });
+      d.classList.add('ann'); d.querySelector('h3').textContent = '📣 ' + a.title; d.querySelector('p').textContent = a.body;
+      if (a.link) { var l = document.createElement('a'); l.className = 'btn btn--white'; l.href = a.link; l.setAttribute('data-go', ''); l.textContent = 'Open'; if (/^https:/.test(a.link)) { l.target = '_blank'; l.rel = 'noopener'; } d.querySelector('.actions').appendChild(l); }
+    });
   }
 
   /* ── GET forms that reload on change (year / month pickers) ── */
@@ -645,7 +706,8 @@
 
   /* ── start ───────────────────────────────────────────────────────── */
   function ready(swapped) {
-    rankCheck(); winners(); addEyes(document);
+    rankCheck(); winners(); addEyes(document); socials(); announcement();
+    $$('[data-paginate]').forEach(function (b) { b._page = 0; paginate(b); });
     $$('[data-seg]').forEach(function (el) { TA.seg(el, el.getAttribute('data-seg')); });
     startCountdowns();
     initSlides(document);
@@ -653,7 +715,7 @@
     showInstallButtons();
     // keep the selected tab in view (Pools: Results, Top tappers, admin tabs…)
     $$('.tabs [aria-current="page"], .doc-tabs [aria-current="page"], .fbar [aria-pressed="true"]').forEach(function (a) { var p = a.parentNode; if (p.scrollWidth > p.clientWidth) p.scrollLeft = a.offsetLeft - p.offsetLeft - (p.clientWidth - a.offsetWidth) / 2; });
-    if (!swapped && !TA.isOnline()) showNet(false);
+    if (!swapped && navigator.onLine === false) down();
     showFlash();
   }
   function boot() {

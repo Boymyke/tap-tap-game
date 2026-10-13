@@ -1,5 +1,5 @@
 // Pool creation, joining and listing — shared by players (Mapo/Nepo), sponsors and the super admin.
-import { uid, nowIso, json, allow } from '../lib.js';
+import { uid, nowIso, json, allow, logError, likeEsc } from '../lib.js';
 import { isPattern } from '../ui/patterns.js';
 import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, giveItem, notify, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
 
@@ -8,7 +8,10 @@ export const MAX_WINNERS = 100;
 export const NO_LIMIT = 100000;
 export const MIN_POOL_SECONDS = 60;
 export const SPONSOR_MIN_PRIZE = 1000000;   // ₦10,000
-export const MAX_POOL_SECONDS = 7 * 86400;
+export const MAX_POOL_SECONDS = 7 * 86400;          // schedules made with an end time (older forms, API)
+export const ADMIN_MAX_POOL_SECONDS = 366 * 86400;   // the super admin can run a pool for up to a year
+export const PLAYER_DURATIONS = [60, 300, 900, 1800, 3600];
+export const TOPUP_STEP_KOBO = 1000000;             // in-game top-ups: every ₦10,000 adds time
 export const INSTANT_MAX = 1000;            // most players an instant match can wait for
 export const INSTANT_LEAD_MS = 15000;       // countdown between the last seat filling and the first tap
 export const MAX_INVITES = 100;             // invites per pool
@@ -29,8 +32,9 @@ export function buildSplit(n, style = 'TOP') {
 }
 export function splitText(split, style, vs) {
   const sum = split.reduce((a, b) => a + b, 0) || 1, pct = x => (Math.round(x / sum * 1000) / 10).toString().replace(/\.0$/, '') + '%';
-  const who = vs ? ' on each side' : '';
-  if (split.length === 1) return vs ? 'Top tapper on each side takes that side’s pot' : 'Winner takes all';
+  if (vs) return 'The side with the most taps wins the whole pot, shared by its players’ taps';
+  const who = '';
+  if (split.length === 1) return 'Winner takes all';
   if (style === 'EQUAL') return `Top ${split.length}${who} share equally (${pct(split[0])} each)`;
   const shown = split.slice(0, 5).map(pct).join(' / ');
   return `Top ${split.length}${who} share: ${shown}${split.length > 5 ? ' / …' : ''}`;
@@ -47,6 +51,7 @@ export function poolState(p, now = Date.now()) {
   if (p.status === 'CANCELLED') return 'cancelled';
   if (p.settled_at) return 'ended';
   if (p.status === 'WAITING') return 'waiting';   // instant match: starts when it fills
+  if (p.status === 'PAUSED' && p.pause_mode === 'VOTE') return 'paused';   // server problem: scores kept, a vote decides
   const s = Date.parse(p.starts_at), e = Date.parse(p.ends_at);
   return now < s ? 'soon' : now < e ? 'live' : 'ended';
 }
@@ -67,19 +72,22 @@ export async function createPool(env, user, d) {
   const s = await settings(env);
   const admin = isAdmin(user), sponsor = isSponsor(user), player = user.role === 'USER';
   if (!admin && !sponsor && !player) return json({ error: 'You no fit create pools.' }, 403);
-  if (player && !isPaid(user)) {   // Lapo babies: a few pools a day (Lagos time)
-    const perDay = num(s, 'lapo_pools_per_day', 3);
+  if (player) {   // each tier creates a set number of pools a day (Lagos time); the super admin sets the numbers
+    const t = tierOf(user), label = { LAPO: 'Lapo', MAPO: 'Mapo', NEPO: 'Nepo' }[t];
+    const perDay = num(s, `${t.toLowerCase()}_pools_per_day`, { LAPO: 3, MAPO: 20, NEPO: 50 }[t]);
     const dayStart = new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString();
     const made = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pools WHERE created_by=? AND created_at>=?').bind(user.id, dayStart.replace('T', ' ').slice(0, 19)).first())?.n || 0);
-    if (made >= perDay) return upgradeError(`Lapo babies fit create ${perDay} pools a day. Come back tomorrow, or upgrade to create more.`);
+    if (made >= perDay) return t === 'NEPO' ? json({ error: `Nepo babies fit create ${perDay} pools a day. Come back tomorrow.` }, 429)
+      : upgradeError(`${label} babies fit create ${perDay} pool${perDay === 1 ? '' : 's'} a day. Come back tomorrow, or upgrade to create more.`, t === 'LAPO' ? 'MAPO' : 'NEPO');
   }
 
+  if (s.overload === '1') return json({ error: 'Tap Am is fixing a server problem, so new pools are paused for a short while. Try again soon.' }, 503);
   const name = String(d.name || '').trim(), description = String(d.description || '').trim();
   if (name.length < 3 || name.length > 60) return json({ error: 'Pool name must be 3–60 characters.', field: 'name' }, 400);
   if (description.length > 300) return json({ error: 'Description too long (300 max).', field: 'description' }, 400);
   // ── when: start now, schedule for later (Lagos time), or an instant match that starts when it fills ──
   const now = Date.now();
-  const mode = ['NOW', 'LATER', 'INSTANT'].includes(d.start_mode) ? d.start_mode : (d.starts_at || d.start_date ? 'LATER' : 'NOW');
+  const mode = ['NOW', 'LATER', 'INSTANT'].includes(d.start_mode) ? d.start_mode : (d.starts_at || d.start_date ? 'LATER' : 'INSTANT');
   // how long it runs: a preset in seconds, a custom length, or (older forms) an end time
   let dur = null, durField = 'duration';
   if (d.duration === 'CUSTOM') {
@@ -111,7 +119,8 @@ export async function createPool(env, user, d) {
     dur = Math.round((end - start) / 1000); durField = 'ends_at';
   }
   if (dur < MIN_POOL_SECONDS) return json({ error: `A pool must run at least ${MIN_POOL_SECONDS} seconds.`, field: durField }, 400);
-  if (dur > MAX_POOL_SECONDS) return json({ error: 'A pool fit run 7 days max.', field: durField }, 400);
+  if (admin ? dur > ADMIN_MAX_POOL_SECONDS : dur > MAX_POOL_SECONDS) return json({ error: admin ? 'A pool fit run 1 year max.' : 'A pool fit run 7 days max.', field: durField }, 400);
+  if (!admin && !PLAYER_DURATIONS.includes(dur)) return json({ error: 'Pick one of the lengths: 1, 5, 15 or 30 minutes, or 1 hour. Only the super admin can set other lengths.', field: durField === 'custom_len' ? 'duration' : durField }, 400);
   let instantN = 0;
   if (mode === 'INSTANT') {
     const raw = String(d.instant_players ?? '').replace(/[,\s]/g, '');
@@ -189,37 +198,52 @@ export async function createPool(env, user, d) {
     entry_fee_kobo: entryFee, prize_kobo: prize, winners_count: split.length, split: JSON.stringify(split), split_style: style, tie_rule: tie, house_cut_pct: cut,
     is_private: isPrivate ? 1 : 0, join_password: password, sponsor_user_id: sponsor ? user.id : null, sponsor_name: sponsorName,
     theme_color: theme, pad_pattern: padPattern, allow_own_pad: allowOwnPad, bg_color: bg, lapo_rules: lapoRules, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: d.boosters_allowed === false ? 0 : 1,
-    max_players: maxPlayers, hashtag: code, created_by: user.id, status: mode === 'INSTANT' ? 'WAITING' : start > now ? 'SCHEDULED' : 'LIVE', min_tier: audience === 'ALL' ? 'LAPO' : audience, promo_id: promoId
+    max_players: maxPlayers, hashtag: code, created_by: user.id, status: mode === 'INSTANT' ? 'WAITING' : start > now ? 'SCHEDULED' : 'LIVE', min_tier: audience === 'ALL' ? 'LAPO' : audience, promo_id: promoId,
+    time_topup: d.time_topup === false ? 0 : 1
   };
   const cols = Object.keys(pool);
-  await env.DB.prepare(`INSERT INTO pools(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')})`).bind(...cols.map(c => pool[c])).run();
-  await initRoom(env, pool);
-  if (blastAud) await env.DB.prepare('INSERT INTO email_blasts(id,pool_id,sponsor_id,audience,price_kobo) VALUES(?,?,?,?,?)').bind(uid(), id, user.id, blastAud, blastPrice).run();
+  // All or nothing: if the database or the game room fails, the pool is removed and any money taken goes
+  // back, so a server error never leaves a half-made pool behind.
+  try {
+    await env.DB.prepare(`INSERT INTO pools(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')})`).bind(...cols.map(c => pool[c])).run();
+    const room = await initRoom(env, pool);
+    if (!room.ok) throw new Error('game room did not start');
+    if (blastAud) await env.DB.prepare('INSERT INTO email_blasts(id,pool_id,sponsor_id,audience,price_kobo) VALUES(?,?,?,?,?)').bind(uid(), id, user.id, blastAud, blastPrice).run();
+  } catch (e) {
+    console.error('create pool failed, rolling back', id, e?.message);
+    await logError(env, 'pool.create', e, { pool: id, by: user.id }).catch(() => {});
+    await env.DB.batch([env.DB.prepare('DELETE FROM email_blasts WHERE pool_id=?').bind(id), env.DB.prepare('DELETE FROM pools WHERE id=?').bind(id)]).catch(() => {});
+    await roomCall(env, id, '/reset').catch(() => {});
+    if (prize > 0 && !admin) await credit(env, user.id, prize, { type: 'REFUND', reference: id, note: 'Pool not created (server error)' }).catch(() => {});
+    if (blastAud) await credit(env, user.id, blastPrice, { type: 'REFUND', reference: id, note: 'Email not sent: pool not created' }).catch(() => {});
+    return json({ error: 'Server wahala: the pool was NOT created and any money you put in is back. Try again in a minute.' }, 503);
+  }
   const invited = await addInvites(env, user, pool, d.invites);
+  const blocked = await addBlocks(env, user, pool, d.blocked);
   const msg = (blastAud ? 'Pool created. Tap Am will email it to players in the next few minutes.' : mode === 'INSTANT' ? `Instant match created. It starts when ${instantN} players join.` : 'Pool created') + (invited ? ` ${invited} player${invited === 1 ? '' : 's'} invited.` : '');
-  return json({ message: msg, id, code, password, invited, redirect: `/pool/${id}` });
+  return json({ message: msg + (blocked ? ` ${blocked} player${blocked === 1 ? '' : 's'} blocked.` : ''), id, code, password, invited, blocked, redirect: `/pool/${id}` });
 }
 
 // ── list ────────────────────────────────────────────────────────────────────
 const LIST_SQL = `SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players, pe.user_id AS joined, pe.taps AS my_taps, pe.final_rank, pe.prize_kobo AS my_prize, pe.booster_item, cu.role AS creator_role, iv.user_id AS invited
     FROM pools p LEFT JOIN pool_entries pe ON pe.pool_id=p.id AND pe.user_id=? LEFT JOIN pool_invites iv ON iv.pool_id=p.id AND iv.user_id=? LEFT JOIN users cu ON cu.id=p.created_by`;
-export function listStmt(env, user, { scope = 'open', limit = 40, offset = 0 } = {}) {
+export function listStmt(env, user, { scope = 'open', limit = 40, offset = 0, q = '' } = {}) {
   const now = nowIso(), dayAgo = new Date(Date.now() - 86400000).toISOString(), weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
   const uidv = user?.id || '';
   const W = {
-    open: ["p.status!='CANCELLED' AND p.ends_at>?", [now]],
+    open: ["p.status!='CANCELLED' AND (p.ends_at>? OR (p.status='PAUSED' AND p.pause_mode='VOTE'))", [now]],
     sponsored: ["p.status!='CANCELLED' AND p.ends_at>? AND p.kind='SPONSORED'", [now]],
     live: ["p.status!='CANCELLED' AND p.starts_at<=? AND p.ends_at>? AND p.kind!='SPONSORED'", [now, now]],
     'players-soon': ["p.status!='CANCELLED' AND p.starts_at>? AND cu.role='USER'", [now]],
     soon: ["p.status!='CANCELLED' AND p.starts_at>?", [now]],
-    mine: ['pe.user_id IS NOT NULL AND p.ends_at>?', [dayAgo]],
+    mine: ["pe.user_id IS NOT NULL AND (p.ends_at>? OR (p.status='PAUSED' AND p.pause_mode='VOTE'))", [dayAgo]],
     created: ['p.created_by=?', [uidv]],
     recent: ['p.ends_at<=? AND p.ends_at>?', [now, weekAgo]]
   }[scope] || ["p.status!='CANCELLED' AND p.ends_at>?", [now]];
   const order = scope === 'recent' || scope === 'created' ? 'p.ends_at DESC' : `CASE WHEN p.starts_at<=? AND p.ends_at>? THEN 0 WHEN p.status='WAITING' THEN 1 ELSE 2 END, p.starts_at ASC`;
   const orderBinds = scope === 'recent' || scope === 'created' ? [] : [now, now];
-  return env.DB.prepare(`${LIST_SQL} WHERE ${W[0]} AND (p.is_private=0 OR pe.user_id IS NOT NULL OR p.created_by=? OR iv.user_id IS NOT NULL) ORDER BY ${order} LIMIT ? OFFSET ?`)
-    .bind(uidv, uidv, ...W[1], uidv, ...orderBinds, limit, offset);
+  return env.DB.prepare(`${LIST_SQL} WHERE ${W[0]} AND (p.is_private=0 OR pe.user_id IS NOT NULL OR p.created_by=? OR iv.user_id IS NOT NULL)${q ? " AND (p.name LIKE ? ESCAPE '\\' OR p.hashtag=? OR p.sponsor_name LIKE ? ESCAPE '\\' OR p.side_a LIKE ? ESCAPE '\\' OR p.side_b LIKE ? ESCAPE '\\')" : ''} ORDER BY ${order} LIMIT ? OFFSET ?`)
+    .bind(uidv, uidv, ...W[1], uidv, ...(q ? [`%${likeEsc(q)}%`, q.toUpperCase(), `%${likeEsc(q)}%`, `%${likeEsc(q)}%`, `%${likeEsc(q)}%`] : []), ...orderBinds, limit, offset);
 }
 export async function listPools(env, user, opts = {}) { return (await listStmt(env, user, opts).all()).results; }
 
@@ -230,6 +254,7 @@ export async function getPool(env, id, user) {
 
 // ── join ────────────────────────────────────────────────────────────────────
 export async function joinPool(env, user, pool, d) {
+  if (await env.DB.prepare('SELECT 1 FROM pool_blocks WHERE pool_id=? AND user_id=?').bind(pool.id, user.id).first()) return json({ error: 'The creator of this pool doesn’t allow you to play in it.' }, 403);
   const block = joinBlock(pool, user);
   if (block) return block.need ? upgradeError(block.why, block.need) : json({ error: block.why }, 403);
   const state = poolState(pool);
@@ -283,9 +308,9 @@ export function poolPublic(p) {
   return {
     id: p.id, name: p.name, description: p.description, code: p.hashtag, kind: p.kind, audience: p.audience, startsAt: p.starts_at, endsAt: p.ends_at,
     entryFee: p.entry_fee_kobo, prize: p.prize_kobo, split, splitStyle: p.split_style || 'TOP', tie: p.tie_rule, private: !!p.is_private, players: p.players,
-    sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED', bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
+    sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED', pauseMode: p.status === 'PAUSED' ? (p.pause_mode || 'REFUND') : null, voteUntil: p.status === 'PAUSED' ? p.vote_until || null : null, bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
     houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), promoId: p.promo_id || null, createdBy: p.created_by, creatorRole: p.creator_role || null,
-    joined: !!p.joined, invited: !!p.invited, instant: !!p.instant, duration: Number(p.duration_seconds) || Math.round((Date.parse(p.ends_at) - Date.parse(p.starts_at)) / 1000), state: poolState(p)
+    joined: !!p.joined, myPrize: Number(p.my_prize || 0), myRank: p.final_rank || null, invited: !!p.invited, instant: !!p.instant, timeTopup: !!p.time_topup, duration: Number(p.duration_seconds) || Math.round((Date.parse(p.ends_at) - Date.parse(p.starts_at)) / 1000), state: poolState(p)
   };
 }
 
@@ -298,22 +323,39 @@ export async function computeSidePots(env, p) {
   return { [p.side_a]: fees[p.side_a] + Math.floor(seed / 2), [p.side_b]: fees[p.side_b] + Math.ceil(seed / 2) };
 }
 
-// ── add money to a pool's prize (paid pools: anybody; any pool: its creator) ──
+// ── add money to a pool's prize: any player (or the sponsor who made it) can add to any open pool ──
+// From the lobby/pool page it only grows the prize. From inside the game (ingame: true) on a pool that
+// allows it, every ₦10,000 also adds 10 seconds (the super admin can change the seconds).
 export async function topUpPool(env, user, pool, d) {
   const amount = clampInt(toKobo(d.amount), 0, 1000000000, 0);
-  if (amount < 10000) return json({ error: 'Add at least ₦100.', field: 'amount' }, 400);
-  if (pool.kind !== 'PAID' && pool.created_by !== user.id) return json({ error: 'Only paid pools take extra prize money.' }, 403);
+  const ingame = d.ingame === true;
+  if (amount < (ingame ? TOPUP_STEP_KOBO : 10000)) return json({ error: ingame ? `Add at least ${naira(TOPUP_STEP_KOBO)} to add time.` : 'Add at least ₦100.', field: 'amount' }, 400);
+  if (user.role === 'SPONSOR' && pool.created_by !== user.id) return json({ error: 'Sponsors can add money to their own pools.' }, 403);
   const state = poolState(pool);
   if (state === 'ended' || state === 'cancelled' || pool.status === 'PAUSED') return json({ error: 'This pool no dey take money now.' }, 409);
+  const s = await settings(env);
+  const secsPer = clampInt(num(s, 'topup_seconds_per_step', 10), 1, 600, 10);
+  const addSecs = ingame ? Math.floor(amount / TOPUP_STEP_KOBO) * secsPer : 0;
+  if (ingame && (!pool.time_topup || state !== 'live')) return json({ error: state !== 'live' ? 'Time can only be bought while the game is live.' : 'This pool doesn’t allow buying time. Add to the prize from the pool page instead.' }, 409);
   if (user.role === 'USER' && !user.adult_confirmed_at) { if (d.adult !== true) return adultError(); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
   const from = d.from === 'WINNINGS' && user.role === 'USER' ? 'WINNINGS' : 'WALLET';
-  if (!await debit(env, user.id, amount, { balance: from, type: 'POOL_TOPUP', reference: pool.id, note: pool.name })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
-  // One statement: the prize only grows while the pool is still open; otherwise the money goes back.
-  // The record is written in the same transaction, so a pause or cancel can always find (and refund) it.
+  if (!await debit(env, user.id, amount, { balance: from, type: 'POOL_TOPUP', reference: pool.id, note: pool.name + (addSecs ? ` (+${addSecs}s)` : '') })) return fundsError(`You need ${naira(amount)} in your ${from === 'WINNINGS' ? 'winnings' : 'wallet'}.`);
+  // One statement: the prize (and the clock) only grow while the pool is still open — for time, only while
+  // more than 3 seconds are left — otherwise the money goes back. The record is written in the same
+  // transaction, so a pause or cancel can always find (and refund) it.
+  const now = nowIso(), soon = iso(Date.now() + 3000);
   const [r] = await env.DB.batch([
-    env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, nowIso()),
+    addSecs
+      ? env.DB.prepare(`UPDATE pools SET prize_kobo=prize_kobo+?, ends_at=strftime('%Y-%m-%dT%H:%M:%fZ', ends_at, '+' || ? || ' seconds'), duration_seconds=COALESCE(duration_seconds,0)+?
+          WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED','WAITING') AND time_topup=1 AND starts_at<=? AND ends_at>?`).bind(amount, addSecs, addSecs, pool.id, now, soon)
+      : env.DB.prepare("UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=? AND settled_at IS NULL AND status NOT IN ('CANCELLED','PAUSED') AND ends_at>?").bind(amount, pool.id, now),
     env.DB.prepare('INSERT INTO pool_topups(id,pool_id,user_id,amount_kobo,balance) SELECT ?,?,?,?,? WHERE changes()>0').bind(uid(), pool.id, user.id, amount, from)]);
-  if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Pool closed before the top-up' }); return json({ error: 'This pool don close. Your money is back.' }, 409); }
+  if (!r.meta.changes) { await credit(env, user.id, amount, { balance: from, type: 'REFUND', reference: pool.id, note: 'Pool closed before the top-up' }); return json({ error: addSecs ? 'Too late — the game is ending. Your money is back.' : 'This pool don close. Your money is back.' }, 409); }
+  if (addSecs) {
+    const fresh = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(pool.id).first();
+    await initRoom(env, fresh);   // the game room moves its end time and its settle alarm
+    return json({ message: `${naira(amount)} added to the prize and +${addSecs}s on the clock!`, endsAt: fresh.ends_at, addedSeconds: addSecs, prize: fresh.prize_kobo });
+  }
   return json({ message: `You added ${naira(amount)} to the prize!`, reload: true });
 }
 
@@ -334,7 +376,7 @@ export async function refundPlayers(env, pool, why) {
 
 // ── server overload: pause a pool, give back money + boosters, restart later ──
 export async function pausePool(env, pool, reason = 'Server overload') {
-  const claim = await env.DB.prepare("UPDATE pools SET status='PAUSED' WHERE id=? AND settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED','WAITING')").bind(pool.id).run();
+  const claim = await env.DB.prepare("UPDATE pools SET status='PAUSED', pause_mode='REFUND' WHERE id=? AND settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED','WAITING')").bind(pool.id).run();
   if (!claim.meta.changes) return { skipped: true };
   await roomCall(env, pool.id, '/init', { pool: { ...pool, status: 'PAUSED' } }).catch(() => {});   // taps stop now
   const used = (await roomCall(env, pool.id, '/used').catch(() => ({ data: { players: [] } }))).data.players || [];
@@ -353,11 +395,11 @@ export async function pausePool(env, pool, reason = 'Server overload') {
   return { paused: true, players: players.length, refunded: total, boosters };
 }
 export async function restartPool(env, pool, minutes = 10) {
-  if (pool.status !== 'PAUSED') return { skipped: true };
+  if (pool.status !== 'PAUSED' || pool.pause_mode === 'VOTE') return { skipped: true };
   const len = Math.max(MIN_POOL_SECONDS * 1000, Date.parse(pool.ends_at) - Date.parse(pool.starts_at));
   const start = Date.now() + Math.max(1, Math.min(1440, minutes)) * 60000;
   const p = { ...pool, status: 'SCHEDULED', starts_at: new Date(start).toISOString(), ends_at: new Date(start + len).toISOString() };
-  const r = await env.DB.prepare("UPDATE pools SET status='SCHEDULED', starts_at=?, ends_at=?, paused_players=NULL WHERE id=? AND status='PAUSED'").bind(p.starts_at, p.ends_at, pool.id).run();
+  const r = await env.DB.prepare("UPDATE pools SET status='SCHEDULED', starts_at=?, ends_at=?, paused_players=NULL, pause_mode=NULL WHERE id=? AND status='PAUSED' AND COALESCE(pause_mode,'REFUND')='REFUND'").bind(p.starts_at, p.ends_at, pool.id).run();
   if (!r.meta.changes) return { skipped: true };
   await initRoom(env, p);
   const players = parseJson(pool.paused_players, []);
@@ -452,4 +494,89 @@ export async function addInvites(env, user, pool, raw) {
     await notify(env, u.id, `${from} invited you to ${pool.instant ? 'the instant match' : 'the pool'} “${pool.name}”. Tap to join.`, `/pool/${pool.id}`);
   }
   return n;
+}
+
+// Creator blocks players from a pool (typed by nickname). The super admin and the creator can't be blocked.
+export async function addBlocks(env, user, pool, raw) {
+  const names = [...new Set((Array.isArray(raw) ? raw : String(raw || '').split(',')).map(x => String(x).trim()).filter(x => x && x.length <= 24))].slice(0, 50);
+  if (!names.length) return 0;
+  const users = (await env.DB.prepare(`SELECT id FROM users WHERE role='USER' AND id!=? AND username IN (${names.map(() => '?').join(',')})`).bind(user.id, ...names).all()).results;
+  let n = 0;
+  for (const u of users) {
+    const r = await env.DB.prepare('INSERT OR IGNORE INTO pool_blocks(pool_id,user_id,blocked_by) VALUES(?,?,?)').bind(pool.id, u.id, user.id).run();
+    if (r.meta.changes) n++;
+  }
+  return n;
+}
+
+// ── server problem: pause with scores kept, then the players vote to continue or restart ──
+// 1. votePause: taps stop, every score and every naira stays where it is, players are told.
+// 2. openVotes (the super admin says the servers are fine): a vote runs for an hour (vote_hours).
+// 3. closeVotes (cron): continue = the game picks up where it stopped (after a 30-second countdown);
+//    restart = scores are wiped, the boosters each player used come back, and the full game runs again.
+//    Continue wins when at least vote_continue_pct % of the votes say so (no votes = continue).
+export async function votePause(env, pool) {
+  const now = Date.now();
+  const left = Math.max(0, Date.parse(pool.ends_at) - Math.max(now, Date.parse(pool.starts_at)));
+  const claim = await env.DB.prepare("UPDATE pools SET status='PAUSED', pause_mode='VOTE', paused_left_ms=?, vote_until=NULL WHERE id=? AND settled_at IS NULL AND status NOT IN ('PAUSED','CANCELLED','WAITING')").bind(left, pool.id).run();
+  if (!claim.meta.changes) return { skipped: true };
+  await roomCall(env, pool.id, '/init', { pool: { ...pool, status: 'PAUSED' } }).catch(() => {});   // taps stop now
+  const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(pool.id).all()).results.map(r => r.user_id);
+  for (const u of players) await notify(env, u, `Server problem: “${pool.name}” is paused. Your score and money are safe. When we’re back, you’ll vote to continue the match or restart it.`, `/pool/${pool.id}`);
+  return { paused: true, players: players.length };
+}
+export async function openVotes(env, hours = 1) {
+  const until = iso(Date.now() + Math.max(0.05, Math.min(24, hours)) * 3600000);
+  const pools = (await env.DB.prepare("SELECT * FROM pools WHERE status='PAUSED' AND pause_mode='VOTE' AND vote_until IS NULL LIMIT 300").all()).results;
+  let n = 0;
+  for (const p of pools) {
+    const r = await env.DB.prepare("UPDATE pools SET vote_until=? WHERE id=? AND status='PAUSED' AND pause_mode='VOTE' AND vote_until IS NULL").bind(until, p.id).run();
+    if (!r.meta.changes) continue;
+    n++;
+    const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(p.id).all()).results.map(r => r.user_id);
+    for (const u of players) await notify(env, u, `We’re back! Vote now: continue “${p.name}” from where it stopped, or restart it (your boosters come back)?`, `/pool/${p.id}`);
+  }
+  return { opened: n, until };
+}
+export async function castVote(env, user, pool, choice) {
+  if (pool.status !== 'PAUSED' || pool.pause_mode !== 'VOTE' || !pool.vote_until || Date.parse(pool.vote_until) <= Date.now()) return json({ error: 'There is no vote open for this pool.' }, 409);
+  if (!pool.joined) return json({ error: 'Only players in this pool can vote.' }, 403);
+  const c = choice === 'RESTART' ? 'RESTART' : choice === 'CONTINUE' ? 'CONTINUE' : null;
+  if (!c) return json({ error: 'Pick continue or restart.' }, 400);
+  await env.DB.prepare('INSERT INTO pool_votes(pool_id,user_id,choice) VALUES(?,?,?) ON CONFLICT(pool_id,user_id) DO UPDATE SET choice=excluded.choice, created_at=CURRENT_TIMESTAMP').bind(pool.id, user.id, c).run();
+  return json({ message: c === 'CONTINUE' ? 'You voted to continue.' : 'You voted to restart.', reload: true });
+}
+export async function voteCounts(env, poolId) {
+  const rows = (await env.DB.prepare('SELECT choice, COUNT(*) n FROM pool_votes WHERE pool_id=? GROUP BY choice').bind(poolId).all()).results;
+  const o = { CONTINUE: 0, RESTART: 0 }; for (const r of rows) o[r.choice] = Number(r.n);
+  return o;
+}
+export async function closeVotes(env) {
+  const s = await settings(env);
+  const pct = clampInt(num(s, 'vote_continue_pct', 50), 1, 100, 50);
+  const pools = (await env.DB.prepare("SELECT * FROM pools WHERE status='PAUSED' AND pause_mode='VOTE' AND vote_until IS NOT NULL AND vote_until<=? LIMIT 25").bind(nowIso()).all()).results;
+  let done = 0;
+  for (const p of pools) {
+    const v = await voteCounts(env, p.id), total = v.CONTINUE + v.RESTART;
+    const keep = !total || v.CONTINUE * 100 >= pct * total;
+    const start = Date.now() + (keep ? 30000 : 120000);
+    const dur = keep ? Math.max(MIN_POOL_SECONDS * 1000, Number(p.paused_left_ms) || MIN_POOL_SECONDS * 1000) : Math.max(MIN_POOL_SECONDS * 1000, (Number(p.duration_seconds) || (Date.parse(p.ends_at) - Date.parse(p.starts_at)) / 1000) * 1000);
+    const next = { ...p, status: 'SCHEDULED', starts_at: iso(start), ends_at: iso(start + dur), pause_mode: null, vote_until: null, paused_left_ms: null };
+    const claim = await env.DB.prepare("UPDATE pools SET status='SCHEDULED', starts_at=?, ends_at=?, pause_mode=NULL, vote_until=NULL, paused_left_ms=NULL WHERE id=? AND status='PAUSED' AND pause_mode='VOTE' AND vote_until=?").bind(next.starts_at, next.ends_at, p.id, p.vote_until).run();
+    if (!claim.meta.changes) continue;
+    done++;
+    if (!keep) {   // restart: give back the boosters used, wipe the scores, put everybody back in the room
+      const used = (await roomCall(env, p.id, '/used').catch(() => ({ data: { players: [] } }))).data.players || [];
+      for (const u of used) for (const [item, n] of Object.entries(u.used || {})) if (n > 0) await giveItem(env, u.uid, item, n, { gift: true, note: 'Match restarted' });
+      await roomCall(env, p.id, '/reset').catch(() => {});
+      await initRoom(env, next);
+      const entries = (await env.DB.prepare('SELECT e.user_id, e.side_choice, u.username, u.tier, u.tier_until, u.role, u.emoji FROM pool_entries e JOIN users u ON u.id=e.user_id WHERE e.pool_id=?').bind(p.id).all()).results;
+      for (const e of entries) await roomCall(env, p.id, '/join', { uid: e.user_id, name: e.username, tier: tierOf(e), side: e.side_choice, emoji: e.emoji || null });
+    } else await initRoom(env, next);
+    await env.DB.prepare('DELETE FROM pool_votes WHERE pool_id=?').bind(p.id).run();
+    const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(p.id).all()).results.map(r => r.user_id);
+    const msg = keep ? `The vote is in: “${p.name}” continues from where it stopped in 30 seconds. Get ready!` : `The vote is in: “${p.name}” restarts from zero in 2 minutes. The boosters you used are back in your bag.`;
+    for (const u of players) await notify(env, u, msg, `/play?pools=${p.id}`);
+  }
+  return done;
 }
