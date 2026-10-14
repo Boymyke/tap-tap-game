@@ -1,5 +1,5 @@
 // Me, settings, booster calculator, notifications, top tappers, ranks, suggest a pool.
-import { appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, tierBadge, field, select, check, form, postBtn, upgradeAttrs, icon, nameTag, copyRow, pager } from './kit.js';
+import { tapoffButton, appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, tierBadge, field, select, check, form, postBtn, upgradeAttrs, icon, nameTag, copyRow, pager } from './kit.js';
 import { ICONS } from './theme.js';
 import { rankAvatar, avatarSvg, avatarFor, badgeSvg, RANK_LOOKS, STICKERS } from './avatar.js';
 import { THEMES, SOUNDS, backgroundCss } from '../tiers.js';
@@ -337,7 +337,7 @@ export function profilePage(ctx) {
   </div>
 </div>
 ${badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
-${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div><div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start"></div>` : user?.role === 'USER' ? `<div class="actions"><a class="btn btn--gold" href="/challenges?to=${encodeURIComponent(p.username)}">🥊 Challenge ${esc(p.username)} to a tap-off</a></div>` : ''}`;
+${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div><div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start"></div>` : user?.role === 'USER' ? `<div class="actions">${tapoffButton(ctx.tapoffsOn, 'btn--gold', `/challenges?to=${encodeURIComponent(p.username)}`, `🥊 Challenge ${esc(p.username)} to a tap-off`)}</div>` : ''}`;
   const css = ME_CSS + `.pstats{display:grid;gap:10px;margin-top:14px}
 .pstats>*{margin:0}.pstats .grid>*{margin:0}
 .pline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px}

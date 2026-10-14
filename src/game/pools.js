@@ -1,6 +1,7 @@
 // Pool creation, joining and listing — shared by players (Mapo/Nepo), sponsors and the super admin.
 import { uid, nowIso, json, allow, logError, likeEsc } from '../lib.js';
 import { isPattern } from '../ui/patterns.js';
+import { adLeadMs, runningAdminAd, NO_AD } from './ads.js';
 import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, giveItem, notify, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -129,7 +130,7 @@ export async function createPool(env, user, d) {
     // Until it fills, the start time is the deadline: the cron cancels and refunds it if nobody fills it by then.
     start = now + clampInt(num(s, 'instant_wait_hours', 24), 1, 168, 24) * 3600000;
   }
-  const end = start + dur * 1000;
+  let end = start + dur * 1000;
   if (!admin && d.ack !== true) return json({ error: 'Tick the box to confirm you understand the pool can’t be deleted.', field: 'ack' }, 400);
 
   let kind = String(d.kind || 'FREE').toUpperCase();
@@ -168,14 +169,19 @@ export async function createPool(env, user, d) {
     if (player && !user.adult_confirmed_at) { if (d.adult !== true) return adultError(); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
   }
 
-  // Sponsors: pool with or without their ad. "With ad" needs one of their approved ads.
-  let promoId = null;
+  // Ads: sponsors pick one of their own approved ads per pool (or none). The super admin's pools show
+  // Tap Am's running ad unless the admin picks a specific ad or "No ad". Players' pools never show ads.
+  let promoId = null, adSecs = 0;
   if ((sponsor || admin) && d.with_ad === 'YES') {
-    const ad = await env.DB.prepare('SELECT id,owner_id,approved,active FROM promos WHERE id=?').bind(String(d.promo_id || '')).first();
+    const ad = await env.DB.prepare('SELECT id,owner_id,approved,active,duration_seconds FROM promos WHERE id=?').bind(String(d.promo_id || '')).first();
     if (!ad || (!admin && ad.owner_id !== user.id)) return json({ error: 'Pick one of your ads, or create an ad first.', field: 'promo_id', redirect: sponsor ? '/sponsor/ads' : '/admin/ads', go: 'Create an ad' }, 400);
     if (!ad.approved) return json({ error: 'That ad is still waiting for approval. Pick an approved ad or choose “Without ad”.', field: 'promo_id' }, 400);
-    promoId = ad.id;
-  }
+    if (!ad.active) return json({ error: 'That ad is paused. Turn it on first, or pick another ad.', field: 'promo_id' }, 400);
+    promoId = ad.id; adSecs = Number(ad.duration_seconds) || 5;
+  } else if (admin && d.with_ad === 'NO') promoId = NO_AD;
+  else if (admin) adSecs = Number((await runningAdminAd(env))?.duration_seconds) || 0;
+  // "Start now" with an ad: the game starts once the ad has had time to finish.
+  if (mode === 'NOW' && adSecs) { start = now + (adSecs + 5) * 1000; end = start + dur * 1000; }
 
   // Sponsors: Tap Am emails the pool to players who said yes to pool news (paid from the wallet).
   const blastAud = sponsor && ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(d.email_blast) ? d.email_blast : null;
@@ -296,7 +302,8 @@ export async function joinPool(env, user, pool, d) {
   await roomCall(env, pool.id, '/join', { uid: user.id, name: user.username, tier: tierOf(user), side, emoji: user.emoji || null });
   const paidMsg = fee ? ` ${naira(fee)} entry paid.` : '';
   if (pool.status === 'WAITING') {   // instant match: this seat may be the last one
-    if (await startInstantIfFull(env, pool.id)) return json({ message: `You don join!${paidMsg} The pool is full — the match starts in ${INSTANT_LEAD_MS / 1000} seconds!`, redirect: `/play?pools=${pool.id}` });
+    const live = await startInstantIfFull(env, pool.id);
+    if (live) return json({ message: `You don join!${paidMsg} The pool is full — the match starts in ${Math.round(live.lead / 1000)} seconds!`, redirect: `/play?pools=${pool.id}` });
     const left = Math.max(1, Number(pool.max_players) - Number(pool.players) - 1);
     return json({ message: `You don join!${paidMsg} Waiting for ${left} more player${left === 1 ? '' : 's'}.`, redirect: `/pool/${pool.id}` });
   }
@@ -309,7 +316,7 @@ export function poolPublic(p) {
     id: p.id, name: p.name, description: p.description, code: p.hashtag, kind: p.kind, audience: p.audience, startsAt: p.starts_at, endsAt: p.ends_at,
     entryFee: p.entry_fee_kobo, prize: p.prize_kobo, split, splitStyle: p.split_style || 'TOP', tie: p.tie_rule, private: !!p.is_private, players: p.players,
     sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED', pauseMode: p.status === 'PAUSED' ? (p.pause_mode || 'REFUND') : null, voteUntil: p.status === 'PAUSED' ? p.vote_until || null : null, bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
-    houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), promoId: p.promo_id || null, createdBy: p.created_by, creatorRole: p.creator_role || null,
+    houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), promoId: p.promo_id && p.promo_id !== NO_AD ? p.promo_id : null, createdBy: p.created_by, creatorRole: p.creator_role || null,
     joined: !!p.joined, myPrize: Number(p.my_prize || 0), myRank: p.final_rank || null, invited: !!p.invited, instant: !!p.instant, timeTopup: !!p.time_topup, duration: Number(p.duration_seconds) || Math.round((Date.parse(p.ends_at) - Date.parse(p.starts_at)) / 1000), state: poolState(p)
   };
 }
@@ -428,14 +435,15 @@ export async function restartPool(env, pool, minutes = 10) {
 export async function startInstantIfFull(env, poolId) {
   const p = await env.DB.prepare('SELECT * FROM pools WHERE id=?').bind(poolId).first();
   if (!p || p.status !== 'WAITING') return null;
-  const start = Date.now() + INSTANT_LEAD_MS, end = start + Math.max(MIN_POOL_SECONDS, Number(p.duration_seconds) || MIN_POOL_SECONDS) * 1000;
+  const lead = Math.max(INSTANT_LEAD_MS, await adLeadMs(env, p));   // the pre-game ad finishes before the first tap
+  const start = Date.now() + lead, end = start + Math.max(MIN_POOL_SECONDS, Number(p.duration_seconds) || MIN_POOL_SECONDS) * 1000;
   const r = await env.DB.prepare(`UPDATE pools SET status='LIVE', starts_at=?, ends_at=? WHERE id=? AND status='WAITING' AND settled_at IS NULL AND duration_seconds IS ?
     AND (SELECT COUNT(*) FROM pool_entries WHERE pool_id=?) >= max_players`).bind(iso(start), iso(end), p.id, p.duration_seconds, p.id).run();
   if (!r.meta.changes) return null;
-  const live = { ...p, status: 'LIVE', starts_at: iso(start), ends_at: iso(end) };
+  const live = { ...p, status: 'LIVE', starts_at: iso(start), ends_at: iso(end), lead };
   await initRoom(env, live);
   const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(p.id).all()).results.map(x => x.user_id);
-  for (const u of players) await notify(env, u, `“${p.name}” is full — the match starts in ${INSTANT_LEAD_MS / 1000} seconds! Tap now.`, `/play?pools=${p.id}`);
+  for (const u of players) await notify(env, u, `“${p.name}” is full — the match starts in ${Math.round(lead / 1000)} seconds! Tap now.`, `/play?pools=${p.id}`);
   if (p.created_by && !players.includes(p.created_by)) await notify(env, p.created_by, `Your instant match “${p.name}” is full and has started.`, `/pool/${p.id}`);
   return live;
 }

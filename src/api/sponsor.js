@@ -4,6 +4,7 @@ import { requireRole, isNepo, loadUser, notify } from '../core.js';
 import { allow } from '../lib.js';
 
 const YT = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+const PAUSE_ADMIN_ADS = "UPDATE promos SET active=0 WHERE active=1 AND owner_id IN (SELECT id FROM users WHERE role='ADMIN')";
 const safeUrl = u => { try { const x = new URL(u); return ['https:', 'http:'].includes(x.protocol) ? x.href : null; } catch { return null; } };
 const TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
 const MAX_UPLOAD = 3 * 1024 * 1024;
@@ -73,8 +74,14 @@ export async function handleSponsorApi(req, env, path, user) {
       const p = await env.DB.prepare('SELECT created_by FROM pools WHERE id=?').bind(poolId).first();
       if (!p || (user.role !== 'ADMIN' && p.created_by !== user.id)) return json({ error: 'You can only attach ads to your own pools.', field: 'pool_id' }, 403);
     }
-    await env.DB.prepare('INSERT INTO promos(id,title,owner_id,kind,image_url,video_id,target_url,placement,pool_id,approved,duration_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-      .bind(uid(), title, user.id, kind, image, video, target, placement, poolId, user.role === 'ADMIN' ? 1 : 0, duration).run();
+    const ins = env.DB.prepare('INSERT INTO promos(id,title,owner_id,kind,image_url,video_id,target_url,placement,pool_id,approved,duration_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+      .bind(uid(), title, user.id, kind, image, video, target, placement, poolId, user.role === 'ADMIN' ? 1 : 0, duration);
+    // Only one Tap Am ad runs at a time: a new one takes over and the others pause.
+    if (user.role === 'ADMIN') {
+      const [off] = await env.DB.batch([env.DB.prepare(PAUSE_ADMIN_ADS), ins]);
+      return json({ message: `Ad is live and is now the running Tap Am ad${off.meta.changes ? ` (${off.meta.changes} other paused)` : ''}.`, reload: true });
+    }
+    await ins.run();
     if (user.role !== 'ADMIN') { const admins = (await env.DB.prepare("SELECT id FROM users WHERE role='ADMIN'").all()).results; for (const a of admins) await notify(env, a.id, `New ad “${title}” waiting for approval.`, '/admin/ads'); }
     return json({ message: user.role === 'ADMIN' ? 'Ad is live' : 'Ad saved. It goes live once Tap Am approves it.', reload: true });
   }
@@ -97,11 +104,21 @@ export async function handleSponsorApi(req, env, path, user) {
   const pm = path.match(/^\/api\/promos\/([^/]+)\/(toggle|delete)$/);
   if (pm && req.method === 'POST') {
     const deny = requireRole(user, ['SPONSOR', 'ADMIN']); if (deny) return deny;
-    const p = await env.DB.prepare('SELECT owner_id,active FROM promos WHERE id=?').bind(pm[1]).first();
+    const p = await env.DB.prepare('SELECT a.owner_id,a.active,a.title,u.role AS owner_role FROM promos a LEFT JOIN users u ON u.id=a.owner_id WHERE a.id=?').bind(pm[1]).first();
     if (!p || (user.role !== 'ADMIN' && p.owner_id !== user.id)) return json({ error: 'Ad not found.' }, 404);
-    if (pm[2] === 'delete') await env.DB.batch([env.DB.prepare('DELETE FROM promos WHERE id=?').bind(pm[1]), env.DB.prepare('UPDATE pools SET promo_id=NULL WHERE promo_id=?').bind(pm[1]), env.DB.prepare("UPDATE slides SET status='REJECTED' WHERE promo_id=?").bind(pm[1])]);
-    else await env.DB.prepare('UPDATE promos SET active=? WHERE id=?').bind(p.active ? 0 : 1, pm[1]).run();
-    return json({ message: 'Done', reload: true });
+    const theirs = user.role === 'ADMIN' && p.owner_id !== user.id && p.owner_role !== 'ADMIN';   // the admin acting on a sponsor's ad
+    if (pm[2] === 'delete') {
+      await env.DB.batch([env.DB.prepare('DELETE FROM promos WHERE id=?').bind(pm[1]), env.DB.prepare("UPDATE pools SET promo_id=NULL WHERE promo_id=?").bind(pm[1]), env.DB.prepare("UPDATE slides SET status='REJECTED' WHERE promo_id=?").bind(pm[1])]);
+      if (theirs) await notify(env, p.owner_id, `Tap Am removed your ad “${p.title}”.`, '/sponsor/ads');
+      return json({ message: 'Ad deleted', reload: true });
+    }
+    if (!p.active && p.owner_role === 'ADMIN') {   // switching a Tap Am ad on: it becomes the one running ad
+      const [off] = await env.DB.batch([env.DB.prepare(PAUSE_ADMIN_ADS + ' AND id!=?').bind(pm[1]), env.DB.prepare('UPDATE promos SET active=1 WHERE id=?').bind(pm[1])]);
+      return json({ message: `“${p.title}” is now the running Tap Am ad${off.meta.changes ? '. The other one was paused.' : '.'}`, reload: true });
+    }
+    await env.DB.prepare('UPDATE promos SET active=? WHERE id=?').bind(p.active ? 0 : 1, pm[1]).run();
+    if (theirs) await notify(env, p.owner_id, `Tap Am ${p.active ? 'paused' : 'switched back on'} your ad “${p.title}”.`, '/sponsor/ads');
+    return json({ message: p.active ? 'Ad paused' : 'Ad switched on', reload: true });
   }
   return null;
 }

@@ -280,6 +280,14 @@
       payOverlayOff(); TA.toast('Paystack never confirm am yet. Your wallet go update by itself once e land.', 'err', '/wallet', 'Wallet');
     });
   }
+  // Features that aren't open yet (greyed buttons with data-soon) say so instead of doing nothing.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-soon]'); if (!b) return;
+    e.preventDefault();
+    var d = dialog('<div class="dlg-art" style="font-size:64px;line-height:96px">🥊</div><h3></h3><p></p><div class="actions"><button type="button" class="btn btn--green" data-yes>Oya</button></div>', function (ev, close) { if (ev && ev.target.closest('[data-yes]')) close(); });
+    d.querySelector('h3').textContent = (b.getAttribute('data-soon') || 'This') + ' is coming soon';
+    d.querySelector('p').textContent = 'We dey put the final touches. You go see am here the moment e open.';
+  });
   function flash(m) { try { sessionStorage.setItem('ta-flash', m); } catch (e) {} }
   function showFlash() { try { var f = sessionStorage.getItem('ta-flash'); if (f) { sessionStorage.removeItem('ta-flash'); setTimeout(function () { TA.toast(f); }, 60); } } catch (e) {} }
 

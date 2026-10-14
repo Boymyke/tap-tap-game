@@ -14,8 +14,8 @@ const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_ko
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
   'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day', 'email_blast_kobo', 'lapo_pools_per_day', 'transfer_daily_max_kobo', 'free_box_days',
   'mapo_pools_per_day', 'nepo_pools_per_day', 'withdraw_daily_max_kobo', 'topup_seconds_per_step', 'vote_continue_pct', 'vote_hours', 'instant_wait_hours',
-  'voice_on', 'stakes_on', 'signups_paused', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
-const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'signups_paused'];
+  'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
+const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused'];
 // Link settings: only https links on the expected site (empty = hidden).
 const LINK_KEYS = { whatsapp_community: ['chat.whatsapp.com', 'whatsapp.com', 'wa.me'], social_twitter: ['x.com', 'twitter.com'], social_instagram: ['instagram.com'], social_tiktok: ['tiktok.com'] };
 const HEX = /^#[0-9a-fA-F]{6}$/;

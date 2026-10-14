@@ -388,14 +388,22 @@
 
     /* ── ads: when you open the game, in the lobby, and before results. The sponsor picks 5, 10 or 30 seconds;
        a line fills left to right, then the ad can close (and closes by itself a moment later). ── */
-    var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoWait = $('promo-wait'), promoLine = $('promo-line'), promoAfter = null, promoTimer = 0, promoAuto = 0;
-    function closePromo() { if (promoEl.hidden || promoX.disabled) return; promoEl.hidden = true; promoBody.textContent = ''; clearInterval(promoTimer); clearTimeout(promoAuto); var f = promoAfter; promoAfter = null; if (f) f(); }
+    var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoWait = $('promo-wait'), promoLine = $('promo-line'), promoAfter = null, promoTimer = 0, promoAuto = 0, promoStart = 0;
+    function closePromo() { if (promoEl.hidden || promoX.disabled) return; promoEl.hidden = true; promoBody.textContent = ''; clearInterval(promoTimer); clearTimeout(promoAuto); clearInterval(promoStart); var f = promoAfter; promoAfter = null; if (f) f(); }
     promoX.addEventListener('click', closePromo);
     function showPromo(at, then) {
       var key = 'ta-promo-' + at + '-' + focus.id;
       try { if (at !== 'POST' && sessionStorage.getItem(key)) { if (then) then(); return; } sessionStorage.setItem(key, '1'); } catch (e) {}
-      TA.api('/api/promo?at=' + at + '&pool=' + encodeURIComponent(focus.id), undefined, 'GET').then(function (j) {
+      // Before the game the server only sends an ad that can finish before the first tap ("left" = seconds to go).
+      // Players who join a game that has already started (PRE) still get it; nobody else's game stops.
+      var pool = focus, left = Math.floor((pool.starts - now()) / 1000);
+      TA.api('/api/promo?at=' + at + '&pool=' + encodeURIComponent(pool.id) + (at === 'LOBBY' ? '&left=' + left : ''), undefined, 'GET').then(function (j) {
         var p = j && j.promo; if (!p) { if (then) then(); return; }
+        if (at === 'LOBBY' && pool.starts - now() < ((Number(p.duration_seconds) || 5) + 1) * 1000) { if (then) then(); return; }
+        clearInterval(promoStart);
+        // safety net: a lobby ad still open when the game starts closes, so nobody loses tapping time
+        // (checked against the live start time, which moves when an instant match fills)
+        if (at === 'LOBBY') promoStart = setInterval(function () { if (promoEl.hidden) { clearInterval(promoStart); return; } if (now() >= pool.starts - 300) { clearInterval(promoStart); promoX.disabled = false; closePromo(); } }, 250);
         promoBody.textContent = '';
         $('promo-by').textContent = 'Sponsored' + (p.company ? ' · ' + p.company : '');
         var media;

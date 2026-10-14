@@ -1,5 +1,6 @@
 // Player API: pools, taps, boosters, store, inventory, gifts, settings, calculator, ads, leads, account.
 import { isPattern } from '../ui/patterns.js';
+import { poolAd } from '../game/ads.js';
 import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCookie, likeEsc, passwordOk } from '../lib.js';
 import { normWhatsapp } from '../auth-api.js';
 import { tierOf, tierLabel, isNepo, isPaid, requireRole, debit, credit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
@@ -377,10 +378,11 @@ export async function handlePlayApi(req, env, path, user) {
       if (!p || (user.role !== 'ADMIN' && p.owner_id !== user.id)) return json({ promo: null });
       return json({ promo: { ...p, preview: true } });
     }
-    const pinned = (pool ? (await env.DB.prepare('SELECT promo_id FROM pools WHERE id=?').bind(pool).first())?.promo_id : null) ?? null;
-    p = await env.DB.prepare(`SELECT a.id,a.title,a.kind,a.image_url,a.video_id,a.target_url,a.owner_id,a.duration_seconds,COALESCE(sp.company,'Tap Am') AS company,COALESCE(sp.lead_capture,0) AS lead_capture
-      FROM promos a LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id WHERE a.active=1 AND a.approved=1 AND (a.id=? OR a.pool_id=? OR (? IS NULL AND a.pool_id IS NULL))
-      ORDER BY CASE WHEN a.id=? THEN 0 WHEN a.pool_id=? THEN 1 ELSE 2 END, RANDOM() LIMIT 1`).bind(pinned || '', pool, pinned, pinned || '', pool).first();
+    // Only pools made by the super admin or a sponsor show ads (see game/ads.js).
+    p = pool ? await poolAd(env, pool) : null;
+    // Before the game: the ad must finish before the game starts, so skip it when there isn't time.
+    const left = Number(sp.get('left'));
+    if (p && sp.get('at') === 'LOBBY' && Number.isFinite(left) && left < (Number(p.duration_seconds) || 5) + 3) p = null;
     // count a view at most 3 times per player per ad every 10 minutes, so scripts can't inflate sponsor numbers
     if (p && await allow(env, `pv:${user.id}:${p.id}`, 3, 600)) await env.DB.prepare('UPDATE promos SET views=views+1 WHERE id=?').bind(p.id).run();
     if (p && user.role === 'USER') p.lead_done = !!(await env.DB.prepare('SELECT 1 FROM leads WHERE promo_id=? AND user_id=?').bind(p.id, user.id).first());

@@ -17,7 +17,11 @@ const CSS = `
 const len = s => fmtDur(s);
 
 export function challengesPage(ctx) {
-  const { user, wallet, lists, stakesOn, to = '', theme, bgCss } = ctx;
+  const { user, wallet, lists, stakesOn, to = '', theme, bgCss, on = true } = ctx;
+  if (!on) return appPage({ user, title: 'Tap-off', active: '/pools', wallet, theme, bgCss, css: CSS, body: `<h1 class="h1">Tap-off</h1>
+<div class="panel" style="text-align:center;padding:28px 18px"><div style="font-size:56px;line-height:1">🥊</div><h2 style="margin:10px 0 6px;font:900 30px/1 var(--display);color:var(--ink)">Coming soon</h2>
+<p class="muted" style="margin:0 auto 14px;max-width:340px">1-on-1 tap battles against any player are almost here. We go tell you the moment they open.</p><a class="btn btn--green" href="/pools">Play a pool for now</a></div>
+${lists.incoming.length || lists.outgoing.length ? `<p class="sub" style="margin-top:14px">You still have open challenges from before. They can be declined or cancelled (any stake comes back).</p><div class="chal list">${[...lists.incoming.map(c => `<div class="item"><div class="grow"><div class="who">${nameTag(c.from_name, c.from_emoji)} challenged you</div></div><div class="acts">${postBtn(`/api/challenges/${c.id}/decline`, 'Decline', { cls: 'btn--soft btn--sm' })}</div></div>`), ...lists.outgoing.map(c => `<div class="item"><div class="grow"><div class="who">You challenged ${nameTag(c.to_name, c.to_emoji)}</div></div><div class="acts">${postBtn(`/api/challenges/${c.id}/cancel`, 'Cancel', { cls: 'btn--soft btn--sm' })}</div></div>`)].join('')}</div>` : ''}` });
   const { incoming, outgoing, past } = lists;
   const optsLine = c => { const o = [c.time_topup ? 'Players can buy time' : '', c.lapo_rules ? 'Lapo baby rules' : '', c.boosters_allowed === 0 ? 'No boosters' : 'Boosters on'].filter(Boolean); return `<div class="opts">${o.map(x => `<span>${esc(x)}</span>`).join('')}</div>`; };
   const stakeLine = c => (c.stake_kobo ? `<span class="stake">₦ ${esc(naira(c.stake_kobo))} each · winner takes ${esc(naira(c.stake_kobo * 2))}</span>` : '');

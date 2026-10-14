@@ -9,7 +9,7 @@ export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const BRAND = 'Tap Am';
 export const TAGLINE = 'tap ammm make you chop moneyyyy';
 export const FERRN_URL = 'https://www.ferrnagency.com';
-export const ASSET_VERSION = '14';
+export const ASSET_VERSION = '15';
 
 // Tone-on-tone diamond texture for cards (like printed match cards).
 const PATTERN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Cpath d='M0 0l14 14L0 28zM28 0l14 14-14 14zM14 28l14 14-14 14zM42 28l14 14-14 14z'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='.09'%3E%3Cpath d='M28 0L14 14l14 14zM56 0L42 14l14 14zM28 28L14 42l14 14zM56 28L42 42l14 14z'/%3E%3C/g%3E%3C/svg%3E\")";
@@ -143,6 +143,8 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 .netbar-dot{flex:none;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.3);animation:blink 1s infinite}
 .netbar.ok .netbar-dot{background:var(--ink);box-shadow:none;animation:none}
 @keyframes blink{50%{opacity:.35}}
+.btn.is-soon{filter:grayscale(1);opacity:.62;box-shadow:none;cursor:pointer}
+.btn .soon-tag{margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--ink);color:#fff;font:800 11px/1.4 var(--body);letter-spacing:.3px;text-transform:uppercase}
 .payov{position:fixed;inset:0;z-index:130;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 40%,#2a3fae,#150B33 70%);animation:payov-in .2s ease-out}
 .payov[hidden]{display:none}
 .payov-in{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:320px;text-align:center;color:#fff}
