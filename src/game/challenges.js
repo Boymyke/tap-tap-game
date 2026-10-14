@@ -17,8 +17,10 @@ async function needAdult(env, me, data) {
   return null;
 }
 
+const SOON = () => json({ error: 'Tap-offs are coming soon.', code: 'SOON' }, 403);
 export async function createChallenge(env, me, data) {
   const s = await settings(env);
+  if (s.tapoffs_on !== '1') return SOON();
   const to = await env.DB.prepare("SELECT id, username FROM users WHERE username=? AND role='USER' AND status='ACTIVE'").bind(String(data.to || '').trim()).first();
   if (!to) return json({ error: 'No player with that nickname.', field: 'to' }, 404);
   if (to.id === me.id) return json({ error: 'You no fit challenge yourself.', field: 'to' }, 400);
@@ -67,6 +69,7 @@ export async function answerChallenge(env, me, id, action, data) {
     await notify(env, c.from_id, `${c.to_name} declined your tap-off.${c.stake_kobo ? ` Your ${naira(c.stake_kobo)} is back in your wallet.` : ''}`, '/challenges');
     return json({ message: 'Challenge declined.', reload: true });
   }
+  if ((await settings(env)).tapoffs_on !== '1') return SOON();
   // accept: claim it first, then take the stake; if the money isn't there, put the challenge back
   if (c.stake_kobo > 0) {
     const s = await settings(env);

@@ -40,6 +40,7 @@ if (r.status === 409) r = await admin.post('/api/admin/login', { identifier: ADM
 ok(admin.cookie, 'admin session', r.j);
 await admin.post('/api/admin/settings', { stakes_on: false, signups_paused: false, lapo_pools_per_day: 3 });
 
+
 console.log('Sign-up with an email code');
 const anon = new Client('anon');
 r = await anon.post('/api/signup/start', { nickname: 'wa' + tag, email: `wa${tag}@example.com`, password: PW, whatsapp: '123', gender: 'MALE', country: 'NG', agree: true });
@@ -67,6 +68,12 @@ r = await X.post('/api/account/whatsapp', { whatsapp: '0809 999 0000', password:
 r = await X.get('/settings'); ok(r.text.includes('+2348099990000'), 'shown in settings as +234…');
 
 console.log('Tap-offs');
+await admin.post('/api/admin/settings', { tapoffs_on: false });
+r = await X.post('/api/challenges', { to: 'yy_' + tag, duration: '60' }); ok(r.status === 403 && r.j.code === 'SOON', 'while tap-offs are off, challenges say coming soon', r.j);
+r = await X.get('/pools'); ok(r.text.includes('data-soon="Tap-off"') && r.text.includes('is-soon'), 'Tap-off button is greyed with “coming soon”');
+r = await X.get('/challenges'); ok(r.text.includes('Coming soon'), 'Tap-off page says coming soon');
+r = await X.get('/u/yy_' + tag); ok(r.text.includes('data-soon="Tap-off"'), 'profile challenge button is greyed too');
+await admin.post('/api/admin/settings', { tapoffs_on: true });
 r = await X.post('/api/challenges', { to: 'yy_' + tag, duration: '60' }); ok(r.status === 200, 'X challenges Y (no stake)', r.j);
 r = await X.post('/api/challenges', { to: 'yy_' + tag, duration: '60' }); ok(r.status === 409, 'one open challenge per pair', r.j);
 r = await Y.get('/challenges'); ok(r.text.includes('xx' + tag) && r.text.includes('challenged you'), 'Y sees it');

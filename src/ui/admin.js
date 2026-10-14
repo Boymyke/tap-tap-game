@@ -58,6 +58,7 @@ export function adminHome(ctx) {
     <div class="two">${moneyField({ label: 'Nepo min withdrawal', name: 'min_withdraw_nepo_kobo', value: k('min_withdraw_nepo_kobo') })}${field({ label: 'Withdrawals per day', name: 'withdrawals_per_day', type: 'number', value: v('withdrawals_per_day', 1), attrs: 'min="1" max="5"' })}</div>
     <div class="two">${moneyField({ label: 'Sponsor email blast price', name: 'email_blast_kobo', value: k('email_blast_kobo') })}${moneyField({ label: 'Daily money a player can send', name: 'transfer_daily_max_kobo', value: k('transfer_daily_max_kobo') })}</div>
     <div class="two">${moneyField({ label: 'Most a player can withdraw a day', name: 'withdraw_daily_max_kobo', value: k('withdraw_daily_max_kobo') || 1000000 })}${field({ label: 'Free mystery box every (days, about)', name: 'free_box_days', type: 'number', value: v('free_box_days', 3), attrs: 'min="0" max="60"', hint: '0 = no free boxes.' })}</div>
+    ${check({ name: 'tapoffs_on', label: '<b>Tap-offs open</b> (players can challenge each other 1-on-1). While off, the Tap-off buttons show “Coming soon”.', checked: st.tapoffs_on === '1' })}
     ${check({ name: 'stakes_on', label: '<b>Money stakes on tap-offs</b> (players put money on 1-on-1 challenges; Tap Am holds it). Check with your lawyer before switching on.', checked: st.stakes_on === '1' })}</div>
   <div class="sgrp"><h3>Pools</h3>
     <div class="three">${field({ label: 'Pools a Lapo baby can create a day', name: 'lapo_pools_per_day', type: 'number', value: v('lapo_pools_per_day', 3), attrs: 'min="0" max="500"' })}${field({ label: 'Pools a Mapo baby can create a day', name: 'mapo_pools_per_day', type: 'number', value: v('mapo_pools_per_day', 20), attrs: 'min="0" max="500"' })}${field({ label: 'Pools a Nepo baby can create a day', name: 'nepo_pools_per_day', type: 'number', value: v('nepo_pools_per_day', 50), attrs: 'min="0" max="500"' })}</div>
@@ -217,12 +218,17 @@ ${ranks.map(r => `<tr><td><b>${r.level}</b></td><td><span style="display:inline-
 // ── ads + sponsors' lead capture ────────────────────────────────────────────
 export function adminAds(ctx) {
   const { ads, pools, sponsors } = ctx;
-  const waiting = ads.filter(a => !a.approved && !a.reject_reason), rejected = ads.filter(a => !a.approved && a.reject_reason);
-  const body = `<h1 class="h1">Ads</h1><p class="sub">Check every sponsor ad against the ad guidelines. Approve it, or reject it with a reason (the sponsor sees it). You can delete any ad.</p>
-<h2 class="h2" style="margin-top:0">Waiting approval (${waiting.length})</h2>${waiting.length ? adList(waiting, { admin: true }) : '<div class="empty" style="margin-bottom:6px">No ads waiting for approval.</div>'}
-<h2 class="h2">Live ads</h2>${adList(ads.filter(a => a.approved), { admin: true })}
+  const mine = ads.filter(a => a.owner_role === 'ADMIN'), theirs = ads.filter(a => a.owner_role !== 'ADMIN');
+  const waiting = theirs.filter(a => !a.approved && !a.reject_reason), rejected = theirs.filter(a => !a.approved && a.reject_reason);
+  const running = mine.find(a => a.active && a.approved);
+  const body = `<h1 class="h1">Ads</h1><p class="sub">Ads only show in pools made by you or by a sponsor — never in players’ pools. Each ad shows before the game (finishing before the first tap), to players who join late, and before results.</p>
+<h2 class="h2" style="margin-top:0">Your Tap Am ads</h2>
+<div class="note" style="margin-bottom:10px">${running ? `<b>Running now:</b> “${esc(running.title)}”. It shows in every pool you make (unless you pick another ad or “No ad” for that pool).` : '<b>No Tap Am ad is running.</b> Switch one on below — only one runs at a time.'}</div>
+${adList(mine, { admin: true, own: true })}
+<h2 class="h2">Create a Tap Am ad</h2><div class="panel">${adForm([], { admin: true })}</div>
+<h2 class="h2">Sponsor ads waiting approval (${waiting.length})</h2>${waiting.length ? adList(waiting, { admin: true }) : '<div class="empty" style="margin-bottom:6px">No ads waiting for approval.</div>'}
+<h2 class="h2">Sponsor ads</h2><p class="sub">Sponsors pick one of their ads for each pool they make. You can pause or delete any of them (the sponsor is told).</p>${adList(theirs.filter(a => a.approved), { admin: true })}
 ${rejected.length ? `<h2 class="h2">Rejected (${rejected.length})</h2>${adList(rejected, { admin: true })}` : ''}
-<h2 class="h2">Create a Tap Am ad</h2><div class="panel">${adForm(pools)}</div>
 <h2 class="h2">Sponsors · lead capture</h2><p class="sub">When on, that sponsor’s ads show a “send my details” form. Players must tick consent. Leads go only to that sponsor.</p>
 ${sponsors.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Sponsor</th><th>Ads</th><th>Leads</th><th>Lead capture</th></tr></thead><tbody>${sponsors.map(s => `<tr><td><a href="/admin/users/${esc(s.user_id)}">${esc(s.company)}</a></td><td>${s.ads}</td><td>${s.leads}</td><td>${postBtn(`/api/admin/sponsors/${s.user_id}/leads`, s.lead_capture ? 'ON — turn off' : 'OFF — turn on', { body: { on: !s.lead_capture }, cls: s.lead_capture ? 'btn--green btn--sm' : 'btn--soft btn--sm' })}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No sponsors yet.</div>'}`;
   return page(ctx, 'Ads', '/admin/ads', body, { css: AD_CSS, script: AD_JS });

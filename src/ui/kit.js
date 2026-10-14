@@ -293,3 +293,8 @@ export function anyPage({ user, title, body, css = '', script = '', active = '',
   const top = `<header class="bar"><div style="display:flex;align-items:center;gap:8px"><a class="iconbtn" href="/" data-back aria-label="Back">${ICONS.back}</a><a class="ta-logo" style="width:96px" href="/" aria-label="Tap Am home">${LOGO_IMG()}</a></div><div class="bar-right"><a class="btn btn--green btn--sm" href="/signup">Sign up</a><button type="button" class="iconbtn" data-menu-open aria-label="Open menu" aria-controls="menu">${ICONS.menu}</button></div></header>`;
   return themeShell({ title, description, body: `${top}<main class="app-main" id="main" style="padding-bottom:40px">${body}</main>${menuSheet(null)}`, css: KIT_CSS + css, script });
 }
+
+// Tap-off button: a link while tap-offs are open, a greyed "coming soon" button while they're off.
+export const tapoffButton = (on, cls = 'btn--gold', href = '/challenges', label = '🥊 Tap-off') => on
+  ? `<a class="btn ${cls}" href="${esc(href)}">${label}</a>`
+  : `<button type="button" class="btn ${cls} is-soon" data-soon="Tap-off" aria-label="${esc(label.replace(/^\S+\s/, ''))} (coming soon)">${label}<small class="soon-tag">Soon</small></button>`;

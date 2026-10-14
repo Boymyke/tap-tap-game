@@ -403,7 +403,7 @@ async function route(req, env, url, path, user) {
     }
     case '/pools/new': {
       if (user.role === 'USER' && !b.perk?.create) return go(req, '/plans');
-      const ads = user.role === 'SPONSOR' || user.role === 'ADMIN' ? (await env.DB.prepare(user.role === 'ADMIN' ? 'SELECT id,title,approved,active FROM promos WHERE approved=1 ORDER BY created_at DESC LIMIT 100' : 'SELECT id,title,approved,active FROM promos WHERE owner_id=? ORDER BY created_at DESC').bind(...(user.role === 'ADMIN' ? [] : [user.id])).all()).results : [];
+      const ads = user.role === 'SPONSOR' || user.role === 'ADMIN' ? (await env.DB.prepare(user.role === 'ADMIN' ? "SELECT a.id,a.title,a.approved,a.active,CASE WHEN u.role='ADMIN' THEN 'Tap Am' ELSE COALESCE(sp.company,u.username) END AS owner FROM promos a LEFT JOIN users u ON u.id=a.owner_id LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id WHERE a.approved=1 AND a.active=1 ORDER BY a.created_at DESC LIMIT 100" : 'SELECT id,title,approved,active FROM promos WHERE owner_id=? ORDER BY created_at DESC').bind(...(user.role === 'ADMIN' ? [] : [user.id])).all()).results : [];
       let blast = null, lapoLeft = null;
       if (user.role === 'SPONSOR') {   // price + how many players would get the email, per tier
         const now = nowIso();
@@ -487,7 +487,7 @@ async function route(req, env, url, path, user) {
     }
     case '/challenges': {
       if (user.role !== 'USER') return go(req, homeFor(user));
-      return html(challengesPage({ ...b, lists: await challengeLists(env, user), stakesOn: b.s.stakes_on === '1', to: String(q.get('to') || '').slice(0, 24) }));
+      return html(challengesPage({ ...b, lists: await challengeLists(env, user), on: b.s.tapoffs_on === '1', stakesOn: b.s.stakes_on === '1', to: String(q.get('to') || '').slice(0, 24) }));
     }
   }
 
@@ -562,7 +562,8 @@ async function profileRoute(env, url, nick, user) {
     env.DB.prepare("SELECT b.kind,b.period,b.taps,b.amount_kobo,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all()]);
   const ranks = await allRanks(env);
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
-  return html(profilePage({ user, p: { ...p, tierName: tierLabel(p) }, own, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
+  const tapoffsOn = (await settings(env)).tapoffs_on === '1';
+  return html(profilePage({ user, tapoffsOn, p: { ...p, tierName: tierLabel(p) }, own, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
 }
 
 // Public results page for a finished pool (anyone with the link can see it; it's made to be shared).
@@ -665,7 +666,7 @@ async function sponsorRoute(req, env, url, path, user) {
   if (path === '/sponsor/pools') return html(sponsorPools({ ...b, pools }));
   if (path === '/sponsor/ads') {
     const [ads, slides, prof] = await env.DB.batch([
-      env.DB.prepare('SELECT a.*, p.name AS pool_name, (SELECT COUNT(*) FROM leads l WHERE l.promo_id=a.id) AS leads FROM promos a LEFT JOIN pools p ON p.id=a.pool_id WHERE a.owner_id=? ORDER BY a.created_at DESC').bind(user.id),
+      env.DB.prepare('SELECT a.*, p.name AS pool_name, (SELECT COUNT(*) FROM leads l WHERE l.promo_id=a.id) AS leads, (SELECT COUNT(*) FROM pools x WHERE x.promo_id=a.id AND x.ends_at>strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\')) AS in_pools FROM promos a LEFT JOIN pools p ON p.id=a.pool_id WHERE a.owner_id=? ORDER BY a.created_at DESC').bind(user.id),
       env.DB.prepare("SELECT promo_id,status FROM slides WHERE sponsor_id=? AND status IN ('REQUESTED','LIVE','PAUSED')").bind(user.id),
       env.DB.prepare('SELECT lead_capture FROM sponsor_profiles WHERE user_id=?').bind(user.id)]);
     return html(sponsorAds({ ...b, ads: ads.results, pools: pools.filter(p => p.state !== 'ended' && p.state !== 'cancelled'), slides: Object.fromEntries(slides.results.map(s => [s.promo_id, s.status])), leadsOn: !!prof.results[0]?.lead_capture }));
@@ -773,7 +774,7 @@ async function adminRoute(req, env, url, path, user) {
   }
   if (path === '/admin/ads') {
     const [ads, pools, sponsors] = await env.DB.batch([
-      env.DB.prepare('SELECT a.*, COALESCE(sp.company,u.username) AS owner, p.name AS pool_name, (SELECT COUNT(*) FROM leads l WHERE l.promo_id=a.id) AS leads FROM promos a LEFT JOIN users u ON u.id=a.owner_id LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id LEFT JOIN pools p ON p.id=a.pool_id ORDER BY a.approved, a.created_at DESC LIMIT 200'),
+      env.DB.prepare('SELECT a.*, COALESCE(sp.company,u.username) AS owner, u.role AS owner_role, (SELECT COUNT(*) FROM pools x WHERE x.promo_id=a.id AND x.ends_at>strftime(\'%Y-%m-%dT%H:%M:%fZ\',\'now\')) AS in_pools, p.name AS pool_name, (SELECT COUNT(*) FROM leads l WHERE l.promo_id=a.id) AS leads FROM promos a LEFT JOIN users u ON u.id=a.owner_id LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id LEFT JOIN pools p ON p.id=a.pool_id ORDER BY a.approved, a.created_at DESC LIMIT 200'),
       env.DB.prepare("SELECT id,name FROM pools WHERE ends_at>? AND status!='CANCELLED' ORDER BY starts_at LIMIT 100").bind(nowIso()),
       env.DB.prepare('SELECT sp.user_id, sp.company, sp.lead_capture, (SELECT COUNT(*) FROM promos a WHERE a.owner_id=sp.user_id) ads, (SELECT COUNT(*) FROM leads l WHERE l.sponsor_id=sp.user_id) leads FROM sponsor_profiles sp ORDER BY sp.company LIMIT 200')]);
     return html(adminAds({ ...b, ads: ads.results, pools: pools.results, sponsors: sponsors.results }));

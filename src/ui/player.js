@@ -1,5 +1,5 @@
 // Player pages: home, pools list, pool detail (lobby / instructions / results), create pool.
-import { appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag, postBtn, playerPicker, fmtDur, pager } from './kit.js';
+import { tapoffButton, appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag, postBtn, playerPicker, fmtDur, pager } from './kit.js';
 import { ICONS } from './theme.js';
 import { rankAvatar, avatarSvg, avatarFor } from './avatar.js';
 import { PATTERNS, patternBg } from './patterns.js';
@@ -78,7 +78,7 @@ ${count ? `<section class="slides" data-slides aria-roledescription="carousel" a
   <div class="row"><input class="ta-input" name="code" placeholder="Pool code, like TAPX7K2M" autocapitalize="characters" autocomplete="off" maxlength="12" aria-label="Pool code"><button class="btn btn--green" type="submit">Go</button></div>
   <p class="ta-error" data-err="code"></p>
 </form>
-<div class="bigrow">${perk.create ? '<a class="btn btn--white btn--shine bigcreate" href="/pools/new">+ Create a pool</a>' : `<button type="button" class="btn btn--white bigcreate" ${upgradeAttrs('MAPO', 'Creating your own pool')}>${ICONS.lock} Create a pool</button>`}<a class="btn btn--gold bigcreate" href="/challenges">${TAPOFF_ICON} Tap-off</a></div>
+<div class="bigrow">${perk.create ? '<a class="btn btn--white btn--shine bigcreate" href="/pools/new">+ Create a pool</a>' : `<button type="button" class="btn btn--white bigcreate" ${upgradeAttrs('MAPO', 'Creating your own pool')}>${ICONS.lock} Create a pool</button>`}${tapoffButton(ctx.s?.tapoffs_on === '1', 'btn--gold bigcreate')}</div>
 
 ${section('Sponsored pools', sponsored, '/pools?scope=sponsored', 'No sponsored pool right now. Brands dey come!')}
 ${section('Live pools', live, '/pools?scope=live', sponsored.length ? 'No other pool dey live now. The sponsored ones above dey run.' : 'No pool dey live now. Check the ones coming up.')}
@@ -118,7 +118,7 @@ export function poolsPage(ctx) {
   const tabs = [['open', 'Open'], ['live', 'Live'], ['sponsored', 'Sponsored'], ['players-soon', 'From players'], ['mine', 'Joined'], ...(perk?.create ? [['created', 'Created by me']] : []), ['recent', 'Results']];
   const canCreate = sponsor || admin || perk?.create;
   const createBtn = canCreate ? `<a class="btn btn--green btn--sm" href="/pools/new">+ Create a pool</a>` : `<button type="button" class="btn btn--white btn--sm" ${upgradeAttrs('MAPO', 'Creating a pool')}>${ICONS.lock} Create a pool</button>`;
-  const tapoffBtn = user.role === 'USER' ? `<a class="btn btn--gold btn--sm" href="/challenges">${TAPOFF_ICON} Tap-off</a>` : '';
+  const tapoffBtn = user.role === 'USER' ? tapoffButton(ctx.s?.tapoffs_on === '1', 'btn--gold btn--sm') : '';
   const body = `<div class="headrow pools-head"><h1 class="h1">Pools</h1><div class="hbtns">${tapoffBtn}${createBtn}</div></div>
 <form class="psearch" method="get" action="/pools" role="search"><input type="hidden" name="scope" value="${esc(scope)}"><input class="ta-input" type="search" name="q" value="${esc(term)}" placeholder="Search pools by name, code or sponsor" maxlength="40" aria-label="Search pools" autocomplete="off"><button class="btn btn--green btn--sm" type="submit">Search</button></form>
 <nav class="tabs" aria-label="Pool lists">${tabs.map(([k, l]) => `<a href="/pools?scope=${k}${term ? '&q=' + encodeURIComponent(term) : ''}" ${k === scope ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
@@ -360,8 +360,10 @@ export function createPoolPage(ctx) {
     ${choice({ label: 'Let Tap Am email this pool to players?', name: 'email_blast', options: [['NO', 'No'], ['ALL', 'Everybody'], ['LAPO', 'Lapo'], ['MAPO', 'Mapo'], ['NEPO', 'Nepo']], value: 'NO', cls: 'wrap4', tip: 'We email your pool to players who said yes to pool news, the moment it is created. You pay once from your wallet.' })}
     <p class="ta-hint" style="margin:-6px 0 0">Costs <b>${esc(naira(blast.price))}</b> from your wallet. Players who get it now: everybody ${short(blast.counts.ALL)} · Lapo ${short(blast.counts.LAPO)} · Mapo ${short(blast.counts.MAPO)} · Nepo ${short(blast.counts.NEPO)}.</p>
   </div>` : ''}
-  ${sponsor || admin ? `${choice({ label: 'Show your ad in this pool?', name: 'with_ad', options: [['NO', 'Without ad'], ['YES', 'With ad']], value: 'NO', tip: 'With ad: your ad pops up when players open the game, in the lobby and before results.' })}
-  <div class="group" data-show="with_ad=YES">${approved.length ? select({ label: 'Pick your ad', name: 'promo_id', options: approved.map(a => [a.id, a.title]) }) : `<div class="note" style="margin:0">You don’t have an approved ad yet. <a href="${sponsor ? '/sponsor/ads' : '/admin/ads'}"><b>Create an ad first</b></a></div>`}</div>` : ''}
+  ${sponsor || admin ? `${admin
+    ? choice({ label: 'Ad in this pool', name: 'with_ad', options: [['RUNNING', 'Running Tap Am ad'], ['YES', 'Pick an ad'], ['NO', 'No ad']], value: 'RUNNING', tip: 'The running ad is the one Tap Am ad switched on in Admin → Ads. It shows before the game (and finishes before the first tap), to players who join late, and before results.' })
+    : choice({ label: 'Show your ad in this pool?', name: 'with_ad', options: [['NO', 'Without ad'], ['YES', 'With ad']], value: 'NO', tip: 'With ad: your ad shows before the game (it finishes before the first tap), to players who join late, and before results.' })}
+  <div class="group" data-show="with_ad=YES">${approved.length ? select({ label: admin ? 'Pick the ad' : 'Pick your ad', name: 'promo_id', options: approved.map(a => [a.id, a.title + (a.owner ? ' · ' + a.owner : '')]) }) : `<div class="note" style="margin:0">You don’t have an approved ad yet. <a href="${sponsor ? '/sponsor/ads' : '/admin/ads'}"><b>Create an ad first</b></a></div>`}</div>` : ''}
   ${check({ name: 'is_private', label: 'Private pool — Tap Am makes a password you share' })}
   ${check({ name: 'boosters_allowed', label: 'Allow boosters', checked: true })}
   ${admin ? '' : `<div class="note">Once you create a pool, <b>you can’t delete it</b> until it ends. Prize money you put in is locked into the pool.</div>${check({ name: 'ack', label: 'I understand the pool can’t be deleted until it ends.' })}`}
