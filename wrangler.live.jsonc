@@ -32,8 +32,8 @@
   "placement": { "mode": "smart" },
   "durable_objects": { "bindings": [{ "name": "GAME_ROOMS", "class_name": "GameRoom" }, { "name": "TAP_METER", "class_name": "TapMeter" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }, { "tag": "v2", "new_sqlite_classes": ["TapMeter"] }],
-  // Sponsor ad pictures and logos: switch on R2 in the dashboard, create the bucket, then uncomment.
-  // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "tapammm-media" }],
+  // Pictures (sponsor logos, home slides, store pictures) live in R2.
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "tapammm-media" }],
   "d1_databases": [
     {
       "binding": "DB",
