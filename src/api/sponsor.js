@@ -140,17 +140,27 @@ export async function handleSponsorApi(req, env, path, user) {
 const MEDIA_HEADERS = type => ({ 'content-type': type || 'application/octet-stream', 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" });
 export async function serveMedia(env, key) {
   if (!/^u\/\d{4}-\d{2}\/[0-9a-f-]{36}\.(png|jpg|webp|gif)$/.test(key)) return new Response('Not found', { status: 404 });
-  if (env.MEDIA) {
-    const obj = await env.MEDIA.get(key);
-    if (obj) return new Response(obj.body, { headers: MEDIA_HEADERS(obj.httpMetadata?.contentType) });
-  }
-  // pictures kept in the database (no R2): cached at the edge, so the database is read about once per picture
+  // cached at the edge, so storage is read about once per picture per location
   const cache = typeof caches !== 'undefined' ? caches.default : null, ck = new Request('https://media.cache/' + key);
   const hit = cache ? await cache.match(ck).catch(() => null) : null;
   if (hit) return hit;
-  const row = await env.DB.prepare('SELECT content_type, data FROM media WHERE key=? AND data IS NOT NULL').bind(key).first();
-  if (!row) return new Response('Not found', { status: 404 });
-  const res = new Response(new Uint8Array(row.data), { headers: MEDIA_HEADERS(row.content_type) });
+  let res = null;
+  if (env.MEDIA) {
+    const obj = await env.MEDIA.get(key);
+    if (obj) res = new Response(obj.body, { headers: MEDIA_HEADERS(obj.httpMetadata?.contentType) });
+  }
+  if (!res) {   // pictures uploaded before R2 was switched on are in the database: move each one to R2 the first time it is asked for
+    const row = await env.DB.prepare('SELECT content_type, data FROM media WHERE key=? AND data IS NOT NULL').bind(key).first();
+    if (!row) return new Response('Not found', { status: 404 });
+    const bytes = new Uint8Array(row.data);
+    if (env.MEDIA) {
+      try {
+        await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: row.content_type, cacheControl: 'public, max-age=31536000, immutable' } });
+        await env.DB.prepare('UPDATE media SET data=NULL WHERE key=?').bind(key).run();
+      } catch (e) { console.error('move picture to R2', e?.message); }
+    }
+    res = new Response(bytes, { headers: MEDIA_HEADERS(row.content_type) });
+  }
   if (cache) await cache.put(ck, res.clone()).catch(() => {});
   return res;
 }
