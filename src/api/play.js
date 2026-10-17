@@ -151,7 +151,8 @@ export async function handlePlayApi(req, env, path, user) {
     const me = await loadUser(env, user.id);
     // Lapo-rules pools: only the boosters a Lapo baby can use.
     const lock = itemLock(item, pool.lapo_rules ? { ...me, tier: 'LAPO', tier_until: null } : me);
-    if (lock && pool.lapo_rules && lock.need !== 'RANK') return json({ error: `This pool uses Lapo baby rules: ${item.name} is not allowed here.` }, 403);
+    if (pool.lapo_rules && item.audience !== 'ALL' && item.audience !== 'LAPO') return json({ error: 'This match is using Lapo baby rules. Only the boosters every player can use work here.', code: 'LAPO_RULES' }, 403);
+    if (lock && pool.lapo_rules && lock.need !== 'RANK') return json({ error: 'This match is using Lapo baby rules. Only the boosters every player can use work here.', code: 'LAPO_RULES' }, 403);
     if (lock) return lock.need === 'RANK' ? json({ error: lock.why + '. Keep tapping to rank up.', code: 'UPGRADE', need: 'RANK', redirect: '/ranks', go: 'See ranks' }, 403) : upgradeError(`${item.name}: ${lock.why}.`, lock.need || 'MAPO');
     if (!await takeItem(env, user.id, item.id)) return json({ error: `You no get ${item.name} again. Buy more for the store.`, redirect: '/store', go: 'Store' }, 409);
     const r = await roomCall(env, pool.id, '/boost', { uid: user.id, item: item.id, mult: item.multiplier, dur: item.duration_seconds, limit: item.per_game_limit || 0 });

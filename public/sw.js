@@ -1,10 +1,10 @@
 /* Tap Am service worker: makes the app installable, loads fast, and shows a friendly
    offline page when the internet is down. API calls are never cached. */
-const VERSION = 'tapam-v17';
+const VERSION = 'tapam-v18';
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const FONTS = 'tapam-fonts';
-const PRECACHE = ['/offline', '/assets/app.js?v=16', '/assets/game.js?v=16', '/assets/sounds.js?v=16', '/favicon.svg', '/assets/brand/logo-white.svg', '/assets/brand/logo.svg', '/assets/brand/mark.svg', '/assets/brand/mark-white.svg', '/assets/landing/poster-m.webp',
+const PRECACHE = ['/offline', '/assets/app.js?v=17', '/assets/game.js?v=17', '/assets/sounds.js?v=17', '/favicon.svg', '/assets/brand/logo-white.svg', '/assets/brand/logo.svg', '/assets/brand/mark.svg', '/assets/brand/mark-white.svg', '/assets/landing/poster-m.webp',
   '/assets/icons/icon-192.png', '/assets/icons/icon-512.png', '/manifest.webmanifest'];
 const PUBLIC_PAGES = ['/', '/how-to-play', '/rules', '/fair-play', '/prizes', '/account-rules', '/consent', '/merch', '/faq', '/about', '/terms', '/privacy', '/disclaimer', '/login', '/signup', '/plans', '/ranks'];
 
