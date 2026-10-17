@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Tap Am Brand Guidelines</title>
+<style>
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-Regular.ttf);font-weight:400}
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-SemiBold.ttf);font-weight:600}
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-Bold.ttf);font-weight:700}
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-ExtraBold.ttf);font-weight:800}
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-Black.ttf);font-weight:900}
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-ExtraBoldItalic.ttf);font-weight:800;font-style:italic}
+@font-face{font-family:"Barlow Condensed";src:url(./06-fonts/BarlowCondensed-BlackItalic.ttf);font-weight:900;font-style:italic}
+@font-face{font-family:"Barlow";src:url(./06-fonts/Barlow-Regular.ttf);font-weight:400}
+@font-face{font-family:"Barlow";src:url(./06-fonts/Barlow-Medium.ttf);font-weight:500}
+@font-face{font-family:"Barlow";src:url(./06-fonts/Barlow-SemiBold.ttf);font-weight:600}
+@font-face{font-family:"Barlow";src:url(./06-fonts/Barlow-Bold.ttf);font-weight:700}
+@font-face{font-family:"Barlow";src:url(./06-fonts/Barlow-ExtraBold.ttf);font-weight:800}
+@font-face{font-family:"Barlow";src:url(./06-fonts/Barlow-Black.ttf);font-weight:900}
+@page{size:297mm 210mm;margin:0}
+:root{--grape:#6A35FF;--deep:#2A0F8F;--night:#1B0B4D;--green:#00FF6E;--green-d:#00B852;--purple:#AA0FEA;--mark:#006012;--ink:#150B33;--ink2:#2B1C5E;--soft:#5B4E86;--cloud:#F4F0FF;--line:#E6DEFF;--lilac:#E4DAFF;
+  --sunny:#FFD23F;--pink:#FF4FA3;--sky:#2E8BFF;--orange:#FF8A2A;--teal:#21D4C8;--purple2:#9161FF;--danger:#FF4D5E}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff}
+body{font-family:"Barlow",sans-serif;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page{width:297mm;height:210mm;position:relative;overflow:hidden;page-break-after:always;padding:16mm 18mm 14mm;background:#fff}
+.page:last-child{page-break-after:auto}
+.dark{background:linear-gradient(160deg,var(--grape),var(--deep));color:#fff}
+.night{background:var(--night);color:#fff}
+.kick{font:800 11pt/1 "Barlow",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--grape)}
+.dark .kick,.night .kick{color:var(--green)}
+h1{font:900 italic 56pt/.92 "Barlow Condensed",sans-serif;margin:6mm 0 4mm;letter-spacing:-.01em}
+h2{font:900 italic 38pt/.95 "Barlow Condensed",sans-serif;margin:3mm 0 5mm}
+h3{font:800 15pt/1.1 "Barlow Condensed",sans-serif;margin:0 0 2mm;letter-spacing:.01em}
+p{font:500 10.5pt/1.5 "Barlow",sans-serif;margin:0 0 3mm}
+.lede{font:500 13pt/1.45 "Barlow",sans-serif;max-width:150mm}
+.small{font-size:8.5pt;line-height:1.4}
+.muted{color:var(--soft)}.dark .muted,.night .muted{color:var(--lilac)}
+.foot{position:absolute;left:18mm;right:18mm;bottom:8mm;display:flex;justify-content:space-between;font:600 8pt "Barlow",sans-serif;color:var(--soft)}
+.dark .foot,.night .foot{color:var(--lilac)}
+.grid{display:grid;gap:6mm}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
+.tile{border-radius:5mm;padding:6mm;display:flex;align-items:center;justify-content:center;position:relative}
+.tile .cap{position:absolute;left:4mm;bottom:3mm;font:700 7.5pt "Barlow",sans-serif;opacity:.8}
+.chk{background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/6mm 6mm}
+.card{border-radius:5mm;border:1mm solid #fff;box-shadow:0 1.6mm 0 rgba(21,11,51,.28)}
+.sw{border-radius:4mm;overflow:hidden;border:.3mm solid var(--line)}
+.sw .c{height:26mm;display:flex;align-items:flex-end;padding:3mm;font:900 13pt "Barlow Condensed",sans-serif}
+.sw .i{padding:2.5mm 3mm;font:600 7.6pt/1.45 "Barlow",sans-serif;background:#fff;color:var(--ink)}
+.sw .i b{font-weight:800}
+ul.list{margin:0;padding:0;list-style:none;display:grid;gap:2mm}
+ul.list li{font:500 10pt/1.45 "Barlow",sans-serif;padding-left:6mm;position:relative}
+ul.list li::before{content:"";position:absolute;left:0;top:1.6mm;width:2.6mm;height:2.6mm;border-radius:50%;background:var(--green)}
+.dont li::before{background:var(--danger)}
+.pill{display:inline-block;padding:1.2mm 3.5mm;border-radius:99px;font:800 8pt "Barlow",sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.do{background:#DFFBE9;color:#05612F}.donot{background:#FFE1E4;color:#A3122A}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:12mm;padding:0 7mm;border-radius:3.2mm;font:900 14pt "Barlow Condensed",sans-serif;letter-spacing:.02em}
+.bg-green{background:var(--green);color:var(--ink);box-shadow:0 1.3mm 0 var(--green-d)}
+.bg-white{background:#fff;color:var(--ink);box-shadow:0 1.3mm 0 #CFC2FF}
+.bg-gold{background:var(--sunny);color:var(--ink);box-shadow:0 1.3mm 0 #D9A400}
+.phone{width:62mm;border-radius:8mm;border:2.2mm solid #0d0726;overflow:hidden;box-shadow:0 4mm 10mm rgba(10,0,40,.35);background:#000}
+.phone img{display:block;width:100%}
+.num{font:900 italic 64pt/1 "Barlow Condensed",sans-serif;color:var(--green)}
+.toc{display:grid;grid-template-columns:1fr 1fr;gap:2.4mm 14mm;margin-top:8mm}
+.toc div{display:flex;gap:4mm;align-items:baseline;border-bottom:.3mm solid rgba(255,255,255,.18);padding-bottom:2.2mm;font:700 13pt "Barlow",sans-serif}
+.toc span{font:900 italic 18pt "Barlow Condensed",sans-serif;color:var(--green);width:12mm}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:2mm 2.5mm;border-bottom:.3mm solid var(--line);font:500 9pt/1.35 "Barlow",sans-serif;vertical-align:top}
+th{font:800 8pt "Barlow",sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--soft)}
+.quote{font:900 italic 30pt/1 "Barlow Condensed",sans-serif}
+.note{background:var(--cloud);border-radius:4mm;padding:4mm 5mm;font:500 9pt/1.45 "Barlow",sans-serif}
+.dark .note{background:rgba(255,255,255,.1);color:#fff}
+</style></head><body>
+
+<!-- 1 COVER -->
+<section class="page dark" style="padding:0">
+  <div style="position:absolute;inset:0;background:url(./08-patterns/overlay/waves.svg) 0 0/24mm 24mm;opacity:.55"></div>
+  <img src="./01-logo/svg/logo-reverse-white-purple.svg" style="position:absolute;left:18mm;top:58mm;width:150mm">
+  <div style="position:absolute;left:18mm;top:104mm">
+    <div class="quote" style="font-size:40pt;color:#fff">Brand guidelines</div>
+    <p class="lede" style="color:var(--lilac);margin-top:3mm">How Tap Am looks, sounds and shows up — for the team, designers, sponsors and partners.</p>
+  </div>
+  <img src="./03-app-icon/png/app-icon-1024.png" style="position:absolute;right:22mm;top:30mm;width:62mm;border-radius:11mm;box-shadow:0 5mm 0 rgba(0,0,0,.25)">
+  <img src="./07-characters/rank-characters/png/20-tap-am-legend.png" style="position:absolute;right:58mm;bottom:22mm;width:44mm">
+  <img src="./07-characters/badges/png/top-winner-year.png" style="position:absolute;right:22mm;bottom:26mm;width:30mm">
+  <div class="foot" style="color:var(--lilac)"><span>Version 1.0 · October 2026</span><span>www.tapammm.live · Built by Ferrn Agency</span></div>
+</section>
+
+<!-- 2 CONTENTS -->
+<section class="page night">
+  <div class="kick">Inside</div><h2>Contents</h2>
+  <div class="toc">
+    <div><span>01</span>Who we are</div><div><span>08</span>Typography</div>
+    <div><span>02</span>The logo</div><div><span>09</span>Shapes, cards &amp; buttons</div>
+    <div><span>03</span>Logo versions</div><div><span>10</span>Characters, badges &amp; stickers</div>
+    <div><span>04</span>Space, size &amp; misuse</div><div><span>11</span>Patterns</div>
+    <div><span>05</span>The finger mark &amp; app icon</div><div><span>12</span>Voice &amp; tone</div>
+    <div><span>06</span>Core colours</div><div><span>13</span>Brand in use</div>
+    <div><span>07</span>Accent colours &amp; backgrounds</div><div><span>14</span>Asset kit &amp; contacts</div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>02</span></div>
+</section>
+
+<!-- 3 WHO WE ARE -->
+<section class="page">
+  <div class="kick">01 · Who we are</div><h2>Tap fast. Win am.</h2>
+  <div class="grid g2" style="gap:12mm">
+    <div>
+      <p class="lede">Tap Am is a live tapping game for Nigeria. Players join pools, tap as fast as they can against the clock and other players, climb 100 ranks and win prizes. It is loud, quick and proudly Naija.</p>
+      <p>The brand should feel like a game show on your phone: bold colour, chunky shapes, big italic type, a cheeky Pidgin voice — and total clarity whenever money is involved.</p>
+      <h3 style="margin-top:6mm">Personality</h3>
+      <div class="grid g2" style="gap:3mm">
+        <div class="note"><b>Playful</b><br>Banter, emojis in moderation, Pidgin jokes. Never mean.</div>
+        <div class="note"><b>Fast</b><br>Short words, big buttons, one idea per screen.</div>
+        <div class="note"><b>Proudly Naija</b><br>Lagos slang, local food, local names, ₦ everywhere.</div>
+        <div class="note"><b>Straight about money</b><br>Clear fees, clear rules, no promises of income.</div>
+      </div>
+    </div>
+    <div>
+      <div class="tile dark" style="height:72mm;border-radius:6mm;flex-direction:column;gap:4mm">
+        <div class="kick">Tagline</div>
+        <div class="quote" style="color:#fff;text-align:center">Tap ammm make you<br>chop moneyyyy</div>
+      </div>
+      <p class="small muted" style="margin-top:4mm">The tagline is written the way it is said — stretched letters and all. On the landing page it appears as “tap ammm make you chop moneyyyy”; the share image uses “Tap amm make you chop big moneyyy”. <b>Pick one spelling and use it everywhere</b> (we recommend the landing-page one).</p>
+      <div class="note" style="margin-top:3mm"><b>Important:</b> the tagline is a joke, not a promise. Our Terms say slogans are not promises of income or prizes. Never use it next to claims like “guaranteed”, “easy money” or “earn daily”.</div>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>03</span></div>
+</section>
+
+<!-- 4 THE LOGO -->
+<section class="page">
+  <div class="kick">02 · The logo</div><h2>Our wordmark</h2>
+  <div class="grid" style="grid-template-columns:1.6fr 1fr;gap:10mm">
+    <div>
+      <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:62mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:150mm"></div>
+      <div class="tile dark" style="height:62mm;margin-top:5mm"><img src="./01-logo/svg/logo-reverse-white-purple.svg" style="width:150mm"></div>
+    </div>
+    <div>
+      <p class="lede">“TAP” in heavy italic, “AM” knocked out of a rounded box. The slant is motion — a finger mid-tap.</p>
+      <ul class="list">
+        <li><b>Primary (light backgrounds):</b> black TAP, Logo Purple <b>#AA0FEA</b> box, white AM.</li>
+        <li><b>Reverse (dark backgrounds):</b> white TAP, purple box, white AM. This is the version in the app header.</li>
+        <li>The logo is drawn as shapes, not typed. Always use the files in the kit — never retype it in a font.</li>
+        <li>Say it “Tap Am”. Write it <b>Tap Am</b> in sentences (capital T, capital A, one space).</li>
+      </ul>
+      <p class="small muted" style="margin-top:4mm">Files: 01-logo/svg/logo-primary-purple.svg, logo-reverse-white-purple.svg (PNG at 600, 1200 and 2400 px wide in 01-logo/png).</p>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>04</span></div>
+</section>
+
+<!-- 5 LOGO VERSIONS -->
+<section class="page">
+  <div class="kick">03 · Logo versions</div><h2>Three boxes, one rule</h2>
+  <p class="lede" style="max-width:220mm;margin-bottom:6mm">Purple is the default. The green and blue boxes exist for sponsor co-branding and backgrounds where purple clashes. Use one version per piece.</p>
+  <div class="grid g3" style="gap:5mm">
+    <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:36mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:72mm"><span class="cap">Primary · purple</span></div>
+    <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:36mm"><img src="./01-logo/svg/logo-primary-green.svg" style="width:72mm"><span class="cap">Primary · green box</span></div>
+    <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:36mm"><img src="./01-logo/svg/logo-primary-blue.svg" style="width:72mm"><span class="cap">Primary · blue box</span></div>
+    <div class="tile dark" style="height:36mm"><img src="./01-logo/svg/logo-reverse-white-purple.svg" style="width:72mm"><span class="cap">Reverse · purple</span></div>
+    <div class="tile" style="background:var(--night);height:36mm;color:#fff"><img src="./01-logo/svg/logo-reverse-white-green.svg" style="width:72mm"><span class="cap">Reverse · green box</span></div>
+    <div class="tile" style="background:#0B2A8F;height:36mm;color:#fff"><img src="./01-logo/svg/logo-reverse-white-blue.svg" style="width:72mm"><span class="cap">Reverse · blue box</span></div>
+    <div class="tile" style="background:#3a3a3a;height:36mm;color:#fff"><img src="./01-logo/svg/logo-mono-white.svg" style="width:72mm"><span class="cap">One colour · white (photos, embossing)</span></div>
+    <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:36mm"><img src="./01-logo/svg/logo-mono-black.svg" style="width:72mm"><span class="cap">One colour · black (fax, stamps, 1-colour print)</span></div>
+    <div class="note" style="display:flex;flex-direction:column;justify-content:center"><b>Which one?</b>Light background → primary. Dark or photo → reverse. Only one ink available → one colour.</div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>05</span></div>
+</section>
+
+<!-- 6 SPACE SIZE MISUSE -->
+<section class="page">
+  <div class="kick">04 · Space, size &amp; misuse</div><h2>Give it room</h2>
+  <div class="grid" style="grid-template-columns:1.1fr 1fr;gap:10mm;grid-template-rows:auto">
+    <div>
+      <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:70mm;padding:0">
+        <div style="position:relative;padding:11mm;border:.4mm dashed var(--grape);border-radius:2mm">
+          <img src="./01-logo/svg/logo-primary-purple.svg" style="width:110mm;display:block">
+          <div style="position:absolute;left:0;top:0;width:11mm;height:11mm;background:rgba(106,53,255,.18);display:flex;align-items:center;justify-content:center;font:900 10pt 'Barlow Condensed'">X</div>
+          <div style="position:absolute;right:0;bottom:0;width:11mm;height:11mm;background:rgba(106,53,255,.18);display:flex;align-items:center;justify-content:center;font:900 10pt 'Barlow Condensed'">X</div>
+        </div>
+      </div>
+      <p class="small" style="margin-top:3mm"><b>Clear space:</b> keep empty space on every side at least <b>X = half the height of the AM box</b>. Nothing else — text, edges, other logos — goes inside it.</p>
+      <div class="grid g2" style="gap:4mm;margin-top:4mm">
+        <div class="note"><b>Smallest on screen</b><br>96 px wide (logo) · 24 px (finger mark)</div>
+        <div class="note"><b>Smallest in print</b><br>25 mm wide (logo) · 7 mm (finger mark)</div>
+      </div>
+    </div>
+    <div>
+      <span class="pill donot">Don’t</span>
+      <div class="grid g2" style="gap:4mm;margin-top:3mm;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:28mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:44mm;transform:scaleX(1.35)"><span class="cap">Stretch or squash it</span></div>
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:28mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:44mm;filter:hue-rotate(140deg)"><span class="cap">Recolour the box</span></div>
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:28mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:44mm;transform:rotate(-12deg)"><span class="cap">Rotate it</span></div>
+        <div class="tile" style="background:#FF8A2A;height:28mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:44mm"><span class="cap" style="color:#fff">Black logo on busy colour</span></div>
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:28mm"><img src="./01-logo/svg/logo-primary-purple.svg" style="width:44mm;filter:drop-shadow(1.5mm 1.5mm 1mm rgba(0,0,0,.6))"><span class="cap">Add shadows or effects</span></div>
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:28mm"><span style="font:700 18pt Arial">Tap Am</span><span class="cap">Retype it in another font</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>06</span></div>
+</section>
+
+<!-- 7 MARK & ICON -->
+<section class="page">
+  <div class="kick">05 · The finger mark &amp; app icon</div><h2>One finger, ready to tap</h2>
+  <div class="grid" style="grid-template-columns:1fr 1.3fr;gap:12mm">
+    <div>
+      <p class="lede">The finger is our shortcut — app icon, favicon, stickers, loading spots and anywhere the full logo won’t fit.</p>
+      <ul class="list">
+        <li>App icon: white finger on Mark Green <b>#006012</b>, rounded square. Never redraw it.</li>
+        <li>On its own, the finger can be Mark Green, Tap Green, Ink or white.</li>
+        <li>Don’t put the finger next to the full logo — they’re alternatives, not partners.</li>
+      </ul>
+      <p class="small muted" style="margin-top:4mm">Files: 02-mark (SVG + PNG), 03-app-icon (favicons 16–48 px, 192/512 icons, maskable icons, Apple touch icon, 96 px notification badge, 1024 px master).</p>
+    </div>
+    <div>
+      <div class="grid g4" style="gap:4mm">
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:34mm"><img src="./02-mark/svg/mark-green.svg" style="height:22mm"></div>
+        <div class="tile" style="background:var(--ink);height:34mm"><img src="./02-mark/svg/mark-bright-green.svg" style="height:22mm"></div>
+        <div class="tile" style="background:#fff;border:.3mm solid var(--line);height:34mm"><img src="./02-mark/svg/mark-ink.svg" style="height:22mm"></div>
+        <div class="tile dark" style="height:34mm"><img src="./02-mark/svg/mark-white.svg" style="height:22mm"></div>
+      </div>
+      <div style="display:flex;gap:7mm;align-items:flex-end;margin-top:7mm">
+        <img src="./03-app-icon/png/app-icon-1024.png" style="width:44mm;border-radius:8mm">
+        <img src="./03-app-icon/png/icon-192.png" style="width:24mm;border-radius:5mm">
+        <img src="./03-app-icon/png/favicon-48.png" style="width:12mm;border-radius:2mm">
+        <img src="./03-app-icon/png/favicon-32.png" style="width:8mm">
+        <div class="small muted" style="margin-left:2mm">1024 · 192 · 48 · 32 px</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>07</span></div>
+</section>
+
+<!-- 8 CORE COLOURS -->
+<section class="page">
+  <div class="kick">06 · Core colours</div><h2>Grape, green &amp; ink</h2>
+  <div class="grid g5" style="gap:4mm">
+    <div class="sw"><div class="c" style="background:#6A35FF;color:#fff">Grape</div><div class="i"><b>#6A35FF</b><br>RGB 106 53 255<br>CMYK 58 79 0 0<br>Main background (top)</div></div>
+    <div class="sw"><div class="c" style="background:#2A0F8F;color:#fff">Grape Deep</div><div class="i"><b>#2A0F8F</b><br>RGB 42 15 143<br>CMYK 71 90 0 44<br>Main background (bottom)</div></div>
+    <div class="sw"><div class="c" style="background:#1B0B4D;color:#fff">Night</div><div class="i"><b>#1B0B4D</b><br>RGB 27 11 77<br>CMYK 65 86 0 70<br>Deepest background</div></div>
+    <div class="sw"><div class="c" style="background:#00FF6E;color:#150B33">Tap Green</div><div class="i"><b>#00FF6E</b><br>RGB 0 255 110<br>CMYK 100 0 57 0<br>Main buttons, money won</div></div>
+    <div class="sw"><div class="c" style="background:#AA0FEA;color:#fff">Logo Purple</div><div class="i"><b>#AA0FEA</b><br>RGB 170 15 234<br>CMYK 27 94 0 8<br>The AM box only</div></div>
+    <div class="sw"><div class="c" style="background:#006012;color:#fff">Mark Green</div><div class="i"><b>#006012</b><br>RGB 0 96 18<br>CMYK 100 0 81 62<br>App icon tile</div></div>
+    <div class="sw"><div class="c" style="background:#150B33;color:#fff">Ink</div><div class="i"><b>#150B33</b><br>RGB 21 11 51<br>CMYK 59 78 0 80<br>Text on light, outlines</div></div>
+    <div class="sw"><div class="c" style="background:#5B4E86;color:#fff">Ink Soft</div><div class="i"><b>#5B4E86</b><br>RGB 91 78 134<br>CMYK 32 42 0 47<br>Secondary text on light</div></div>
+    <div class="sw"><div class="c" style="background:#F4F0FF;color:#150B33">Cloud</div><div class="i"><b>#F4F0FF</b><br>RGB 244 240 255<br>CMYK 4 6 0 0<br>Inputs, soft panels</div></div>
+    <div class="sw"><div class="c" style="background:#fff;color:#150B33">Paper</div><div class="i"><b>#FFFFFF</b><br>RGB 255 255 255<br>Cards, panels</div></div>
+  </div>
+  <div class="grid" style="grid-template-columns:2fr 1fr;gap:8mm;margin-top:6mm">
+    <div class="note"><b>Balance:</b> about 60% Grape gradient, 25% white cards and panels, 10% Tap Green for actions and wins, 5% accents. Tap Green is precious — use it for the one thing you want people to press or celebrate.</div>
+    <div class="note"><b>Print:</b> CMYK values are screen conversions. Tap Green and Grape are brighter on screen than ink allows — ask the printer for a proof.</div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>08</span></div>
+</section>
+
+<!-- 9 ACCENTS -->
+<section class="page">
+  <div class="kick">07 · Accent colours &amp; backgrounds</div><h2>Sweet-sweet colours</h2>
+  <p class="lede" style="max-width:230mm">Accents colour cards, badges, characters and tier labels. Each comes with a darker “shadow” used for the chunky bottom edge of cards and buttons.</p>
+  <div class="grid" style="grid-template-columns:repeat(7,1fr);gap:4mm;margin-top:4mm">
+    <div class="sw"><div class="c" style="background:#FFD23F;color:#150B33;box-shadow:inset 0 -3mm 0 #D9A400">Sunny</div><div class="i"><b>#FFD23F</b><br>shadow #D9A400</div></div>
+    <div class="sw"><div class="c" style="background:#FF4FA3;color:#fff;box-shadow:inset 0 -3mm 0 #C42A78">Pink</div><div class="i"><b>#FF4FA3</b><br>shadow #C42A78</div></div>
+    <div class="sw"><div class="c" style="background:#2E8BFF;color:#fff;box-shadow:inset 0 -3mm 0 #1A5FC2">Sky</div><div class="i"><b>#2E8BFF</b><br>shadow #1A5FC2</div></div>
+    <div class="sw"><div class="c" style="background:#FF8A2A;color:#fff;box-shadow:inset 0 -3mm 0 #C95F10">Orange</div><div class="i"><b>#FF8A2A</b><br>shadow #C95F10</div></div>
+    <div class="sw"><div class="c" style="background:#21D4C8;color:#fff;box-shadow:inset 0 -3mm 0 #0F9A91">Teal</div><div class="i"><b>#21D4C8</b><br>shadow #0F9A91</div></div>
+    <div class="sw"><div class="c" style="background:#9161FF;color:#fff;box-shadow:inset 0 -3mm 0 #5E30D6">Purple</div><div class="i"><b>#9161FF</b><br>shadow #5E30D6</div></div>
+    <div class="sw"><div class="c" style="background:#FF4D5E;color:#fff;box-shadow:inset 0 -3mm 0 #C21F33">Danger</div><div class="i"><b>#FF4D5E</b><br>errors &amp; delete only</div></div>
+  </div>
+  <div class="grid g2" style="gap:8mm;margin-top:7mm">
+    <div>
+      <h3>The signature background</h3>
+      <div style="height:34mm;border-radius:5mm;background:linear-gradient(160deg,#6A35FF,#2A0F8F);display:flex;align-items:center;justify-content:center;color:#fff;font:800 11pt Barlow">linear-gradient(160°, #6A35FF → #2A0F8F)</div>
+    </div>
+    <div>
+      <h3>Tier colours</h3>
+      <div style="display:flex;gap:3mm">
+        <div class="tile" style="flex:1;height:34mm;background:#9161FF;color:#fff;flex-direction:column"><b style="font:900 italic 20pt 'Barlow Condensed'">Lapo</b><span class="small">free</span></div>
+        <div class="tile" style="flex:1;height:34mm;background:#21D4C8;color:#fff;flex-direction:column"><b style="font:900 italic 20pt 'Barlow Condensed'">Mapo</b><span class="small">paid</span></div>
+        <div class="tile" style="flex:1;height:34mm;background:#FF4FA3;color:#fff;flex-direction:column"><b style="font:900 italic 20pt 'Barlow Condensed'">Nepo</b><span class="small">top tier</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="small muted" style="margin-top:4mm">Nepo players can choose other backgrounds (Ocean, Lagoon, Jungle, Sunset, Bubblegum, Gold, Cocoa, Crimson, Midnight). Their values are in 05-colours/colours.json. Marketing always uses Grape.</p>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>09</span></div>
+</section>
+
+<!-- 10 TYPE -->
+<section class="page">
+  <div class="kick">08 · Typography</div><h2>Barlow, loud and clear</h2>
+  <div class="grid g2" style="gap:12mm">
+    <div>
+      <div class="muted small">Display · headlines, numbers, buttons</div>
+      <div style="font:900 italic 52pt/.9 'Barlow Condensed'">Barlow Condensed</div>
+      <div style="font:900 italic 22pt/1.1 'Barlow Condensed';margin-top:3mm">ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>abcdefghijklmnopqrstuvwxyz 0123456789 ₦</div>
+      <p class="small" style="margin-top:3mm">Use <b>Black Italic (900)</b> or <b>ExtraBold Italic (800)</b> for headlines and big numbers; <b>Black (900)</b> upright for buttons; <b>Bold (700)</b> for small labels. Set tight: line height 0.9–1.05.</p>
+    </div>
+    <div>
+      <div class="muted small">Body · everything people read</div>
+      <div style="font:700 46pt/1 'Barlow'">Barlow</div>
+      <div style="font:500 13pt/1.5 'Barlow';margin-top:3mm">ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ₦</div>
+      <p class="small" style="margin-top:3mm"><b>Medium (500)</b> or <b>SemiBold (600)</b> for body text; <b>Bold/ExtraBold</b> for emphasis and small caps labels. Line height 1.4–1.5. Never go under 13 px on screen.</p>
+    </div>
+  </div>
+  <table style="margin-top:3mm">
+    <tr><th>Role</th><th>Font</th><th>Weight</th><th>Screen size</th><th>Example</th></tr>
+    <tr><td>Hero headline</td><td>Barlow Condensed</td><td>900 italic</td><td>40–64 px</td><td style="font:900 italic 20pt 'Barlow Condensed'">Tap fast, chop prize</td></tr>
+    <tr><td>Section title</td><td>Barlow Condensed</td><td>900</td><td>22–28 px</td><td style="font:900 15pt 'Barlow Condensed'">Live pools</td></tr>
+    <tr><td>Button</td><td>Barlow Condensed</td><td>900</td><td>17–20 px</td><td style="font:900 14pt 'Barlow Condensed'">Join pool</td></tr>
+    <tr><td>Body</td><td>Barlow</td><td>500–600</td><td>15–17 px</td><td style="font:500 11pt 'Barlow'">Join a live pool and tap pass everybody.</td></tr>
+    <tr><td>Label / caption</td><td>Barlow</td><td>800 caps</td><td>11–13 px</td><td style="font:800 8pt 'Barlow';letter-spacing:.1em">PRIZE POOL</td></tr>
+  </table>
+  <p class="small muted" style="margin-top:2mm;margin-bottom:0">Both fonts are free under the SIL Open Font License (06-fonts/OFL.txt) — fine for print, web, apps and ads. Fallbacks: Arial Narrow / Arial.</p>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>10</span></div>
+</section>
+
+<!-- 11 SHAPES -->
+<section class="page dark">
+  <div class="kick">09 · Shapes, cards &amp; buttons</div><h2>Chunky like a game</h2>
+  <div class="grid" style="grid-template-columns:1.2fr 1fr;gap:12mm">
+    <div>
+      <div class="grid g2" style="gap:5mm">
+        <div class="card" style="background:url(./08-patterns/overlay/waves.svg) 0 0/14mm 14mm,#2E8BFF;padding:5mm;color:#fff;height:44mm;box-shadow:0 1.6mm 0 #1A5FC2">
+          <span class="pill" style="background:#fff;color:#150B33">Sponsored</span>
+          <div style="font:900 italic 22pt/.95 'Barlow Condensed';margin-top:3mm;text-shadow:0 .5mm 0 rgba(0,0,0,.5)">Friday Night Tap</div>
+          <div class="small" style="margin-top:2mm">Prize pool</div><div style="font:900 20pt 'Barlow Condensed'">₦50,000</div>
+        </div>
+        <div class="card" style="background:url(./08-patterns/overlay/ripple.svg) 0 0/14mm 14mm,#FF4FA3;padding:5mm;color:#fff;height:44mm;box-shadow:0 1.6mm 0 #C42A78">
+          <span class="pill" style="background:var(--green);color:#150B33">Live</span>
+          <div style="font:900 italic 22pt/.95 'Barlow Condensed';margin-top:3mm;text-shadow:0 .5mm 0 rgba(0,0,0,.5)">Jollof vs Fried rice</div>
+          <div class="small" style="margin-top:2mm">VS pool · 128 players</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:5mm;margin-top:8mm;flex-wrap:wrap">
+        <span class="btn bg-green">Join pool</span><span class="btn bg-white">+ Create a pool</span><span class="btn bg-gold">🥊 Tap-off</span>
+      </div>
+    </div>
+    <div>
+      <ul class="list" style="color:#fff">
+        <li><b>Cards:</b> accent colour + pattern overlay, 3 px white border, 18 px corners, hard 6 px shadow in the darker shade.</li>
+        <li><b>Buttons:</b> 12 px corners, Barlow Condensed 900, a solid 5 px “ledge” shadow underneath. Tap Green for the main action, white for secondary, Sunny for special.</li>
+        <li><b>Text on colour:</b> white with a small dark drop (0 1.5 px 0 rgba(0,0,0,.6)) so it reads on any accent.</li>
+        <li><b>Corners:</b> 18 px cards · 12 px buttons &amp; inputs · 999 px pills. Nothing sharp.</li>
+        <li><b>Shadows</b> are flat and offset straight down — no soft blurry glows.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>11</span></div>
+</section>
+
+<!-- 12 CHARACTERS -->
+<section class="page">
+  <div class="kick">10 · Characters, badges &amp; stickers</div><h2>Meet the tappers</h2>
+  <p class="lede" style="max-width:240mm">Twenty rank characters — one for each tier, from Fresh Finger to Tap Am Legend. Use them in social posts, rank-up moments and merch. Always show them in a circle, never cropped or recoloured.</p>
+  <div style="display:grid;grid-template-columns:repeat(10,1fr);gap:3mm;margin-top:3mm">
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/01-fresh-finger.png" style="width:100%"><figcaption class="small">Fresh Finger</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/02-jjc.png" style="width:100%"><figcaption class="small">JJC</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/03-danfo-tapper.png" style="width:100%"><figcaption class="small">Danfo Tapper</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/04-keke-rider.png" style="width:100%"><figcaption class="small">Keke Rider</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/05-molue-master.png" style="width:100%"><figcaption class="small">Molue Master</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/06-agbero.png" style="width:100%"><figcaption class="small">Agbero</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/07-area-boy.png" style="width:100%"><figcaption class="small">Area Boy</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/08-mama-put-regular.png" style="width:100%"><figcaption class="small">Mama Put Regular</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/09-gbedu-starter.png" style="width:100%"><figcaption class="small">Gbedu Starter</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/10-owambe-guest.png" style="width:100%"><figcaption class="small">Owambe Guest</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/11-big-boy.png" style="width:100%"><figcaption class="small">Big Boy</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/12-para-para-boy.png" style="width:100%"><figcaption class="small">Para Para Boy</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/13-chairman.png" style="width:100%"><figcaption class="small">Chairman</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/14-oga-patapata.png" style="width:100%"><figcaption class="small">Oga Patapata</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/15-baba-nla.png" style="width:100%"><figcaption class="small">Baba Nla</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/16-ijoba.png" style="width:100%"><figcaption class="small">Ijoba</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/17-odogwu.png" style="width:100%"><figcaption class="small">Odogwu</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/18-eko-akete.png" style="width:100%"><figcaption class="small">Eko Akete</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/19-ogbonge.png" style="width:100%"><figcaption class="small">Ogbonge</figcaption></figure>
+    <figure style="margin:0;text-align:center"><img src="./07-characters/rank-characters/png/20-tap-am-legend.png" style="width:100%"><figcaption class="small">Tap Am Legend</figcaption></figure>
+  </div>
+  <div class="grid" style="grid-template-columns:1fr;gap:3mm;margin-top:4mm">
+    <div style="display:flex;gap:3mm;align-items:center">
+      <img src="./07-characters/badges/png/tapper-of-the-day.png" style="height:22mm"><img src="./07-characters/badges/png/tapper-of-the-week.png" style="height:22mm"><img src="./07-characters/badges/png/tapper-of-the-month.png" style="height:22mm"><img src="./07-characters/badges/png/tapper-of-the-year.png" style="height:22mm"><img src="./07-characters/badges/png/goat.png" style="height:22mm"><img src="./07-characters/badges/png/top-winner-day.png" style="height:22mm"><img src="./07-characters/badges/png/top-winner-month.png" style="height:22mm"><img src="./07-characters/badges/png/top-winner-year.png" style="height:22mm">
+    </div>
+    <div style="display:flex;gap:4mm;align-items:center">
+      <img src="./07-characters/stickers/bolt.svg" style="height:13mm"><img src="./07-characters/stickers/coin.svg" style="height:13mm"><img src="./07-characters/stickers/fire.svg" style="height:13mm"><img src="./07-characters/stickers/sparkle.svg" style="height:13mm"><img src="./07-characters/stickers/lock.svg" style="height:13mm">
+      <p class="small" style="margin:0 0 0 4mm;max-width:120mm">Badges: a star means most taps, ₦ means most prize money won. Stickers and badges use a thick Ink outline and flat fills.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>12</span></div>
+</section>
+
+<!-- 13 PATTERNS -->
+<section class="page">
+  <div class="kick">11 · Patterns</div><h2>Tap pads with texture</h2>
+  <p class="lede" style="max-width:240mm">Ten seamless patterns sit on top of a colour at 20% white. They dress up cards, tap pads and social posts. Use one pattern per piece, and keep text off the busiest ones (Leopard, Zebra, Cow).</p>
+  <div class="grid g5" style="gap:5mm;margin-top:4mm">
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/waves.svg) 0 0/16mm 16mm,#2E8BFF"></div><p class="small" style="margin-top:2mm"><b>Waves</b> — default</p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/flowers.svg) 0 0/16mm 16mm,#FF4FA3"></div><p class="small" style="margin-top:2mm"><b>Flowers</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/swirl.svg) center/cover,#9161FF"></div><p class="small" style="margin-top:2mm"><b>Swirl</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/checker.svg) 0 0/10mm 10mm,#FF8A2A"></div><p class="small" style="margin-top:2mm"><b>Checker</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/stripes.svg) 0 0/10mm 10mm,#21D4C8"></div><p class="small" style="margin-top:2mm"><b>Stripes</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/ripple.svg) 0 0/16mm 16mm,#2E8BFF"></div><p class="small" style="margin-top:2mm"><b>Ripple</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/kente.svg) 0 0/14mm 14mm,#E0A800"></div><p class="small" style="margin-top:2mm"><b>Kente</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/leopard.svg) 0 0/20mm 20mm,#FF8A2A"></div><p class="small" style="margin-top:2mm"><b>Leopard</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/zebra.svg) center/cover,#9161FF"></div><p class="small" style="margin-top:2mm"><b>Zebra</b></p></div>
+    <div><div style="height:38mm;border-radius:5mm;background:url(./08-patterns/overlay/cow.svg) 0 0/20mm 20mm,#00B852"></div><p class="small" style="margin-top:2mm"><b>Cow</b></p></div>
+  </div>
+  <p class="small muted" style="margin-top:3mm">Files: 08-patterns/overlay (transparent tiles to place on any colour) and 08-patterns/on-colour (ready-made examples on Sky).</p>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>13</span></div>
+</section>
+
+<!-- 14 VOICE -->
+<section class="page">
+  <div class="kick">12 · Voice &amp; tone</div><h2>Talk like a Lagos friend</h2>
+  <div class="grid g2" style="gap:12mm">
+    <div>
+      <p class="lede">Light Pidgin, short sentences, a wink. We sound like the friend who hypes you up — and who tells you the rules straight.</p>
+      <table>
+        <tr><th>Moment</th><th>Say</th></tr>
+        <tr><td>Call to play</td><td><b>“Tap fast, chop prize.”</b> · “Run am back!”</td></tr>
+        <tr><td>Win</td><td><b>“Odogwu! You win am!”</b> · “₦1,000 don land for your wallet!”</td></tr>
+        <tr><td>Loss</td><td>“No prize for you this time — run am back!”</td></tr>
+        <tr><td>Error</td><td>“That page no load. Try again.” (say what to do next)</td></tr>
+        <tr><td>Money rules</td><td>Plain English: “Money you add can’t be withdrawn. Only winnings can.”</td></tr>
+      </table>
+    </div>
+    <div>
+      <span class="pill do">Do</span>
+      <ul class="list" style="margin:3mm 0 6mm">
+        <li>Use ₦ with commas: ₦10,000 (not N10000 or 10k naira).</li>
+        <li>Name the tiers: Lapo baby, Mapo baby, Nepo baby.</li>
+        <li>Switch to plain English for fees, refunds, age (18+) and legal notes.</li>
+        <li>Celebrate players — rank-ups, badges, top winners.</li>
+      </ul>
+      <span class="pill donot">Don’t</span>
+      <ul class="list dont" style="margin-top:3mm">
+        <li>Promise income: no “guaranteed”, “easy money”, “earn daily”, “get rich”.</li>
+        <li>Target or show anyone under 18 in money promotions.</li>
+        <li>Mock other tribes, religions, players or competitors.</li>
+        <li>Overdo it: one Pidgin line per message is plenty.</li>
+      </ul>
+      <div class="note" style="margin-top:5mm">Money stakes and paid prizes are still under legal review. Marketing that talks about cash prizes should be checked by your lawyer before it goes out.</div>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>14</span></div>
+</section>
+
+<!-- 15 IN USE -->
+<section class="page night">
+  <div class="kick">13 · Brand in use</div><h2>How it all comes together</h2>
+  <div style="display:flex;gap:8mm;align-items:flex-start">
+    <div class="phone"><img src="./screens/shot-landing.png"></div>
+    <div class="phone"><img src="./screens/shot-home.png"></div>
+    <div class="phone"><img src="./screens/shot-store.png"></div>
+    <div style="flex:1">
+      <img src="./04-social/share-image-1200x630.png" style="width:100%;border-radius:4mm">
+      <p class="small" style="margin-top:3mm;color:var(--lilac)">Link-share image (1200 × 630). Every page of the site shares with this image.</p>
+      <ul class="list" style="margin-top:4mm;color:#fff">
+        <li>Grape gradient background, white cards, one green action.</li>
+        <li>Big italic numbers for prizes and taps.</li>
+        <li>Characters and badges for every win moment.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines</span><span>15</span></div>
+</section>
+
+<!-- 16 KIT -->
+<section class="page">
+  <div class="kick">14 · Asset kit &amp; contacts</div><h2>What’s in the box</h2>
+  <table>
+    <tr><th style="width:42mm">Folder</th><th>What’s inside</th></tr>
+    <tr><td><b>01-logo</b></td><td>SVG masters of every version (primary, reverse, green and blue boxes, one-colour white and black) + PNG at 600, 1200 and 2400 px wide + original source files</td></tr>
+    <tr><td><b>02-mark</b></td><td>The finger mark in Mark Green, Tap Green, Ink and white (SVG + PNG 256 / 1024 px)</td></tr>
+    <tr><td><b>03-app-icon</b></td><td>App icon (SVG + 1024 px), favicons 16–48 px, 192 / 512 icons, maskable and monochrome icons, Apple touch icon, notification badge</td></tr>
+    <tr><td><b>04-social</b></td><td>Link-share image 1200 × 630 (PNG + SVG), landing posters and background video loops</td></tr>
+    <tr><td><b>05-colours</b></td><td>colours.css (ready-to-use variables), colours.json, colours.txt (HEX, RGB, CMYK)</td></tr>
+    <tr><td><b>06-fonts</b></td><td>Barlow (Regular–Black, Italic, Bold Italic) and Barlow Condensed (Regular–Black, ExtraBold &amp; Black Italic) TTF + licence</td></tr>
+    <tr><td><b>07-characters</b></td><td>20 rank characters, 8 badges (SVG + PNG), 5 stickers</td></tr>
+    <tr><td><b>08-patterns</b></td><td>10 seamless patterns (transparent overlays + examples on colour)</td></tr>
+  </table>
+  <div class="grid g2" style="gap:8mm;margin-top:6mm">
+    <div class="note"><b>Questions or new assets?</b><br>Tap Am is built and run by Ferrn Agency · www.ferrnagency.com<br>Website: www.tapammm.live</div>
+    <div class="note"><b>Sponsors &amp; partners:</b> you may use the logo to show you sponsor a Tap Am pool, following these rules. Don’t imply Tap Am endorses your product beyond the sponsorship, and get approval before printing.</div>
+  </div>
+  <div class="foot"><span>Tap Am brand guidelines · v1.0 · October 2026</span><span>16</span></div>
+</section>
+</body></html>

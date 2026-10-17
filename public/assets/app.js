@@ -384,7 +384,7 @@
   // QR code + share card live in a separate file, loaded only when needed.
   function shareCard(b) {
     b.classList.add('is-loading');
-    loadScript('/assets/share.js?v=10').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
+    loadScript('/assets/share.js?v=11').then(function () { b.classList.remove('is-loading'); window.TAShare.open(JSON.parse(b.getAttribute('data-share-card') || '{}')); })
       .catch(function () { b.classList.remove('is-loading'); TA.toast('Could not load the share card. Check your connection.', 'err'); });
   }
   function loadScript(src) {
@@ -491,11 +491,27 @@
   });
 
   /* ── image uploads: <input type=file data-upload="fieldName"> ────── */
+  function shrink(file, max) {
+    return new Promise(function (res) {
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type) || !window.createImageBitmap) return res(file);
+      createImageBitmap(file).then(function (bm) {
+        var k = Math.min(1, max / Math.max(bm.width, bm.height));
+        if (k === 1 && file.size < 150000) return res(file);
+        var c = document.createElement('canvas'); c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k);
+        c.getContext('2d').drawImage(bm, 0, 0, c.width, c.height);
+        c.toBlob(function (b) { res(b && b.size < file.size ? new File([b], 'image.webp', { type: b.type }) : file); }, 'image/webp', 0.85);
+      }).catch(function () { res(file); });
+    });
+  }
   document.addEventListener('change', function (e) {
     var i = e.target; if (!i.matches || !i.matches('input[type=file][data-upload]') || !i.files[0]) return;
-    var name = i.getAttribute('data-upload'), f = i.closest('form'), fd = new FormData(); fd.append('file', i.files[0]);
+    var name = i.getAttribute('data-upload'), f = i.closest('form'), max = name === 'logo_url' ? 400 : 1600;
     TA.toast('Uploading…');
-    fetch('/api/upload', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (j) {
+    // shrink big pictures in the browser first (a logo to 400 px, others to 1600 px) so uploads stay small
+    shrink(i.files[0], max).then(function (file) {
+      var fd = new FormData(); fd.append('file', file, file.name || 'image'); fd.append('purpose', name);
+      return fetch('/api/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
+    }).then(function (r) { return r.json(); }).then(function (j) {
       if (!j.url) { TA.toast(j.error || 'Upload failed', 'err'); return; }
       var h = f.querySelector('input[name="' + name + '"]'); if (h) h.value = j.url;
       var p = f.querySelector('[data-preview="' + name + '"]'); if (p) p.src = j.url;
@@ -745,19 +761,28 @@
   TA.paginate = paginate;
 
   /* ── our socials and WhatsApp community (links set by the super admin) ── */
-  var SOC = { whatsapp: ['Join our WhatsApp community', '<path d="M3.5 20.5l1.2-4.3A8.5 8.5 0 1112 20.5a8.4 8.4 0 01-4-1z" fill="none" stroke="currentColor" stroke-width="2"/>'], twitter: ['X', '<path d="M4 4l16 16M20 4L4 20" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'], instagram: ['Instagram', '<rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/>'], tiktok: ['TikTok', '<path d="M14 3v11a4 4 0 11-4-4M14 3c.5 3 2.5 5 5.5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'] };
+  var SOC = {
+    whatsapp: ['WhatsApp community', '<path d="M12 3.2a8.8 8.8 0 00-7.6 13.2L3.3 20.7l4.4-1.1A8.8 8.8 0 1012 3.2z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9.2 8.3c.3-.6.6-.6.9-.6h.5c.2 0 .4.1.5.4l.7 1.6c.1.3 0 .5-.1.7l-.5.6c-.1.2-.1.4 0 .5.6 1 1.4 1.8 2.4 2.3.2.1.4.1.5 0l.6-.7c.2-.2.4-.3.7-.2l1.6.8c.3.1.4.3.4.5 0 .5-.2 1.2-.7 1.5-.6.4-1.5.6-2.6.2-2-.7-3.7-2.3-4.6-4.2-.6-1.3-.5-2.6-.3-3.4z" fill="currentColor"/>'],
+    twitter: ['X (Twitter)', '<path d="M4 4h4.4l11.6 16h-4.4zM19.6 4l-6.3 7.1M10.7 13l-6.3 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'],
+    instagram: ['Instagram', '<rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.2" cy="6.8" r="1.3" fill="currentColor"/>'],
+    tiktok: ['TikTok', '<path d="M14 3v11.2a3.8 3.8 0 11-3.8-3.8M14 3c.4 2.8 2.4 4.8 5.5 5.1" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>']
+  };
   var linksP = null;
+  // data-socials="" → icon buttons for X, Instagram and TikTok (the WhatsApp community lives in the menu only)
+  // data-socials="whatsapp" → the menu item for the WhatsApp community
   function socials() {
     var spots = $$('[data-socials]'); if (!spots.length) return;
     linksP = linksP || fetch('/api/links', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; });
     linksP.then(function (L) {
       spots.forEach(function (box) {
         if (box._done) return; box._done = true; box.textContent = '';
-        var only = box.getAttribute('data-socials');
+        var menu = box.getAttribute('data-socials') === 'whatsapp';
         Object.keys(SOC).forEach(function (k) {
-          var href = L[k]; if (!href || !/^https:\/\//.test(href) || (only && only !== k)) return;
-          var a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener'; if (k === 'whatsapp') a.className = 'wa';
-          a.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + SOC[k][1] + '</svg><span></span>'; a.querySelector('span').textContent = SOC[k][0]; box.appendChild(a);
+          var href = L[k]; if (!href || !/^https:\/\//.test(href) || (menu ? k !== 'whatsapp' : k === 'whatsapp')) return;
+          var a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener';
+          if (menu) { a.className = 'tcard tcard--flat wa-item'; a.textContent = 'WhatsApp community'; var sm = document.createElement('small'); sm.textContent = 'Chat with other tappers'; a.appendChild(sm); }
+          else { a.setAttribute('aria-label', SOC[k][0]); a.title = SOC[k][0]; a.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + SOC[k][1] + '</svg>'; }
+          box.appendChild(a);
         });
         box.hidden = !box.children.length;
       });
@@ -830,8 +855,30 @@
     if (!swapped && navigator.onLine === false) down();
     showFlash();
   }
+  // ── who's online: every open Tap Am tab says hi once a minute; the home page counters count up live ──
+  TA.compact = function (n) { n = Number(n || 0); try { return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n); } catch (e) { return String(n); } };
+  function countTo(el, to) {
+    var from = Number(el.getAttribute('data-n')) || 0; to = Number(to) || 0;
+    el.setAttribute('data-n', to);
+    if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = TA.compact(to); return; }
+    var t0 = performance.now(), d = 900;
+    (function step(t) { var k = Math.min(1, (t - t0) / d); el.textContent = TA.compact(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(step); })(t0);
+  }
+  var vid = null;
+  function presence() {
+    if (document.hidden || document.body.classList.contains('is-landing') || !TA.isOnline()) return;
+    if (!vid) { try { vid = localStorage.getItem('ta-vid'); if (!vid) { vid = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2); localStorage.setItem('ta-vid', vid); } } catch (e) { vid = vid || Date.now().toString(36) + Math.random().toString(36).slice(2); } }
+    fetch('/api/presence', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ vid: vid }) })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (!j) return; $$('[data-stat="online"]').forEach(function (e) { countTo(e, j.online); }); $$('[data-stat="visits"]').forEach(function (e) { countTo(e, j.visits); }); })
+      .catch(function () {});
+  }
+  setInterval(presence, 60000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) presence(); });
+
   function boot() {
     ready(false);
+    setTimeout(presence, 1500);
     var q = window.TAQ || [];
     window.TAQ = { push: function (f) { try { f(); } catch (e) { console.error(e); } } };
     for (var i = 0; i < q.length; i++) window.TAQ.push(q[i]);

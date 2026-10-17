@@ -1,8 +1,9 @@
 // Super admin announcements: every chosen player gets a notification; optionally a pop-up (shown once on
 // app pages, never on the game screen) and an email from no-reply@tapammm.live sent by the cron in batches.
 import { json, uid, nowIso } from '../lib.js';
-import { settings, clampInt, tierOf } from '../core.js';
-import { sendMail, announcementEmail } from '../email.js';
+import { settings, clampInt, tierOf, parseJson } from '../core.js';
+import { sendMail, announcementEmail, giftEmail } from '../email.js';
+import { topGamesMessage, unsubUrl } from './gamemail.js';
 import { unsubToken } from './blasts.js';
 
 const BATCH = 150;
@@ -48,24 +49,45 @@ export async function pendingOverlay(env, user) {
     ORDER BY a.created_at DESC LIMIT 1`).bind(now, String(user.created_at || '').replace(' ', 'T') || '2000', user.role, tier, user.id).first();
 }
 
-// Cron: announcement emails, 150 per run per job. Marketing ("NEWS") only goes to people who said yes;
-// "SERVICE" (important account news) goes to every active account in the audience.
+// Cron: queued emails, 150 per run per job. ANNOUNCE: marketing ("NEWS") only goes to people who said yes;
+// "SERVICE" (important account news) goes to every active account in the audience. TOPGAMES: Mapo and Nepo
+// babies who said yes to game emails. GIFT: the players the super admin sent a gift to (service email).
 export async function processEmailJobs(env, origin) {
-  const jobs = (await env.DB.prepare("SELECT j.*, a.title, a.body, a.link FROM email_jobs j JOIN announcements a ON a.id=j.ref_id WHERE j.status IN ('QUEUED','SENDING') ORDER BY j.created_at LIMIT 2").all()).results;
+  const jobs = (await env.DB.prepare("SELECT j.*, a.title, a.body, a.link FROM email_jobs j LEFT JOIN announcements a ON a.id=j.ref_id WHERE j.status IN ('QUEUED','SENDING') ORDER BY j.created_at LIMIT 3").all()).results;
   const now = nowIso();
   for (const j of jobs) {
-    const users = (await env.DB.prepare(`SELECT id, email FROM users WHERE status='ACTIVE' AND email IS NOT NULL AND ${audWhere(j.audience)} ${j.service ? '' : 'AND email_news=1'} AND id>? ORDER BY id LIMIT ${BATCH}`)
-      .bind(...audBinds(j.audience, now), j.cursor || '').all()).results;
-    const last = users.length ? users[users.length - 1].id : j.cursor, done = users.length < BATCH;
-    const claim = await env.DB.prepare("UPDATE email_jobs SET status=?, cursor=?, done_at=? WHERE id=? AND COALESCE(cursor,'')=? AND status IN ('QUEUED','SENDING')").bind(done ? 'DONE' : 'SENDING', last, done ? now : null, j.id, j.cursor || '').run();
+    const payload = parseJson(j.payload, null);
+    let users;
+    if (j.kind === 'GIFT' && !payload?.ids) {   // a whole tier (or every player)
+      users = (await env.DB.prepare(`SELECT id, email FROM users WHERE status='ACTIVE' AND email IS NOT NULL AND ${audWhere(j.audience)} AND id>? ORDER BY id LIMIT ${BATCH}`)
+        .bind(...audBinds(j.audience, now), j.cursor || '').all()).results;
+    } else if (j.kind === 'GIFT') {
+      const ids = (payload?.ids || []).filter(x => x > (j.cursor || '')).sort().slice(0, BATCH);
+      users = ids.length ? (await env.DB.prepare(`SELECT id, email FROM users WHERE status='ACTIVE' AND email IS NOT NULL AND id IN (${ids.map(() => '?').join(',')}) ORDER BY id`).bind(...ids).all()).results : [];
+      if (ids.length) users.last = ids[ids.length - 1];
+    } else if (j.kind === 'TOPGAMES') {
+      users = (await env.DB.prepare(`SELECT id, email FROM users WHERE status='ACTIVE' AND role='USER' AND email IS NOT NULL AND email_games=1 AND tier IN ('MAPO','NEPO') AND (tier_until IS NULL OR tier_until>?) AND id>? ORDER BY id LIMIT ${BATCH}`)
+        .bind(now, j.cursor || '').all()).results;
+    } else if (j.kind === 'ANNOUNCE' && j.title) {
+      users = (await env.DB.prepare(`SELECT id, email FROM users WHERE status='ACTIVE' AND email IS NOT NULL AND ${audWhere(j.audience)} ${j.service ? '' : 'AND email_news=1'} AND id>? ORDER BY id LIMIT ${BATCH}`)
+        .bind(...audBinds(j.audience, now), j.cursor || '').all()).results;
+    } else { await env.DB.prepare("UPDATE email_jobs SET status='DONE', done_at=? WHERE id=?").bind(now, j.id).run(); continue; }
+    const last = users.last || (users.length ? users[users.length - 1].id : j.cursor);
+    const done = j.kind === 'GIFT' && payload?.ids ? !users.last || payload.ids.filter(x => x > last).length === 0 : users.length < BATCH;
+    const claim = await env.DB.prepare("UPDATE email_jobs SET status=?, cursor=?, done_at=? WHERE id=? AND COALESCE(cursor,'')=? AND status IN ('QUEUED','SENDING')").bind(done ? 'DONE' : 'SENDING', last || '', done ? now : null, j.id, j.cursor || '').run();
     if (!claim.meta.changes) continue;
     let sent = 0;
     for (const u of users) {
       try {
-        const link = j.link ? (j.link.startsWith('/') ? origin + j.link : j.link) : origin + '/dashboard';
-        const msg = announcementEmail({ title: j.title, message: j.body, link, linkLabel: 'Open Tap Am', service: !!j.service, site: origin, unsub: j.service ? '' : `${origin}/unsub?u=${encodeURIComponent(u.id)}&t=${await unsubToken(env, u.id)}` });
+        let msg;
+        if (j.kind === 'GIFT') msg = giftEmail({ site: origin, what: payload.what, note: payload.note || '', url: origin + (payload.link || '/me') });
+        else if (j.kind === 'TOPGAMES') msg = topGamesMessage(env, payload, await unsubUrl(env, u.id, 'games'));
+        else {
+          const link = j.link ? (j.link.startsWith('/') ? origin + j.link : j.link) : origin + '/dashboard';
+          msg = announcementEmail({ title: j.title, message: j.body, link, linkLabel: 'Open Tap Am', service: !!j.service, site: origin, unsub: j.service ? '' : `${origin}/unsub?u=${encodeURIComponent(u.id)}&t=${await unsubToken(env, u.id)}` });
+        }
         const r = await sendMail(env, u.email, msg); if (r.sent || r.test) sent++;
-      } catch (e) { console.error('announce email', e?.message); }
+      } catch (e) { console.error('email job', j.kind, e?.message); }
     }
     if (sent) await env.DB.prepare('UPDATE email_jobs SET sent=sent+? WHERE id=?').bind(sent, j.id).run();
   }

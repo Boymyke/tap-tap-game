@@ -1,0 +1,414 @@
+{
+  "core": [
+    {
+      "name": "Grape",
+      "hex": "#6A35FF",
+      "rgb": [
+        106,
+        53,
+        255
+      ],
+      "cmyk": [
+        58,
+        79,
+        0,
+        0
+      ],
+      "use": "Main background (top)"
+    },
+    {
+      "name": "Grape Deep",
+      "hex": "#2A0F8F",
+      "rgb": [
+        42,
+        15,
+        143
+      ],
+      "cmyk": [
+        71,
+        90,
+        0,
+        44
+      ],
+      "use": "Main background (bottom)"
+    },
+    {
+      "name": "Night",
+      "hex": "#1B0B4D",
+      "rgb": [
+        27,
+        11,
+        77
+      ],
+      "cmyk": [
+        65,
+        86,
+        0,
+        70
+      ],
+      "use": "Deepest background"
+    },
+    {
+      "name": "Tap Green",
+      "hex": "#00FF6E",
+      "rgb": [
+        0,
+        255,
+        110
+      ],
+      "cmyk": [
+        100,
+        0,
+        57,
+        0
+      ],
+      "use": "Primary action, highlights, money won"
+    },
+    {
+      "name": "Tap Green Dark",
+      "hex": "#00B852",
+      "rgb": [
+        0,
+        184,
+        82
+      ],
+      "cmyk": [
+        100,
+        0,
+        55,
+        28
+      ],
+      "use": "Button shadow under Tap Green"
+    },
+    {
+      "name": "Logo Purple",
+      "hex": "#AA0FEA",
+      "rgb": [
+        170,
+        15,
+        234
+      ],
+      "cmyk": [
+        27,
+        94,
+        0,
+        8
+      ],
+      "use": "The AM box in the logo"
+    },
+    {
+      "name": "Mark Green",
+      "hex": "#006012",
+      "rgb": [
+        0,
+        96,
+        18
+      ],
+      "cmyk": [
+        100,
+        0,
+        81,
+        62
+      ],
+      "use": "App icon tile, finger mark"
+    },
+    {
+      "name": "Ink",
+      "hex": "#150B33",
+      "rgb": [
+        21,
+        11,
+        51
+      ],
+      "cmyk": [
+        59,
+        78,
+        0,
+        80
+      ],
+      "use": "Text on light, outlines"
+    },
+    {
+      "name": "Ink 2",
+      "hex": "#2B1C5E",
+      "rgb": [
+        43,
+        28,
+        94
+      ],
+      "cmyk": [
+        54,
+        70,
+        0,
+        63
+      ],
+      "use": "Secondary text on light"
+    },
+    {
+      "name": "Ink Soft",
+      "hex": "#5B4E86",
+      "rgb": [
+        91,
+        78,
+        134
+      ],
+      "cmyk": [
+        32,
+        42,
+        0,
+        47
+      ],
+      "use": "Muted text on light"
+    },
+    {
+      "name": "Paper",
+      "hex": "#FFFFFF",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "cmyk": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "use": "Cards, panels"
+    },
+    {
+      "name": "Cloud",
+      "hex": "#F4F0FF",
+      "rgb": [
+        244,
+        240,
+        255
+      ],
+      "cmyk": [
+        4,
+        6,
+        0,
+        0
+      ],
+      "use": "Inputs, soft panels"
+    },
+    {
+      "name": "Line",
+      "hex": "#E6DEFF",
+      "rgb": [
+        230,
+        222,
+        255
+      ],
+      "cmyk": [
+        10,
+        13,
+        0,
+        0
+      ],
+      "use": "Borders on light"
+    },
+    {
+      "name": "Lilac",
+      "hex": "#E4DAFF",
+      "rgb": [
+        228,
+        218,
+        255
+      ],
+      "cmyk": [
+        11,
+        15,
+        0,
+        0
+      ],
+      "use": "Muted text on dark"
+    }
+  ],
+  "accents": [
+    {
+      "name": "Sunny",
+      "hex": "#FFD23F",
+      "shadow": "#D9A400",
+      "rgb": [
+        255,
+        210,
+        63
+      ],
+      "cmyk": [
+        0,
+        18,
+        75,
+        0
+      ]
+    },
+    {
+      "name": "Pink",
+      "hex": "#FF4FA3",
+      "shadow": "#C42A78",
+      "rgb": [
+        255,
+        79,
+        163
+      ],
+      "cmyk": [
+        0,
+        69,
+        36,
+        0
+      ]
+    },
+    {
+      "name": "Sky",
+      "hex": "#2E8BFF",
+      "shadow": "#1A5FC2",
+      "rgb": [
+        46,
+        139,
+        255
+      ],
+      "cmyk": [
+        82,
+        45,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Orange",
+      "hex": "#FF8A2A",
+      "shadow": "#C95F10",
+      "rgb": [
+        255,
+        138,
+        42
+      ],
+      "cmyk": [
+        0,
+        46,
+        84,
+        0
+      ]
+    },
+    {
+      "name": "Teal",
+      "hex": "#21D4C8",
+      "shadow": "#0F9A91",
+      "rgb": [
+        33,
+        212,
+        200
+      ],
+      "cmyk": [
+        84,
+        0,
+        6,
+        17
+      ]
+    },
+    {
+      "name": "Purple",
+      "hex": "#9161FF",
+      "shadow": "#5E30D6",
+      "rgb": [
+        145,
+        97,
+        255
+      ],
+      "cmyk": [
+        43,
+        62,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Danger",
+      "hex": "#FF4D5E",
+      "shadow": "#C21F33",
+      "rgb": [
+        255,
+        77,
+        94
+      ],
+      "cmyk": [
+        0,
+        70,
+        63,
+        0
+      ]
+    }
+  ],
+  "backgroundThemes": {
+    "grape": {
+      "name": "Grape",
+      "a": "#6A35FF",
+      "b": "#2A0F8F",
+      "accent": "#00FF6E",
+      "deep": "#1B0B4D"
+    },
+    "ocean": {
+      "name": "Ocean",
+      "a": "#1E7BFF",
+      "b": "#0B2A8F",
+      "accent": "#00FF6E",
+      "deep": "#08164D"
+    },
+    "lagoon": {
+      "name": "Lagoon",
+      "a": "#00B3B3",
+      "b": "#064B6B",
+      "accent": "#FFD23F",
+      "deep": "#032A3A"
+    },
+    "jungle": {
+      "name": "Jungle",
+      "a": "#13A85A",
+      "b": "#0A3B2A",
+      "accent": "#FFD23F",
+      "deep": "#062016"
+    },
+    "sunset": {
+      "name": "Sunset",
+      "a": "#FF6A3D",
+      "b": "#8F1F5C",
+      "accent": "#FFD23F",
+      "deep": "#3D0A26"
+    },
+    "bubblegum": {
+      "name": "Bubblegum",
+      "a": "#FF4FA3",
+      "b": "#7B1FA2",
+      "accent": "#00FF6E",
+      "deep": "#3A0A3F"
+    },
+    "gold": {
+      "name": "Gold",
+      "a": "#E0A800",
+      "b": "#7A4A00",
+      "accent": "#150B33",
+      "deep": "#2E1B00"
+    },
+    "cocoa": {
+      "name": "Cocoa",
+      "a": "#9C5B34",
+      "b": "#3B1E10",
+      "accent": "#FFD23F",
+      "deep": "#1E0F08"
+    },
+    "crimson": {
+      "name": "Crimson",
+      "a": "#E2263F",
+      "b": "#6B0A1C",
+      "accent": "#FFD23F",
+      "deep": "#2E040C"
+    },
+    "midnight": {
+      "name": "Midnight",
+      "a": "#2B2E4A",
+      "b": "#0B0C18",
+      "accent": "#00FF6E",
+      "deep": "#05060C"
+    }
+  }
+}

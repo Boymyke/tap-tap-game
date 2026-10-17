@@ -9,7 +9,7 @@ export const esc = (s = '') => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;
 export const BRAND = 'Tap Am';
 export const TAGLINE = 'tap ammm make you chop moneyyyy';
 export const FERRN_URL = 'https://www.ferrnagency.com';
-export const ASSET_VERSION = '15';
+export const ASSET_VERSION = '16';
 
 // Tone-on-tone diamond texture for cards (like printed match cards).
 const PATTERN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='%23fff' fill-opacity='.07'%3E%3Cpath d='M0 0l14 14L0 28zM28 0l14 14-14 14zM14 28l14 14-14 14zM42 28l14 14-14 14z'/%3E%3C/g%3E%3Cg fill='%23000' fill-opacity='.09'%3E%3Cpath d='M28 0L14 14l14 14zM56 0L42 14l14 14zM28 28L14 42l14 14zM56 28L42 42l14 14z'/%3E%3C/g%3E%3C/svg%3E\")";
@@ -132,10 +132,12 @@ html.is-nav .navload{opacity:1;transition-delay:.12s}
 .sheet-foot a:hover{color:var(--accent)}
 
 /* ── connection banner, toast, dialogs ───────── */
-.socials{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0 4px}
-.socials a{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;text-decoration:none;font:800 14px var(--body);box-shadow:inset 0 0 0 2px rgba(255,255,255,.22)}
-.socials a.wa{background:#25D366;color:#073B1C;box-shadow:none}
-.socials svg{width:18px;height:18px}
+.socials{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:14px 0 4px}
+.socials a{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;text-decoration:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.22);transition:transform .15s,background .15s}
+.socials a:hover,.socials a:focus-visible{background:rgba(255,255,255,.26);transform:translateY(-2px)}
+.socials svg{width:20px;height:20px}
+.tcard.wa-item{background:#25D366;color:#073B1C}
+.tcard.wa-item small{color:#0B5A2C}
 .ann .dlg-in{max-width:420px}.ann h3{font:900 24px/1.1 var(--display)}.ann p{white-space:pre-line}
 .netbar{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 10px);z-index:110;transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 24px);padding:10px 16px;border-radius:999px;background:var(--danger);color:#fff;font:700 14px/1.3 var(--body);box-shadow:0 10px 30px rgba(0,0,0,.4);text-shadow:var(--ts);animation:drop .25s cubic-bezier(.2,1.4,.4,1)}
 @keyframes drop{from{transform:translate(-50%,-20px);opacity:0}}
@@ -339,6 +341,7 @@ export function menuSheet(user) {
   <nav class="sheet-grid" aria-label="Main">
     ${account}
     ${user && (user.role === 'USER' || user.role === 'SPONSOR') ? `<a class="tcard tcard--flat c-pink" href="/invite">Invite people<small>Share your link</small></a>` : ''}
+    ${user && (user.role === 'USER' || user.role === 'SPONSOR') ? `<a class="tcard tcard--flat c-orange" href="/advertise">Advertise with us<small>Your ad on the home page</small></a>` : ''}
     ${user?.role === 'USER' ? `<a class="tcard tcard--flat c-purple" href="/challenges">Tap-offs<small>Challenge a player 1-on-1</small></a>` : ''}
     <a class="tcard tcard--flat c-orange" href="/how-to-play">How to play<small>Rules of the tap</small></a>
     <a class="tcard tcard--flat c-sunny" href="/plans">Lapo, Mapo, Nepo<small>Compare the tiers</small></a>
@@ -350,6 +353,7 @@ export function menuSheet(user) {
     <a class="tcard tcard--flat c-purple" href="/merch">Merch<small>Wear the tap</small></a>
     <a class="tcard tcard--flat c-sky" href="/faq">FAQ<small>Questions wey people dey ask</small></a>
     <button type="button" class="tcard tcard--flat c-green" data-install hidden>Install app<small>Steps for your phone or computer</small></button>
+    <span data-socials="whatsapp" hidden style="display:contents"></span>
   </nav>
   <div class="socials" data-socials hidden></div>
   <div class="sheet-foot"><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/fair-play">Fair play</a><a href="/prizes">Prizes &amp; withdrawals</a><a href="/disclaimer">Disclaimer</a><a href="/suggest">Suggest something</a><a href="${FERRN_URL}" target="_blank" rel="noopener">Ferrn Agency</a></div>

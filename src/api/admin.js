@@ -4,8 +4,9 @@ import { requireRole, credit, debit, giveItem, notify, audit, clampInt, clearSet
 import { clearRankCache, generateRanks, recalcRank } from '../game/ranks.js';
 import { roomCall, poolState, pausePool, restartPool, cancelPool, extendPool, votePause, openVotes } from '../game/pools.js';
 import { processWithdrawal, activateTier } from './money.js';
-import { sendAlertEmail } from '../email.js';
+import { sendAlertEmail, sendMail, giftEmail, announcementEmail } from '../email.js';
 import { createAnnouncement, emailPool } from '../game/announce.js';
+import { adminAdRequest } from '../game/adrequests.js';
 import { isPattern } from '../ui/patterns.js';
 import { decryptPhrase, canKeepCopies } from '../phrase.js';
 import { hashPassword, safeEqual } from '../lib.js';
@@ -14,8 +15,8 @@ const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_ko
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
   'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day', 'email_blast_kobo', 'lapo_pools_per_day', 'transfer_daily_max_kobo', 'free_box_days',
   'mapo_pools_per_day', 'nepo_pools_per_day', 'withdraw_daily_max_kobo', 'topup_seconds_per_step', 'vote_continue_pct', 'vote_hours', 'instant_wait_hours',
-  'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
-const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused'];
+  'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'opt_lapo_rules', 'opt_boosters', 'top_games_email', 'slide_price_day_kobo', 'slide_price_week_kobo', 'slide_price_month_kobo', 'slide_price_year_kobo', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
+const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'opt_lapo_rules', 'opt_boosters', 'top_games_email'];
 // Link settings: only https links on the expected site (empty = hidden).
 const LINK_KEYS = { whatsapp_community: ['chat.whatsapp.com', 'whatsapp.com', 'wa.me'], social_twitter: ['x.com', 'twitter.com'], social_instagram: ['instagram.com'], social_tiktok: ['tiktok.com'] };
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -34,10 +35,10 @@ export async function handleAdminApi(req, env, path, user) {
   const body = () => readJson(req);
 
   // ── users ──
-  const um = path.match(/^\/api\/admin\/users\/([^/]+)\/(status|tier|gift|wallet|delete)$/);
+  const um = path.match(/^\/api\/admin\/users\/([^/]+)\/(status|tier|gift|wallet|delete|inner)$/);
   if (um && req.method === 'POST') {
     const { data, response } = await body(); if (response) return response;
-    const target = await env.DB.prepare('SELECT id,username,role FROM users WHERE id=?').bind(um[1]).first();
+    const target = await env.DB.prepare('SELECT id,username,role,email,status FROM users WHERE id=?').bind(um[1]).first();
     if (!target) return json({ error: 'User not found.' }, 404);
     if (target.id === user.id && um[2] !== 'gift') return json({ error: 'You no fit do that to your own account.' }, 400);
     if (um[2] === 'status') {
@@ -53,14 +54,26 @@ export async function handleAdminApi(req, env, path, user) {
       await audit(env, user.id, 'user.tier', { id: target.id, tier: data.tier, plan: data.plan });
       return json({ message: 'Tier updated', reload: true });
     }
+    if (um[2] === 'inner') {   // inner circle role (players only)
+      if (target.role !== 'USER') return json({ error: 'Only player accounts can be in the inner circle.' }, 400);
+      const on = data.on === true;
+      await env.DB.prepare('UPDATE users SET inner_circle=?, inner_circle_at=? WHERE id=?').bind(on ? 1 : 0, on ? nowIso() : null, target.id).run();
+      if (on) await notify(env, target.id, 'You’re now in the Tap Am inner circle! Read the rules before you do anything else.', '/inner-circle');
+      await audit(env, user.id, 'user.inner', { id: target.id, on });
+      return json({ message: on ? `${target.username} is now in the inner circle. They got the rules.` : `${target.username} is no longer in the inner circle.`, reload: true });
+    }
     if (um[2] === 'gift') {
       const item = await env.DB.prepare('SELECT id,name FROM store_items WHERE id=?').bind(String(data.item || '')).first();
       if (!item) return json({ error: 'Pick an item.', field: 'item' }, 400);
       const qty = clampInt(data.qty, 1, 1000, 1);
       await giveItem(env, target.id, item.id, qty, { gift: true, from: user.id, note: 'From Tap Am' });
       await notify(env, target.id, `Tap Am gifted you ${qty}× ${item.name}!`, '/bag');
-      await audit(env, user.id, 'user.gift', { id: target.id, item: item.id, qty });
-      return json({ message: `Gifted ${qty}× ${item.name} to ${target.username}`, reload: true });
+      let emailed = false;
+      if (data.email === true && target.email && target.status === 'ACTIVE') {   // super admin only: also email the gift
+        try { const r = await sendMail(env, target.email, giftEmail({ site: env.PUBLIC_URL || 'https://tapammm.live', what: `${qty}× ${item.name}`, url: (env.PUBLIC_URL || 'https://tapammm.live') + '/bag' })); emailed = !!(r.sent || r.test); } catch (e) { console.error('gift email', e?.message); }
+      }
+      await audit(env, user.id, 'user.gift', { id: target.id, item: item.id, qty, email: emailed });
+      return json({ message: `Gifted ${qty}× ${item.name} to ${target.username}${emailed ? ' and emailed them' : data.email === true ? ' (the email could not be sent)' : ''}`, reload: true });
     }
     if (um[2] === 'wallet') {
       const raw = String(data.amount || '').replace(/[,\s]/g, '');
@@ -79,6 +92,42 @@ export async function handleAdminApi(req, env, path, user) {
       await audit(env, user.id, 'user.delete', { id: target.id, username: target.username });
       return json({ message: `${target.username} removed`, redirect: '/admin/users' });
     }
+  }
+
+  // ── home page ad requests ──
+  const rqm = path.match(/^\/api\/admin\/ad-requests\/([0-9a-f-]{36})\/(publish|reject|end)$/);
+  if (rqm && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const r = await adminAdRequest(env, user, rqm[1], rqm[2], data);
+    if (r.status === 200) await audit(env, user.id, 'adreq.' + rqm[2], { id: rqm[1], days: data.days });
+    return r;
+  }
+
+  // ── inner circle: the rules page and sending it to members ──
+  if (path === '/api/admin/inner-circle/rules' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    const rules = String(data.rules || '').replace(/\r/g, '').trim().slice(0, 6000);
+    if (rules && rules.length < 20) return json({ error: 'Write the rules (20+ characters), or leave it empty for the default rules.', field: 'rules' }, 400);
+    await env.DB.prepare("INSERT INTO settings(key,value) VALUES('inner_circle_rules',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(rules).run();
+    clearSettingsCache();
+    await audit(env, user.id, 'inner.rules', { length: rules.length });
+    return json({ message: rules ? 'Rules saved.' : 'Rules reset to the default.', reload: true });
+  }
+  if (path === '/api/admin/inner-circle/send' && req.method === 'POST') {
+    const { data, response } = await body(); if (response) return response;
+    if (!await allow(env, 'icsend:' + user.id, 10, 3600)) return json({ error: 'Too many sends. Wait small.' }, 429);
+    const list = (await env.DB.prepare("SELECT id, email FROM users WHERE inner_circle=1 AND status='ACTIVE'").all()).results;
+    if (!list.length) return json({ error: 'Nobody is in the inner circle yet. Give the role from a player’s page.' }, 400);
+    const site = env.PUBLIC_URL || 'https://tapammm.live';
+    let emailed = 0;
+    for (const m of list) {
+      await notify(env, m.id, '📜 The inner circle rules were updated. Read them now.', '/inner-circle');
+      if (data.email === true && m.email) {
+        try { const r = await sendMail(env, m.email, announcementEmail({ site, service: true, title: 'Your Tap Am inner circle rules', message: 'The Tap Am team sent you the inner circle rules. Read them before you share anything.\n\nThey are private to you: please don’t forward this email.', link: site + '/inner-circle', linkLabel: 'Read the rules' })); if (r.sent || r.test) emailed++; } catch (e) { console.error('rules email', e?.message); }
+      }
+    }
+    await audit(env, user.id, 'inner.send', { members: list.length, emailed });
+    return json({ message: `Rules sent to ${list.length} member${list.length === 1 ? '' : 's'}${data.email === true ? ` (${emailed} emailed)` : ''}.` });
   }
 
   // ── bulk gifting: everybody, a tier, or a list of nicknames ──
@@ -110,8 +159,15 @@ export async function handleAdminApi(req, env, path, user) {
       env.DB.prepare(`INSERT INTO notifications(id,user_id,text,link) SELECT lower(hex(randomblob(16))),id,?,'/bag' FROM users WHERE ${g.where}`).bind(text, ...g.binds)
     ]));
     const rows = { length: count };
-    await audit(env, user.id, 'gift.bulk', { item: item.id, qty, to, count: rows.length });
-    return json({ message: `Sent ${qty}× ${item.name} to ${rows.length} players`, reload: true });
+    let emailNote = '';
+    if (data.email === true) {   // queued: the cron emails them in batches (service email: it's about their account)
+      const payload = { what: `${qty}× ${item.name}`, note: note === 'From Tap Am' ? '' : note, link: '/bag' };
+      if (to === 'LIST') payload.ids = (await env.DB.batch(groups.map(g => env.DB.prepare(`SELECT id FROM users WHERE ${g.where}`).bind(...g.binds)))).flatMap(r => r.results.map(x => x.id));
+      await env.DB.prepare("INSERT INTO email_jobs(id,kind,ref_id,audience,service,status,payload) VALUES(?,'GIFT',?,?,1,'QUEUED',?)").bind(uid(), item.id, to === 'ALL' ? 'PLAYERS' : to === 'LIST' ? 'LIST' : to, JSON.stringify(payload)).run();
+      emailNote = ' Emails go out over the next few minutes.';
+    }
+    await audit(env, user.id, 'gift.bulk', { item: item.id, qty, to, count: rows.length, email: data.email === true });
+    return json({ message: `Sent ${qty}× ${item.name} to ${rows.length} players.${emailNote}`, reload: true });
   }
 
   // ── pools ──

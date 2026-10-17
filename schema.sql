@@ -5,6 +5,7 @@ PRAGMA foreign_keys=ON;
 -- role: USER | SPONSOR | ADMIN      tier (USER only): LAPO (free) | MAPO (paid) | NEPO (premium)
 -- status: ACTIVE | SUSPENDED | ARCHIVED
 CREATE TABLE IF NOT EXISTS users (
+  allow_invites INTEGER NOT NULL DEFAULT 1, email_games INTEGER NOT NULL DEFAULT 1, inner_circle INTEGER NOT NULL DEFAULT 0, inner_circle_at TEXT,
   id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, email TEXT UNIQUE COLLATE NOCASE,
   password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, password_iter INTEGER NOT NULL DEFAULT 10000,
   role TEXT NOT NULL DEFAULT 'USER', tier TEXT NOT NULL DEFAULT 'LAPO', tier_until TEXT, status TEXT NOT NULL DEFAULT 'ACTIVE',
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS ranks (level INTEGER PRIMARY KEY, name TEXT NOT NULL,
 -- ── pools ───────────────────────────────────────────────────────────────────
 -- kind: FREE | PAID | SPONSORED      audience: ALL | LAPO | NEPO      tie_rule: FIRST | SPLIT
 CREATE TABLE IF NOT EXISTS pools (
+  min_players INTEGER NOT NULL DEFAULT 0,
   id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
   entry_fee INTEGER NOT NULL DEFAULT 0, min_tier TEXT NOT NULL DEFAULT 'LAPO', boosters_allowed INTEGER NOT NULL DEFAULT 1, max_players INTEGER NOT NULL DEFAULT 1000,
   status TEXT NOT NULL DEFAULT 'SCHEDULED', created_by TEXT, hashtag TEXT UNIQUE,
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS pool_entries (
   PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 -- Players the creator invited (they get a notification; private pools let them in without the password).
 CREATE TABLE IF NOT EXISTS pool_invites (
+  emailed_at TEXT,
   pool_id TEXT NOT NULL, user_id TEXT NOT NULL, invited_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY(pool_id,user_id), FOREIGN KEY(pool_id) REFERENCES pools(id) ON DELETE CASCADE, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 
@@ -56,7 +59,7 @@ CREATE TABLE IF NOT EXISTS error_log (id TEXT PRIMARY KEY, area TEXT NOT NULL, m
 CREATE INDEX IF NOT EXISTS idx_error_log_time ON error_log(created_at);
 CREATE TABLE IF NOT EXISTS announcements (id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL, link TEXT, audience TEXT NOT NULL DEFAULT 'ALL', overlay INTEGER NOT NULL DEFAULT 0, email TEXT NOT NULL DEFAULT 'NO', active INTEGER NOT NULL DEFAULT 1, created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS announcement_seen (user_id TEXT NOT NULL, ann_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, ann_id));
-CREATE TABLE IF NOT EXISTS email_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, ref_id TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'ALL', service INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'QUEUED', cursor TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, done_at TEXT);
+CREATE TABLE IF NOT EXISTS email_jobs (id TEXT PRIMARY KEY, payload TEXT, kind TEXT NOT NULL, ref_id TEXT NOT NULL, audience TEXT NOT NULL DEFAULT 'ALL', service INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'QUEUED', cursor TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, done_at TEXT);
 
 -- ── money ───────────────────────────────────────────────────────────────────
 -- balance_kobo = wallet (money you add; spend-only)   winnings_kobo = withdrawable
@@ -76,14 +79,14 @@ CREATE TABLE IF NOT EXISTS gifts (id TEXT PRIMARY KEY, from_user_id TEXT, to_use
 -- ── sponsors' ads ───────────────────────────────────────────────────────────
 -- kind: IMAGE | YOUTUBE     (placement is always ALL: before the game, in the lobby and before results)
 CREATE TABLE IF NOT EXISTS promos (id TEXT PRIMARY KEY, title TEXT NOT NULL, owner_id TEXT, kind TEXT NOT NULL DEFAULT 'IMAGE', image_url TEXT, video_id TEXT, target_url TEXT, placement TEXT NOT NULL DEFAULT 'ALL', pool_id TEXT, active INTEGER NOT NULL DEFAULT 1, approved INTEGER NOT NULL DEFAULT 0, views INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0, duration_seconds INTEGER NOT NULL DEFAULT 5, reject_reason TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS media (key TEXT PRIMARY KEY, owner_id TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS media (key TEXT PRIMARY KEY, purpose TEXT, data BLOB, owner_id TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 
 -- ── voice ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS voice_sessions (user_id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, session_id TEXT NOT NULL, track_name TEXT, mode TEXT NOT NULL DEFAULT 'LISTEN', updated_at TEXT NOT NULL);
 
 -- ── misc ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, email TEXT, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'NEW', kind TEXT NOT NULL DEFAULT 'GENERAL', data TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS slides (id TEXT PRIMARY KEY, title TEXT NOT NULL, subtitle TEXT NOT NULL DEFAULT '', image_url TEXT, link TEXT, color TEXT NOT NULL DEFAULT '#2E8BFF',
+CREATE TABLE IF NOT EXISTS slides (id TEXT PRIMARY KEY, expires_at TEXT, request_id TEXT, title TEXT NOT NULL, subtitle TEXT NOT NULL DEFAULT '', image_url TEXT, link TEXT, color TEXT NOT NULL DEFAULT '#2E8BFF',
   promo_id TEXT, sponsor_id TEXT, status TEXT NOT NULL DEFAULT 'REQUESTED', sort INTEGER NOT NULL DEFAULT 0, note TEXT, views INTEGER NOT NULL DEFAULT 0, clicks INTEGER NOT NULL DEFAULT 0, cta TEXT,
   created_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, promo_id TEXT NOT NULL, sponsor_id TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL, email TEXT, phone TEXT,
@@ -237,3 +240,24 @@ INSERT OR IGNORE INTO store_items(id,name,description,kind,price_kobo,multiplier
   ('box-basic','Mystery box','Open it for a surprise: a booster, a skin or some wallet money.','BOX',30000,1,0,'ALL',1,'{"rewards":[{"item":"booster-2x","qty":2,"w":30},{"item":"b-all-pepper","qty":3,"w":20},{"item":"b-all-steady","qty":1,"w":15},{"item":"s-all-ocean","qty":1,"w":8},{"item":"s-all-lime","qty":1,"w":8},{"wallet":20000,"w":12},{"wallet":100000,"w":5},{"item":"b-all-agbada","qty":1,"w":2}]}',1,120),
   ('box-mapo','Mapo mystery box','Bigger surprises for Mapo and Nepo babies.','BOX',100000,1,0,'MAPO',1,'{"rewards":[{"item":"b-mapo-keke","qty":2,"w":25},{"item":"b-mapo-molue","qty":1,"w":20},{"item":"booster-3x","qty":2,"w":15},{"item":"s-mapo-coral","qty":1,"w":8},{"item":"s-mapo-forest","qty":1,"w":8},{"wallet":50000,"w":14},{"wallet":200000,"w":6},{"item":"b-mapo-thirdmainland","qty":1,"w":4}]}',1,121),
   ('box-nepo','Nepo mystery box','The big box. Nepo babies only.','BOX',300000,1,0,'NEPO',1,'{"rewards":[{"item":"b-nepo-bigboy","qty":2,"w":25},{"item":"b-nepo-banana","qty":1,"w":20},{"item":"booster-5x","qty":1,"w":15},{"item":"s-nepo-champagne","qty":1,"w":8},{"item":"s-nepo-royal","qty":1,"w":8},{"wallet":100000,"w":14},{"wallet":500000,"w":6},{"item":"b-nepo-asorock","qty":1,"w":4}]}',1,122);
+
+-- launch features (0012): home page ad requests, more boosters, option switches
+CREATE TABLE IF NOT EXISTS ad_requests (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, youtube_url TEXT, image_url TEXT, target_url TEXT, details TEXT,
+  period TEXT NOT NULL, units INTEGER NOT NULL DEFAULT 1, price_kobo INTEGER NOT NULL DEFAULT 0, paid_from TEXT, status TEXT NOT NULL DEFAULT 'PENDING', admin_note TEXT,
+  slide_id TEXT, live_until TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_ad_requests_user ON ad_requests(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ad_requests_status ON ad_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_users_referred ON users(referred_by);
+CREATE INDEX IF NOT EXISTS idx_wtx_user_type ON wallet_transactions(user_id, type);
+CREATE INDEX IF NOT EXISTS idx_media_owner ON media(owner_id);
+INSERT OR IGNORE INTO settings(key,value) VALUES ('opt_lapo_rules','1'), ('opt_boosters','1'), ('top_games_email','1'),
+  ('slide_price_day_kobo','500000'), ('slide_price_week_kobo','3000000'), ('slide_price_month_kobo','10000000'), ('slide_price_year_kobo','100000000'),
+  ('inner_circle_rules', '');
+-- More boosters (the super admin can add more in Admin → Store).
+INSERT OR IGNORE INTO store_items(id,name,description,kind,price_kobo,multiplier,duration_seconds,audience,min_rank,config,active,sort,per_game_limit) VALUES
+  ('b-quick-3x','Quick Hands 3×','3× taps for 8 seconds.','BOOSTER',30000,3,8,'ALL',1,'{"color":"#21D4C8"}',1,12,0),
+  ('b-long-15x','Long Ride 1.5×','1.5× taps for 45 seconds.','BOOSTER',40000,1.5,45,'ALL',1,'{"color":"#9161FF"}',1,13,0),
+  ('b-mapo-jollof','Jollof Heat 3×','3× taps for 25 seconds.','BOOSTER',150000,3,25,'MAPO',1,'{"color":"#FF8A2A"}',1,45,0),
+  ('b-mapo-okada','Okada Dash 5×','5× taps for 6 seconds.','BOOSTER',180000,5,6,'MAPO',1,'{"color":"#FFD23F"}',1,46,0),
+  ('b-nepo-lekki','Lekki Toll 8×','8× taps for 8 seconds.','BOOSTER',450000,8,8,'NEPO',15,'{"color":"#2E8BFF"}',1,51,0),
+  ('b-nepo-owambe','Big Owambe 4×','4× taps for 30 seconds. One per game.','BOOSTER',600000,4,30,'NEPO',20,'{"color":"#FF4FA3"}',1,50,1);

@@ -12,6 +12,9 @@ const ME_CSS = `
 .prof h1{margin:0 0 6px;font:900 clamp(26px,7vw,36px)/1 var(--display);overflow:hidden;text-overflow:ellipsis}
 .badges{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:none}
 .badges::-webkit-scrollbar{display:none}
+.badges.bgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;overflow:visible}
+.badges.bgrid figure{width:auto;min-width:0}
+.badges.bgrid figure[hidden]{display:none}
 .badges figure{flex:none;margin:0;display:grid;justify-items:center;align-content:start;gap:4px;width:96px;padding:10px 6px;border-radius:var(--r-sm);background:#fff;color:var(--ink);font:700 11px/1.2 var(--body);text-align:center;box-shadow:var(--sh)}
 .badges figure b{display:block;font:900 15px/1 var(--display);color:var(--purple-d)}
 .sbadge{display:grid;place-items:center;width:52px;height:52px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px var(--ink);color:#fff;font:900 15px/1 var(--display);text-shadow:var(--ts)}
@@ -57,14 +60,13 @@ export function mePage(ctx) {
   ${next ? `<p class="small" style="margin:8px 0 0;font-weight:600">Next: <b>${esc(next.name)}</b> — ${esc(req.join(' · '))}</p>` : ''}</div>
 </section>
 ${tierKey === 'LAPO' ? '<a class="btn btn--green btn--block btn--shine" style="margin-top:12px" href="/plans">Go Mapo or Nepo</a>' : ''}
-${badges.length ? `<h2 class="h2">Your badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
+${badges.length ? `<h2 class="h2">Your badges <small style="font:800 14px var(--body);opacity:.85">${badges.length} won</small></h2><div class="badges bgrid" data-paginate="9">${badges.map(badgeFigure).join('')}</div>` : ''}
 ${taps ? tapsSection(taps) : ''}
 <div class="grid g3" style="margin-top:14px;grid-template-columns:repeat(3,1fr)">
   <div class="panel stat"><span class="k">Lifetime taps</span><span class="v">${short(user.lifetime_taps)}</span></div>
   <div class="panel stat"><span class="k">Games</span><span class="v">${short(user.games_played)}</span></div>
   <div class="panel stat"><span class="k">Wins</span><span class="v">${short(user.wins)}</span></div>
 </div>
-<div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start;margin-top:14px"></div>
 <h2 class="h2">Your stuff</h2>
 <div class="tiles">
   ${tile('/settings', 'Settings', 'Password, WhatsApp, emails', 'c-ink')}
@@ -78,6 +80,8 @@ ${taps ? tapsSection(taps) : ''}
   ${tile('/calc', 'Booster calculator', 'Where your booster hits hardest', 'c-teal', perk.calc ? null : 'MAPO')}
   ${tile('/suggest-pool', 'Suggest a pool', 'Tell us the pool you want', 'c-purple')}
   ${tile('/invite', 'Invite people', `${user.referral_count || 0} joined with your link`, 'c-green')}
+  ${tile('/advertise', 'Advertise with us', 'Put your ad on the home page', 'c-orange')}
+  ${user.inner_circle ? tile('/inner-circle', 'Inner circle', 'Your rules and perks', 'c-purple') : ''}
 </div>
 <div class="actions" style="margin-top:18px"><a class="btn btn--white btn--sm" href="/rules">Game rules</a><button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button></div>`;
   return appPage({ user, title: 'Me', active: '/me', body, wallet, css: ME_CSS, theme, bgCss });
@@ -133,7 +137,8 @@ export function invitePage(ctx) {
   <div class="row" style="gap:8px"><button type="button" class="btn btn--white btn--sm" style="flex:1" data-share-url="${esc(refUrl)}" data-share-text="Come play Tap Am with me! Use my link:">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" style="flex:1" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.qr} QR card</button></div>
 </section>
 <h2 class="h2">People wey join</h2>
-${joined.length ? `<div class="list">${joined.map(j => `<div class="item"><div class="grow"><div class="t">${esc(j.username)}</div><div class="s">Joined ${esc(lagosDate(j.created_at))}</div></div></div>`).join('')}</div>` : '<div class="empty">Nobody yet. Share your link!</div>'}`;
+${ctx.inner ? `<div class="panel" style="margin-bottom:12px;box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>Inner circle</b><p class="muted" style="margin:4px 0 8px">You can see what each person you brought has spent on Tap Am. Keep it to yourself.</p><a class="btn btn--gold btn--sm" href="/inner-circle">Read the rules</a>${joined.length ? ` <span class="small" style="font-weight:800;margin-left:6px">Total spent: ${esc(naira(joined.reduce((a, j) => a + Number(j.spent || 0), 0)))}</span>` : ''}</div>` : ''}
+${joined.length ? `<div class="list" data-paginate="20">${joined.map(j => `<div class="item"><div class="grow"><div class="t">${esc(j.username)}</div><div class="s">Joined ${esc(lagosDate(j.created_at))}</div></div>${ctx.inner ? `<div style="text-align:right"><b class="amt">${esc(naira(j.spent || 0))}</b><div class="small muted">spent</div></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Nobody yet. Share your link!</div>'}`;
   return appPage({ user, title: 'Invite people', active: '', body, wallet, narrow: true, theme, bgCss });
 }
 
@@ -162,7 +167,6 @@ export function settingsPage(ctx) {
 <div class="panel set">
   <h2>WhatsApp number</h2><p class="sub2">So Tap Am can reach you about prizes and your account. Never shown to other players.</p>
   ${form('/api/account/whatsapp', `${field({ label: 'WhatsApp number', name: 'whatsapp', type: 'tel', value: user.whatsapp || '', placeholder: '0803 123 4567', attrs: 'inputmode="tel" autocomplete="tel" maxlength="20" required' })}${field({ label: 'Your password', name: 'password', type: 'password', attrs: 'autocomplete="current-password" maxlength="128" required' })}`, { submit: user.whatsapp ? 'Update number' : 'Save number' })}
-  <div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start;margin-top:10px"></div>
 </div>
 <div class="panel set">
   <h2>Background</h2><p class="sub2">${nepo ? 'Backgrounds made by the Tap Am team. Shows across the app and in games.' : 'Nepo babies can change their background.'}</p>
@@ -180,7 +184,9 @@ export function settingsPage(ctx) {
 </div>
 <div class="panel set">
   <h2>Emails</h2>
-  ${form('/api/prefs', `${check({ name: 'emailNews', label: 'Email me about new pools and offers', checked: !!user.email_news })}`, { submit: 'Save' })}
+  ${form('/api/prefs', `${check({ name: 'emailNews', label: 'Email me about new pools and offers', checked: !!user.email_news })}
+  ${user.role === 'USER' ? `${check({ name: 'allowInvites', label: '<b>Let players invite me to their matches</b> (you get a notification and an email)', checked: user.allow_invites !== 0 })}
+  ${check({ name: 'emailGames', label: 'Email me the top live and open games (Mapo and Nepo babies, once a day)', checked: user.email_games !== 0 })}` : ''}`, { submit: 'Save' })}
 </div>
 <div class="panel set">
   <h2>Change password</h2><p class="sub2">You need your 12-word recovery phrase. Other devices get logged out.</p>
@@ -271,8 +277,8 @@ export function topPage(ctx) {
   const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
   const podium = page === 1 && !term && rows.length >= 3;
   const [a, b, c] = rows;
-  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps"><span class="place">${place}</span>${avatarSvg(avatarFor(r.username), { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(compact(r.taps))} taps</div></a>` : '<div></div>';
-  const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b class="pos">#${short(r.pos)}</b><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt" title="${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps">${esc(compact(r.taps))}<small>taps</small></b></a>`;
+  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps"><span class="place">${place}</span>${rankAvatar(r.rank_level || 1, { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(compact(r.taps))} taps</div></a>` : '<div></div>';
+  const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b class="pos">#${short(r.pos)}</b><div class="mini-ava">${rankAvatar(r.rank_level || 1, { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt" title="${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps">${esc(compact(r.taps))}<small>taps</small></b></a>`;
   const qs = `/top?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`;
   const body = `<h1 class="h1">Top tappers</h1><p class="sub">Every player, from the fastest finger down. Whoever taps the most ${label} ${period === 'ALL' ? 'sits on top' : `wins the <b style="color:#fff">Tapper of the ${badgeKind.toLowerCase()}</b> badge`}. Taps count when a pool ends.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/top?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
@@ -289,11 +295,22 @@ ${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No player with that
 export function winnersPage(ctx) {
   const { user, period, rows, page, hasNext, term, theme, bgCss } = ctx;
   const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
-  const body = `<h1 class="h1">Top winners</h1><p class="sub">Who don chop the most prize money. The top winner of each day, month and year gets a badge.</p>
+  const label = { ALL: 'of all time', DAY: 'today', WEEK: 'this week', MONTH: 'this month', YEAR: 'this year' }[period] || '';
+  const badge = { DAY: 'Top winner of the day', MONTH: 'Top winner of the month', YEAR: 'Top winner of the year' }[period];
+  const podium = page === 1 && !term && rows.length >= 3;
+  const [a, b, c] = rows;
+  const won = r => `${nairaCompact(r.won)}`;
+  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(naira(r.won))} won"><span class="place">${place}</span>${rankAvatar(r.rank_level || 1, { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(won(r))} won</div></a>` : '<div></div>';
+  const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b class="pos">#${short(r.pos)}</b><div class="mini-ava">${rankAvatar(r.rank_level || 1, { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${short(r.prizes)} prize${r.prizes == 1 ? '' : 's'}</div></div><b class="amt pos" title="${esc(naira(r.won))}">${esc(won(r))}<small>won</small></b></a>`;
+  const qs = `/winners?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`;
+  const body = `<h1 class="h1">Top winners</h1><p class="sub">Who don chop the most prize money ${label}.${badge ? ` Number one wins the <b style="color:#fff">${badge}</b> badge.` : ' The top winner of each day, month and year gets a badge.'} Winnings count when a pool ends.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/winners?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 <form class="row" method="get" action="/winners" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
-${rows.length ? `<div class="list">${rows.map(r => `<a href="/u/${esc(r.username)}" class="item ${user && r.id === user.id ? 'me' : ''}"><b style="min-width:44px;font:900 18px var(--display);color:var(--ink-soft)">#${short(r.pos)}</b><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${short(r.prizes)} prize${r.prizes == 1 ? '' : 's'}</div></div><b class="amt pos">${esc(nairaShort(r.won))}</b></a>`).join('')}</div>${pager(`/winners?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`, page, hasNext)}` : '<div class="empty">No winners here yet.</div>'}`;
-  return anyPage({ user, title: 'Top winners', active: '/me', body, theme, bgCss, description: 'The players who have won the most prize money on Tap Am.' });
+${rows.length ? `${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
+<div class="list toplist">${(podium ? rows.slice(3) : rows).map(row).join('')}</div>
+${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No winner with that nickname here.' : `Nobody don win prize money ${label} yet. ${user ? '<a href="/pools">Go win!</a>' : '<a href="/signup">Join and win!</a>'}`}</div>`}
+<div class="actions"><a class="btn btn--white btn--sm" href="/top">Top tappers</a><a class="btn btn--ghost btn--sm" href="/players">Find a player</a></div>`;
+  return anyPage({ user, title: 'Top winners', active: '/me', body, css: TOP_CSS, theme, bgCss, description: 'The players who have won the most prize money on Tap Am.' });
 }
 
 // ── Find a player ───────────────────────────────────────────────────────────
@@ -301,7 +318,7 @@ export function playersPage(ctx) {
   const { user, term, rows, theme, bgCss } = ctx;
   const body = `<h1 class="h1">Find a player</h1><p class="sub">Search any nickname to see their rank, badges and winnings.</p>
 <form class="row" method="get" action="/players" style="gap:8px;margin:0 0 14px"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Type a nickname" aria-label="Nickname" autocapitalize="none" minlength="2" autofocus><button class="btn btn--green" type="submit">Search</button></form>
-${term ? (rows.length ? `<div class="list">${rows.map(r => `<a class="item" href="/u/${esc(r.username)}"><div class="mini-ava">${avatarSvg(avatarFor(r.username), { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name)} · ${esc(r.tierName)}</div></div><b class="amt">${short(r.lifetime_taps)}</b></a>`).join('')}</div>` : '<div class="empty">No player with that nickname.</div>') : ''}`;
+${term ? (rows.length ? `<div class="list">${rows.map(r => `<a class="item" href="/u/${esc(r.username)}"><div class="mini-ava">${rankAvatar(r.rank_level || 1, { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name)} · ${esc(r.tierName)}</div></div><b class="amt">${short(r.lifetime_taps)}</b></a>`).join('')}</div>` : '<div class="empty">No player with that nickname.</div>') : ''}`;
   return anyPage({ user, title: 'Find a player', active: '/me', body, css: TOP_CSS, theme, bgCss });
 }
 
@@ -322,8 +339,12 @@ export function profilePage(ctx) {
   const hidden = false;   // winnings and badges are public for every player
   const url = `${origin}/u/${p.username}`;
   const joined = lagosDate(p.created_at.includes('T') ? p.created_at : p.created_at.replace(' ', 'T') + 'Z');
-  const card = { url, kind: 'profile', label: rank.current.name, title: p.username, line: `Rank ${rank.current.level} · ${p.tierName || 'Tap Am player'}`, color: '#9161FF', display: 'www.tapammm.live',
-    stats: [`${compact(p.lifetime_taps)} all-time taps`, ...(hidden || won === null ? [] : [`${nairaCompact(won)} won`]), `${p.tierName}`, ...(hidden || won === null ? [] : [`${badges.length} badge${badges.length === 1 ? '' : 's'}`]), `Joined ${joined}`] };
+  const badgeTotal = Number(ctx.badgeTotal ?? badges.length);
+  const badgeData = b => b.kind.startsWith('X:') ? { color: /^#[0-9a-fA-F]{6}$/.test(b.scolor || '') ? b.scolor : '#9161FF', text: (b.slabel || b.sname || '★').slice(0, 3), label: b.sname || 'Special badge' }
+    : { svg: badgeSvg(b.kind, { size: 100 }), label: b.kind.startsWith('WIN_') ? `Top winner · ${b.kind.slice(4).toLowerCase()}` : b.kind === 'ALL' ? 'G.O.A.T' : `Tapper of the ${b.kind.toLowerCase()}` };
+  const card = { url, kind: 'profile', title: p.username, label: rank.current.name, level: rank.current.level, tier: p.tierName || 'Tap Am player', joined, color: '#9161FF', display: `tapammm.live/u/${p.username}`,
+    avatar: rankAvatar(rank.current.level, { size: 300 }), numbers: [[compact(p.lifetime_taps), 'taps'], won ? [nairaCompact(won), 'won'] : [compact(p.games_played), 'games'], [compact(badgeTotal), badgeTotal === 1 ? 'badge' : 'badges']],
+    badges: badges.slice(0, 3).map(badgeData), badgeTotal };
   const body = `<section class="tcard prof c-purple">${rankAvatar(rank.current.level, { size: 92, title: rank.current.name })}
   <div style="min-width:0"><h1>${nameTag(p.username, p.emoji, own ? user.emoji_meaning : null)}</h1><div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap">${tierBadge(p.tierName)}<span class="small" style="font-weight:700">Joined ${esc(joined)}</span></div></div>
   <div style="grid-column:1/-1;font:800 15px var(--body)">${esc(rank.current.name)} · Rank ${rank.current.level}/100</div>
@@ -336,8 +357,8 @@ export function profilePage(ctx) {
     <div class="panel stat"><span class="k">Wins</span><span class="v">${esc(compact(p.wins))}</span></div>
   </div>
 </div>
-${badges.length ? `<h2 class="h2">Badges</h2><div class="badges">${badges.map(badgeFigure).join('')}</div>` : ''}
-${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div><div class="socials" data-socials="whatsapp" hidden style="justify-content:flex-start"></div>` : user?.role === 'USER' ? `<div class="actions">${tapoffButton(ctx.tapoffsOn, 'btn--gold', `/challenges?to=${encodeURIComponent(p.username)}`, `🥊 Challenge ${esc(p.username)} to a tap-off`)}</div>` : ''}`;
+${badges.length ? `<h2 class="h2">Badges <small style="font:800 14px var(--body);opacity:.85">${badgeTotal} won</small></h2><div class="badges bgrid" data-paginate="9">${badges.map(badgeFigure).join('')}</div>` : ''}
+${own ? `<div class="actions"><button type="button" class="btn btn--green" data-share-card='${esc(JSON.stringify(card))}'>${ICONS.share} Share my profile</button>${copyRowLite(url)}</div>` : user?.role === 'USER' ? `<div class="actions">${tapoffButton(ctx.tapoffsOn, 'btn--gold', `/challenges?to=${encodeURIComponent(p.username)}`, `🥊 Challenge ${esc(p.username)} to a tap-off`)}</div>` : ''}`;
   const css = ME_CSS + `.pstats{display:grid;gap:10px;margin-top:14px}
 .pstats>*{margin:0}.pstats .grid>*{margin:0}
 .pline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px}
@@ -392,3 +413,46 @@ export function suggestPoolPage(ctx) {
 ${mine.length ? `<h2 class="h2">Your suggestions</h2><div class="list">${mine.map(s => `<div class="item"><div class="grow"><div class="t">${esc(s.message.split('\n')[0])}</div><div class="s">${esc(lagos(s.created_at))}</div></div><span class="badge ${s.status === 'DONE' ? 'live' : 'soon'}">${s.status === 'DONE' ? 'Opened' : 'Sent'}</span></div>`).join('')}</div>` : ''}`;
   return appPage({ user, title: 'Suggest a pool', active: '/me', body, wallet, narrow: true, theme, bgCss });
 }
+
+// ── Inner circle rules (members only) ───────────────────────────────────────
+export function innerCirclePage(ctx) {
+  const { user, wallet, rules, count, theme, bgCss } = ctx;
+  const paras = String(rules).split(/\n{2,}/).map(p => {
+    const lines = p.split('\n');
+    if (lines.every(l => /^\s*\d+[.)]\s/.test(l))) return `<ol class="icr">${lines.map(l => `<li>${esc(l.replace(/^\s*\d+[.)]\s*/, ''))}</li>`).join('')}</ol>`;
+    return `<p>${lines.map(esc).join('<br>')}</p>`;
+  }).join('');
+  const css = `.icrules p{margin:0 0 14px;line-height:1.6}.icr{margin:0 0 14px;padding-left:22px;display:grid;gap:10px;line-height:1.55}.icr li::marker{font-weight:900;color:var(--purple)}`;
+  const body = `<h1 class="h1">Inner circle</h1><p class="sub">Private to you. Please don’t share this page.</p>
+<section class="panel icrules">${paras}</section>
+${user.role === 'USER' ? `<div class="grid g2" style="margin-top:14px"><div class="panel stat"><span class="k">People you brought</span><span class="v">${short(count)}</span></div><a class="panel stat" href="/invite" style="text-decoration:none"><span class="k">Your invites</span><span class="v" style="font-size:20px">See who spent →</span></a></div>` : ''}`;
+  return appPage({ user, title: 'Inner circle', active: '', body, wallet, narrow: true, theme, bgCss, css });
+}
+
+// ── Advertise: apply for a home page slot ───────────────────────────────────
+const AD_STATUS = { PENDING: ['Waiting for Tap Am', 'badge'], LIVE: ['Live on the home page', 'badge live'], ENDED: ['Finished', 'badge'], REJECTED: ['Not approved', 'badge red'], CANCELLED: ['Cancelled', 'badge'] };
+export function advertisePage(ctx) {
+  const { user, wallet, mine, prices, theme, bgCss } = ctx;
+  const P = [['DAY', 'day'], ['WEEK', 'week'], ['MONTH', 'month'], ['YEAR', 'year']];
+  const body = `<h1 class="h1">Advertise with us</h1><p class="sub">Put your brand, music, business or event on the home page every Tap Am player sees. Send us your YouTube video or picture, and we’ll set it up.</p>
+<div class="grid g2 g4" style="margin-bottom:14px">${P.map(([k, l], i) => `<div class="tcard card ${['c-sky', 'c-green', 'c-orange', 'c-pink'][i]}" style="padding:12px 14px"><div class="stat"><span class="k">Per ${l}</span><span class="v" style="font-size:22px">${esc(naira(prices[k]))}</span></div></div>`).join('')}</div>
+<div class="panel">${form('/api/ad-requests', `
+  ${field({ label: 'Title', name: 'title', placeholder: 'Chop Life Drinks — cold one dey', attrs: 'maxlength="60" required autocomplete="off"' })}
+  ${field({ label: 'YouTube link', name: 'youtube_url', type: 'url', placeholder: 'https://youtu.be/…', attrs: 'inputmode="url" autocomplete="off"', hint: 'Your video. Or use a picture link below (or both).' })}
+  ${field({ label: 'Picture link (optional)', name: 'image_url', type: 'url', placeholder: 'https://drive.google.com/…', attrs: 'inputmode="url" autocomplete="off"', hint: 'A link to your picture on Google Drive, Docs, Dropbox… Wide pictures look best (about 1600×700).' })}
+  ${field({ label: 'Where people go when they tap it (optional)', name: 'target_url', type: 'url', placeholder: 'https://yourbrand.com', attrs: 'inputmode="url" autocomplete="off"' })}
+  <div class="ta-field"><label class="ta-label" for="f-details">What you want <small>(optional)</small></label><textarea class="ta-input" id="f-details" name="details" maxlength="600" rows="3" placeholder="Words on the ad, colours, the dates you want…"></textarea><p class="ta-error" data-err="details"></p></div>
+  <div class="two">${select({ label: 'Pay per', name: 'period', options: P.map(([k, l]) => [k, l[0].toUpperCase() + l.slice(1)]), value: 'WEEK' })}${field({ label: 'How many', name: 'units', type: 'number', value: '1', attrs: 'min="1" max="30" inputmode="numeric"' })}</div>
+  <div class="preview" data-adprice aria-live="polite"></div>
+  <p class="small muted" style="margin:0">The price comes from your wallet (you have ${esc(naira(wallet?.balance_kobo || 0))}). If Tap Am can’t run your ad, or you cancel before it goes live, you get it all back. Ads must follow the Tap Am rules: no gambling, adult, political or misleading ads.</p>
+`, { submit: 'Apply and pay', shine: true })}</div>
+<h2 class="h2">Your requests</h2>
+${mine.length ? `<div class="list">${mine.map(r => { const st = AD_STATUS[r.status] || [r.status, 'badge']; return `<div class="item" style="align-items:flex-start"><div class="grow"><div class="t">${esc(r.title)} <span class="${st[1]}">${esc(st[0])}</span></div>
+  <div class="s">${short(r.units)} ${esc(PERIOD_NAME[r.period] || '')}${r.units == 1 ? '' : 's'} · ${esc(naira(r.price_kobo))} · ${esc(lagos(r.created_at))}${r.status === 'LIVE' && r.live_until ? ` · until ${esc(lagos(r.live_until))}` : ''}</div>${r.admin_note ? `<div class="s" style="margin-top:4px"><b>Tap Am:</b> ${esc(r.admin_note)}</div>` : ''}</div>
+  ${r.status === 'PENDING' ? postBtn(`/api/ad-requests/${r.id}/cancel`, 'Cancel', { cls: 'btn--soft btn--sm', confirm: 'Cancel this request? Your money comes back.' }) : ''}</div>`; }).join('')}</div>` : '<div class="empty">No requests yet.</div>'}`;
+  const script = `var f=document.querySelector('form[data-api="/api/ad-requests"]'),pv=document.querySelector('[data-adprice]'),PR=${JSON.stringify(prices)},N={DAY:'day',WEEK:'week',MONTH:'month',YEAR:'year'};
+function paint(){if(!f||!pv)return;var k=f.period.value,n=Math.max(1,parseInt(f.units.value,10)||1);pv.textContent=n+' '+N[k]+(n===1?'':'s')+' = '+TA.naira(PR[k]*n);}
+if(f){f.addEventListener('input',paint);f.addEventListener('change',paint);paint();}`;
+  return appPage({ user, title: 'Advertise with us', active: '', body, wallet, narrow: true, theme, bgCss, script });
+}
+const PERIOD_NAME = { DAY: 'day', WEEK: 'week', MONTH: 'month', YEAR: 'year' };

@@ -1,15 +1,16 @@
 // Super admin pages.
-import { appPage, esc, naira, nairaShort, short, lagos, field, moneyField, select, choice, check, form, postBtn, upload, stateBadge, tierBadge, pager, nameTag, fmtDur } from './kit.js';
+import { appPage, esc, naira, nairaShort, short, lagos, field, moneyField, select, choice, check, form, postBtn, copyBtn, upload, stateBadge, tierBadge, pager, nameTag, fmtDur } from './kit.js';
 import { PATTERNS } from './patterns.js';
 import { themeShell, LOGO_IMG } from './theme.js';
 import { skinPreview } from './skins.js';
 import { adForm, adList, AD_CSS, AD_JS } from './sponsor.js';
 import { backgroundCss, tierName, tierOf } from '../tiers.js';
 
-const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/errors', 'Errors'], ['/admin/messages', 'Announce'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/money', 'Top money'], ['/admin/suggestions', 'Suggestions']];
+const TABS = [['/admin', 'Overview'], ['/admin/health', 'Health'], ['/admin/errors', 'Errors'], ['/admin/messages', 'Announce'], ['/admin/users', 'Users'], ['/admin/gifts', 'Gifts'], ['/admin/pools', 'Pools'], ['/admin/store', 'Store'], ['/admin/ranks', 'Ranks'], ['/admin/ads', 'Ads'], ['/admin/slides', 'Home slides'], ['/admin/badges', 'Badges'], ['/admin/codes', 'Promo codes'], ['/admin/merch', 'Merch'], ['/admin/backgrounds', 'Backgrounds'], ['/admin/withdrawals', 'Payouts'], ['/admin/money', 'Money'], ['/admin/inner-circle', 'Inner circle'], ['/admin/ad-requests', 'Ad requests'], ['/admin/suggestions', 'Suggestions']];
 const tabs = cur => `<nav class="tabs" aria-label="Admin sections">${TABS.map(([h, l]) => `<a href="${h}" ${h === cur ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
 const page = (ctx, title, active, body, extra = {}) => appPage({ user: ctx.user, title, active: TABS.some(t => t[0] === active) && ['/admin', '/admin/users', '/admin/pools', '/admin/ads', '/admin/health'].includes(active) ? active : '', body: tabs(extra.tab || active) + body, ...extra });
-const ADMIN_CSS = `.danger-form .btn{background:var(--danger);box-shadow:0 4px 0 var(--danger-d);color:#fff}
+const ADMIN_CSS = `.loadbars{display:flex;align-items:flex-end;gap:3px;height:90px;padding:6px;border-radius:var(--r-in);background:var(--cloud)}.loadbars i{flex:1;min-width:3px;border-radius:3px 3px 0 0}
+.danger-form .btn{background:var(--danger);box-shadow:0 4px 0 var(--danger-d);color:#fff}
 .sgrp{display:grid;gap:14px;padding:14px;border-radius:var(--r-sm);background:var(--cloud)}
 .rejform{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
 .rejform .ta-field{flex:1;min-width:160px;margin:0}.rejform .ta-input{height:40px}
@@ -31,11 +32,11 @@ export function adminHome(ctx) {
   const v = (key, d) => st[key] ?? d;
   const body = `<h1 class="h1">Super admin</h1>
 <div class="grid g2 g4">
-  ${[['Players', s.players, 'c-sky'], ['Mapo babies', s.mapo, 'c-teal'], ['Nepo babies', s.nepo, 'c-pink'], ['Sponsors', s.sponsors, 'c-orange'], ['Live pools', s.live, 'c-purple'], ['Wallet money held', nairaShort(s.wallets), 'c-sky'], ['Winnings owed', nairaShort(s.winnings), 'c-green'], ['Time sold today', nairaShort(s.timeBoughtToday || 0), 'c-teal'], ['Time sold (all)', nairaShort(s.timeBought || 0), 'c-purple'], ['Payouts waiting', s.pendingW, 'c-sunny'], ['Ads waiting', s.pendingAds, 'c-pink'], ['Home slot requests', s.pendingSlides, 'c-orange'], ['Pool suggestions', s.poolIdeas, 'c-teal'], ['Taps today', short(s.tapsToday), 'c-purple']]
+  ${[['Players', s.players, 'c-sky'], ['Mapo babies', s.mapo, 'c-teal'], ['Nepo babies', s.nepo, 'c-pink'], ['Sponsors', s.sponsors, 'c-orange'], ['Live pools', s.live, 'c-purple'], ['Wallet money held', nairaShort(s.wallets), 'c-sky'], ['Winnings owed', nairaShort(s.winnings), 'c-green'], ['Paystack in today', nairaShort(s.paidToday || 0), 'c-green'], ['Paystack in (all)', nairaShort(s.paidAll || 0), 'c-teal'], ['Time sold today', nairaShort(s.timeBoughtToday || 0), 'c-teal'], ['Time sold (all)', nairaShort(s.timeBought || 0), 'c-purple'], ['Payouts waiting', s.pendingW, 'c-sunny'], ['Ads waiting', s.pendingAds, 'c-pink'], ['Home slot requests', s.pendingSlides, 'c-orange'], ['Pool suggestions', s.poolIdeas, 'c-teal'], ['Taps today', short(s.tapsToday), 'c-purple']]
     .map(([a, b, c]) => `<div class="tcard card ${c}" style="padding:14px"><div class="stat"><span class="k">${a}</span><span class="v">${typeof b === 'number' ? short(b) : esc(b)}</span></div></div>`).join('')}
 </div>
 <div class="grid g2 g4" style="margin-top:12px">
-  <a class="btn btn--green btn--block" href="/pools/new">+ Create pool</a><a class="btn btn--white btn--block" href="/admin/messages">Announce / email</a><a class="btn btn--white btn--block" href="/admin/errors">Errors${ctx.errors24 ? ` <span class="badge red">${ctx.errors24}</span>` : ''}</a><a class="btn btn--white btn--block" href="/admin/health">System health</a>
+  <a class="btn btn--green btn--block" href="/pools/new">+ Create pool</a><a class="btn btn--white btn--block" href="/admin/money">Money in (Paystack)</a><a class="btn btn--white btn--block" href="/admin/messages">Announce / email</a><a class="btn btn--white btn--block" href="/admin/errors">Errors${ctx.errors24 ? ` <span class="badge red">${ctx.errors24}</span>` : ''}</a><a class="btn btn--white btn--block" href="/admin/health">System health</a>
 </div>
 <h2 class="h2">Server problem</h2><div class="panel" style="${st.overload === '1' ? 'box-shadow:0 0 0 3px var(--danger),var(--sh)' : ''}">
   <p class="muted" style="margin:0 0 10px">${st.overload === '1' ? '<b style="color:var(--danger)">Games are paused. Sign-ups and new pools are off.</b> Every score and every naira is kept. When the servers are fine, open the vote: players choose to continue each match or restart it (boosters back).' : 'If the servers are down or struggling, pause every live and upcoming pool. Scores, entry fees and prizes are kept, players get a message, and nobody can sign up or create pools until you say the servers are back.'}</p>
@@ -64,6 +65,9 @@ export function adminHome(ctx) {
     <div class="three">${field({ label: 'Pools a Lapo baby can create a day', name: 'lapo_pools_per_day', type: 'number', value: v('lapo_pools_per_day', 3), attrs: 'min="0" max="500"' })}${field({ label: 'Pools a Mapo baby can create a day', name: 'mapo_pools_per_day', type: 'number', value: v('mapo_pools_per_day', 20), attrs: 'min="0" max="500"' })}${field({ label: 'Pools a Nepo baby can create a day', name: 'nepo_pools_per_day', type: 'number', value: v('nepo_pools_per_day', 50), attrs: 'min="0" max="500"' })}</div>
     <div class="two">${field({ label: 'Seconds added per ₦10,000 in a game', name: 'topup_seconds_per_step', type: 'number', value: v('topup_seconds_per_step', 10), attrs: 'min="1" max="600"' })}${field({ label: 'Instant match: cancel if not full after (hours)', name: 'instant_wait_hours', type: 'number', value: v('instant_wait_hours', 24), attrs: 'min="1" max="168"' })}</div>
     <div class="two">${field({ label: 'Server-problem vote lasts (hours)', name: 'vote_hours', type: 'number', value: v('vote_hours', 1), attrs: 'min="1" max="24"' })}${field({ label: 'Votes needed to continue (%)', name: 'vote_continue_pct', type: 'number', value: v('vote_continue_pct', 50), attrs: 'min="1" max="100"', hint: 'Below this share of “continue” votes, the match restarts.' })}</div>
+    ${check({ name: 'opt_lapo_rules', label: '<b>“Use Lapo baby rules” option</b> for players and sponsors (pools and tap-offs). Off = the option is hidden and nobody but you can switch it on. Lapo-only pools always use Lapo rules.', checked: st.opt_lapo_rules !== '0' })}
+    ${check({ name: 'opt_boosters', label: '<b>“Allow boosters” option</b> for players and sponsors (pools and tap-offs). Off = the option is hidden and boosters stay allowed in their pools.', checked: st.opt_boosters !== '0' })}
+    ${check({ name: 'top_games_email', label: '<b>Daily “top games” email</b> to Mapo and Nepo babies who said yes to game emails (live and open pools).', checked: st.top_games_email !== '0' })}
     ${field({ label: 'House cut on paid pools (%)', name: 'house_cut_pct', type: 'number', value: v('house_cut_pct', 0), attrs: 'min="0" max="50"', hint: 'Taken from paid-pool prizes before payout. 0 = all entry fees go to winners.' })}
     ${check({ name: 'auto_payouts', label: '<b>Automatic payouts</b> through the payment gateway (small amounts, older accounts, no cheating flags)', checked: st.auto_payouts === '1' })}
     <div class="two">${moneyField({ label: 'Auto-pay up to (₦)', name: 'auto_payout_max_kobo', value: k('auto_payout_max_kobo') })}${field({ label: 'Account at least (days old)', name: 'auto_payout_min_age_days', type: 'number', value: v('auto_payout_min_age_days', 7), attrs: 'min="0"' })}</div></div>
@@ -83,12 +87,46 @@ export function adminHome(ctx) {
 }
 
 // ── system health ───────────────────────────────────────────────────────────
+// Server load: how busy and how fast the worker is (sampled), with what to do as Tap Am grows.
+function loadPanel(load) {
+  if (!load) return '';
+  const hs = load.hours || [], last = hs[hs.length - 1] || {}, prev = hs.slice(-2)[0] || {};
+  const cur = (last.req_n || 0) >= (prev.req_n || 0) * 0.3 ? last : prev;   // the current hour may have just begun
+  const n = cur.req_n || 0, avg = n ? Math.round((cur.req_ms || 0) / n) : 0, slow = n ? (cur.req_slow || 0) / n : 0, err = n ? (cur.req_5xx || 0) / n : 0, perMin = Math.round(n / 60);
+  const level = err > 0.05 || avg > 1500 || slow > 0.2 || load.dbMs > 400 ? 'crit' : err > 0.01 || avg > 600 || slow > 0.05 || load.dbMs > 150 || perMin > 3000 ? 'warn' : 'ok';
+  const word = { ok: 'Calm — the server is coping well', warn: 'Busy — keep an eye on it', crit: 'Overloaded — act now' }[level];
+  const max = Math.max(1, ...hs.map(h => h.req_n || 0));
+  const bars = hs.map(h => { const a = h.req_n ? Math.round(h.req_ms / h.req_n) : 0; return `<i title="${esc(h.hour.slice(5).replace('T', ' '))}:00 · about ${short(h.req_n || 0)} requests · ${a} ms" style="height:${Math.max(3, Math.round((h.req_n || 0) / max * 100))}%;background:${a > 1500 ? 'var(--danger)' : a > 600 ? 'var(--sunny)' : 'var(--green)'}"></i>`; }).join('');
+  const todo = level === 'crit' ? ['Pause new pools for a short while: Admin → Overview → “Server problem” (players keep their money and scores).', 'Open Cloudflare → Workers & Pages → tapammm-live → Metrics and Logs to see which pages are slow or failing.', 'If the database is the slow part (database round trip above 400 ms), turn on D1 read replication and move hot reads (top lists, home page) to Workers KV.', 'If the worker hits its CPU limit, raise it in the worker settings (Workers Paid allows up to 5 minutes per request) and check Durable Object usage.']
+    : level === 'warn' ? ['Check Cloudflare → Workers & Pages → tapammm-live → Metrics for errors and CPU time.', 'Big pools are coming? Schedule them, so players join over time instead of all at once.', 'Keep the Workers Paid plan on (the free plan stops at 100,000 requests a day).'] : [];
+  return `<h2 class="h2">Server load</h2><div class="panel">
+  <div class="row wrap" style="justify-content:flex-start;gap:10px"><span class="lvl ${level}"></span><b style="font:900 20px var(--display);color:var(--ink)">${word}</b></div>
+  <div class="grid g2 g4" style="margin-top:12px">
+    <div class="panel stat" style="box-shadow:none;background:var(--cloud)"><span class="k">Requests / minute</span><span class="v">${short(perMin)}</span></div>
+    <div class="panel stat" style="box-shadow:none;background:var(--cloud)"><span class="k">Average response</span><span class="v">${avg} ms</span></div>
+    <div class="panel stat" style="box-shadow:none;background:var(--cloud)"><span class="k">Database round trip</span><span class="v">${load.dbMs} ms</span></div>
+    <div class="panel stat" style="box-shadow:none;background:var(--cloud)"><span class="k">Online now</span><span class="v">${short(load.online)}</span></div></div>
+  <p class="small" style="margin:10px 0 4px;color:#000">Slow requests (over 1.5 s): <b>${Math.round(slow * 100)}%</b> · server errors: <b>${(err * 100).toFixed(1)}%</b> · last 24 hours, by hour (estimated from 1 in 20 requests):</p>
+  <div class="loadbars" aria-hidden="true">${bars || '<span class="small muted">No data yet — it fills in as people use the site.</span>'}</div>
+  ${todo.length ? `<div class="note" style="margin-top:12px"><b>What to do now</b><ul style="margin:6px 0 0;padding-left:18px">${todo.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
+  <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:800">How to grow Tap Am’s servers (add or move services)</summary><ol class="small" style="margin:8px 0 0;padding-left:20px;display:grid;gap:6px;color:#000">
+    <li><b>Workers Paid</b> (already needed): 10 million requests a month included; more is billed per million. Nothing to move.</li>
+    <li><b>Picture storage — R2:</b> switch on R2 in the Cloudflare dashboard (free up to 10 GB). Then pictures move out of the database: create the bucket “tapammm-media” and add the MEDIA binding to the worker.</li>
+    <li><b>Faster reads — D1 read replication:</b> in Cloudflare → D1 → tapammm-live → Settings, turn on read replication. Home, top lists and pool lists then read from a copy near each player.</li>
+    <li><b>Caching — Workers KV:</b> top tappers, top winners and site counters are already cached for 10–60 seconds per server. For millions of players, move these caches to KV so every server shares them.</li>
+    <li><b>Emails — Queues:</b> email jobs run every 5 minutes in batches of 150. For bigger sends, move them to Cloudflare Queues, and finish ZeptoMail’s customer validation to lift the daily limit.</li>
+    <li><b>Database bigger than 10 GB:</b> archive finished pools and old notifications, split tap stats into a second D1 database, or move to Postgres through Hyperdrive.</li>
+    <li><b>Live games:</b> each pool runs in its own Durable Object, so many games at once already scale out. Very big single pools (100,000+ players) need the tap batching to stay on.</li>
+  </ol></details>
+</div>`;
+}
 export function adminHealth(ctx) {
   const { checks, metrics, alerts, dbBytes, usage, settings: st } = ctx;
   const gb = n => (n / 1e9).toFixed(n > 1e9 ? 2 : 3) + ' GB';
   const body = `<h1 class="h1">System health</h1><p class="sub">Checked every 15 minutes. Problems are emailed to ${st.alert_email ? `<b style="color:#fff">${esc(st.alert_email)}</b>` : 'nobody yet — add an alert email in settings'}.</p>
 <div class="panel"><div class="hl">${checks.map(c => `<div class="item" style="box-shadow:none;padding:8px 2px"><span class="lvl ${c.level}"></span><div class="grow"><div class="t" style="white-space:normal">${esc(c.title)}</div><div class="s" style="white-space:normal">${esc(c.detail)}</div>${c.action ? `<div class="small" style="margin-top:4px;font-weight:700;color:var(--ink)">Do this: ${esc(c.action)}</div>` : ''}</div></div>`).join('')}</div>
 <div class="actions">${postBtn('/api/admin/health/test-email', 'Send a test alert email')}</div></div>
+${loadPanel(ctx.load)}
 <h2 class="h2">Database</h2><div class="panel"><div class="row"><b>${gb(dbBytes)}</b><span class="small muted">of 10 GB (D1 limit per database)</span></div><div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, dbBytes / 1e10 * 100).toFixed(1)}%"></i></div>
 <p class="small muted" style="margin:10px 0 0">${usage.map(u => `${esc(u[0])}: <b>${short(u[1])}</b>`).join(' · ')}</p></div>
 <h2 class="h2">Last 7 days</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Day</th><th>Taps</th><th>Games</th><th>Players in games</th><th>Prizes paid</th><th>Payments</th><th>Server errors</th></tr></thead><tbody>
@@ -108,7 +146,7 @@ export function adminUsers(ctx) {
 </details>
 <form class="row" method="get" action="/admin/users" style="gap:8px;margin-bottom:12px"><input class="ta-input" name="q" value="${esc(q)}" placeholder="Search nickname or email" aria-label="Search users"><button class="btn btn--green" type="submit">Search</button></form>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nickname</th><th>Type</th><th>Status</th><th>Taps</th><th>Games</th><th>Wins</th><th>Rank</th><th>Wallet</th><th>Winnings</th><th>Country</th><th>Joined</th></tr></thead><tbody>
-${users.map(u => `<tr><td><a href="/admin/users/${esc(u.id)}">${esc(u.username)}</a><div class="small muted">${esc(u.email || '')}${u.whatsapp ? ' · ' + esc(u.whatsapp) : ''}</div></td><td>${tierBadge(roleLabel(u))}</td><td>${u.status === 'ACTIVE' ? 'Active' : `<span class="badge red">${esc(u.status.toLowerCase())}</span>`}</td><td>${short(u.lifetime_taps)}</td><td>${u.games_played}</td><td>${u.wins}</td><td>${u.rank_level}</td><td>${esc(naira(u.balance_kobo))}</td><td>${esc(naira(u.winnings_kobo))}</td><td>${esc(u.country || '—')}</td><td>${esc(lagos(u.created_at, { hour: undefined, minute: undefined }))}</td></tr>`).join('') || '<tr><td colspan="11">No users found.</td></tr>'}
+${users.map(u => `<tr><td><a href="/admin/users/${esc(u.id)}" style="color:#000;font-weight:800">${esc(u.username)}</a>${u.inner_circle ? ' <span class="badge nepo">Inner circle</span>' : ''}<div class="small" style="color:#000">${esc(u.email || '')}${u.whatsapp ? ' · ' + esc(u.whatsapp) : ''}</div></td><td>${tierBadge(roleLabel(u))}</td><td>${u.status === 'ACTIVE' ? 'Active' : `<span class="badge red">${esc(u.status.toLowerCase())}</span>`}</td><td>${short(u.lifetime_taps)}</td><td>${u.games_played}</td><td>${u.wins}</td><td>${u.rank_level}</td><td>${esc(naira(u.balance_kobo))}</td><td>${esc(naira(u.winnings_kobo))}</td><td>${esc(u.country || '—')}</td><td>${esc(lagos(u.created_at, { hour: undefined, minute: undefined }))}</td></tr>`).join('') || '<tr><td colspan="11">No users found.</td></tr>'}
 </tbody></table></div>${pager(`/admin/users${q ? '?q=' + encodeURIComponent(q) : ''}`, pg, hasNext)}`;
   const script = `var f=document.getElementById('phr');if(f)f.addEventListener('submit',function(e){e.preventDefault();var b=f.querySelector('button');b.classList.add('is-loading');
 fetch('/api/admin/phrases/export',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({password:f.password.value})}).then(function(r){b.classList.remove('is-loading');f.password.value='';
@@ -126,11 +164,13 @@ export function adminUser(ctx) {
 ${flags ? `<div class="panel" style="box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>${flags} anti-cheat flag${flags === 1 ? '' : 's'}</b> — taps faster than their tier allows were dropped in some games. Check before paying out.</div>` : ''}
 ${self ? '' : `<div class="actions">${u.status === 'ACTIVE' ? postBtn(`/api/admin/users/${u.id}/status`, 'Suspend', { body: { status: 'SUSPENDED' }, confirm: `Suspend ${u.username}? They will be logged out.`, cls: 'btn--danger btn--sm' }) : postBtn(`/api/admin/users/${u.id}/status`, 'Re-activate', { body: { status: 'ACTIVE' }, cls: 'btn--green btn--sm' })}
 ${u.role === 'USER' ? postBtn(`/api/admin/users/${u.id}/tier`, 'Give Mapo (1 month)', { body: { tier: 'MAPO', plan: 'month' } }) + postBtn(`/api/admin/users/${u.id}/tier`, 'Give Nepo (1 month)', { body: { tier: 'NEPO', plan: 'month' } }) + postBtn(`/api/admin/users/${u.id}/tier`, 'Give Nepo (1 year)', { body: { tier: 'NEPO', plan: 'year' } }) + postBtn(`/api/admin/users/${u.id}/tier`, 'Make Lapo', { body: { tier: 'LAPO' }, confirm: 'Remove the paid tier from this player?' }) : ''}
+${u.role === 'USER' ? postBtn(`/api/admin/users/${u.id}/inner`, u.inner_circle ? 'Remove from inner circle' : 'Add to inner circle', { body: { on: !u.inner_circle }, cls: u.inner_circle ? 'btn--soft btn--sm' : 'btn--gold btn--sm', confirm: u.inner_circle ? `Remove ${u.username} from the inner circle?` : `Add ${u.username} to the inner circle? They get a notification with the rules.` }) : ''}
 ${u.role === 'SPONSOR' && profile ? postBtn(`/api/admin/sponsors/${u.id}/leads`, profile.lead_capture ? 'Turn lead capture OFF' : 'Turn lead capture ON', { body: { on: !profile.lead_capture }, cls: 'btn--gold btn--sm', confirm: profile.lead_capture ? 'Stop collecting leads for this sponsor?' : 'Let this sponsor collect player details (with consent) from their ads?' }) : ''}</div>`}
 <div class="grid g2m" style="margin-top:14px">
   <div class="panel"><h2 class="h2" style="margin-top:0;color:var(--ink);text-shadow:none">Gift</h2>${form(`/api/admin/users/${u.id}/gift`, `
     ${select({ label: 'Booster or skin', name: 'item', options: items.map(i => [i.id, `${i.name} (${i.kind.toLowerCase()}${i.audience !== 'ALL' ? ', ' + i.audience.toLowerCase() : ''})`]) })}
-    ${field({ label: 'How many', name: 'qty', type: 'number', value: '1', attrs: 'min="1" max="1000"' })}`, { submit: 'Send gift' })}</div>
+    ${field({ label: 'How many', name: 'qty', type: 'number', value: '1', attrs: 'min="1" max="1000"' })}
+    ${check({ name: 'email', label: 'Also send it as an email' })}`, { submit: 'Send gift' })}</div>
   <div class="panel"><h2 class="h2" style="margin-top:0;color:var(--ink);text-shadow:none">Adjust money</h2>${form(`/api/admin/users/${u.id}/wallet`, `
     <div class="two">${field({ label: 'Amount (₦, minus to take)', name: 'amount', attrs: 'inputmode="decimal"' })}${select({ label: 'Balance', name: 'balance', options: [['WALLET', 'Wallet'], ['WINNINGS', 'Winnings']] })}</div>
     ${field({ label: 'Reason', name: 'note', attrs: 'maxlength="120" required' })}`, { submit: 'Adjust' })}</div>
@@ -154,6 +194,7 @@ export function adminGifts(ctx) {
   ${choice({ label: 'Send to', name: 'to', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo'], ['MAPO', 'Mapo'], ['NEPO', 'Nepo'], ['LIST', 'A list']], value: 'ALL' })}
   <div data-show="to=LIST"><div class="ta-field"><label class="ta-label" for="f-names">Nicknames (comma or new line)</label><textarea class="ta-input" id="f-names" name="names" placeholder="chioma, tunde, ada"></textarea><p class="ta-error" data-err="names"></p></div></div>
   ${field({ label: 'Message (optional)', name: 'note', placeholder: 'Happy Independence Day!', attrs: 'maxlength="120"' })}
+  ${check({ name: 'email', label: 'Also send it as an email (sent in batches over the next minutes)' })}
   ${check({ name: 'confirm', label: 'Yes, send it now' })}`, { submit: 'Send gifts', shine: true })}</div>
 <h2 class="h2">Recent bulk gifts</h2>${recent.length ? `<div class="list">${recent.map(a => { const d = JSON.parse(a.detail || '{}'); return `<div class="item"><div class="grow"><div class="t" style="font-size:15px">${esc(d.qty)}× ${esc(d.item)} to ${esc(d.to)} (${short(d.count)} players)</div><div class="s">${esc(lagos(a.created_at))}</div></div></div>`; }).join('')}</div>` : '<div class="empty">None yet.</div>'}`;
   return page(ctx, 'Bulk gifting', '/admin/gifts', body, { css: ADMIN_CSS });
@@ -294,10 +335,24 @@ export function adminMerch(ctx) {
 
 // ── top winnings + top funded accounts ──────────────────────────────────────
 export function adminMoney(ctx) {
-  const { period, winners, funded } = ctx;
+  const { period, winners, funded, paystack: ps = { total: 0, n: 0, payers: 0, by: [], days: [], recent: [] } } = ctx;
   const tabsP = [['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year'], ['ALL', 'All time']];
-  const body = `<h1 class="h1">Top money</h1><p class="sub">Who won the most prize money and who put the most money in, for the period you pick (Lagos time).</p>
+  const PURPOSE = { FUND: 'Wallet top-ups', SPONSOR_FUND: 'Sponsor wallet top-ups', MAPO_MONTH: 'Mapo monthly', MAPO_YEAR: 'Mapo yearly', NEPO_MONTH: 'Nepo monthly', NEPO_YEAR: 'Nepo yearly' };
+  const maxDay = Math.max(1, ...ps.days.map(d => Number(d.total)));
+  const body = `<h1 class="h1">Money</h1><p class="sub">Money that came in through Paystack (confirmed payments only), who won the most and who put the most in, for the period you pick (Lagos time).</p>
 <nav class="tabs">${tabsP.map(([k, l]) => `<a href="/admin/money?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
+<h2 class="h2" style="margin-top:0">Money in from Paystack</h2>
+<div class="grid g2 g4">
+  <div class="tcard card c-green" style="padding:14px"><div class="stat"><span class="k">Received</span><span class="v">${esc(nairaShort(ps.total))}</span></div></div>
+  <div class="tcard card c-sky" style="padding:14px"><div class="stat"><span class="k">Payments</span><span class="v">${short(ps.n)}</span></div></div>
+  <div class="tcard card c-purple" style="padding:14px"><div class="stat"><span class="k">People who paid</span><span class="v">${short(ps.payers)}</span></div></div>
+  <div class="tcard card c-orange" style="padding:14px"><div class="stat"><span class="k">Average payment</span><span class="v">${esc(nairaShort(ps.n ? Math.round(ps.total / ps.n) : 0))}</span></div></div>
+</div>
+${ps.by.length ? `<div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>What for</th><th>Amount</th><th>Payments</th></tr></thead><tbody>${ps.by.map(r => `<tr><td>${esc(PURPOSE[r.purpose] || r.purpose)}</td><td><b>${esc(naira(r.total))}</b></td><td>${r.n}</td></tr>`).join('')}</tbody></table></div>` : ''}
+<h3 style="margin:16px 0 8px;font:900 18px var(--display);color:#fff">Last 14 days</h3>
+${ps.days.length ? `<div class="panel" style="display:grid;gap:6px">${ps.days.map(d => `<div style="display:grid;grid-template-columns:96px 1fr 110px;gap:10px;align-items:center;font:700 13px var(--body)"><span>${esc(d.d)}</span><span style="height:12px;border-radius:99px;background:var(--cloud);overflow:hidden"><i style="display:block;height:100%;width:${Math.max(2, Math.round(Number(d.total) / maxDay * 100))}%;background:var(--green-d)"></i></span><b style="text-align:right">${esc(naira(d.total))}</b></div>`).join('')}</div>` : '<div class="empty">No Paystack payments in the last 14 days.</div>'}
+<h3 style="margin:16px 0 8px;font:900 18px var(--display);color:#fff">Latest payments</h3>
+${ps.recent.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>When</th><th>Who</th><th>What for</th><th>Amount</th><th>Reference</th></tr></thead><tbody>${ps.recent.map(r => `<tr><td>${esc(lagos(r.at))}</td><td>${r.uid ? `<a href="/admin/users/${esc(r.uid)}" style="color:#000;font-weight:800">${esc(r.username)}</a>` : '—'}</td><td>${esc(PURPOSE[r.purpose] || r.purpose)}</td><td><b>${esc(naira(r.amount_kobo))}</b></td><td class="small">${esc(r.reference)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No confirmed payments yet.</div>'}
 <h2 class="h2" style="margin-top:0">Top winnings</h2>${winners.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Player</th><th>Won</th><th>Prizes</th></tr></thead><tbody>${winners.map(w => `<tr><td>${w.pos}</td><td><a href="/admin/users/${esc(w.id)}">${esc(w.username)}</a></td><td><b>${esc(naira(w.won))}</b></td><td>${w.prizes}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No prizes paid in this period.</div>'}
 <h2 class="h2">Top funded accounts</h2>${funded.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Account</th><th>Type</th><th>Added</th><th>Times</th></tr></thead><tbody>${funded.map((f, i) => `<tr><td>${i + 1}</td><td><a href="/admin/users/${esc(f.id)}">${esc(f.username)}</a></td><td>${f.role === 'SPONSOR' ? 'Sponsor' : 'Player'}</td><td><b>${esc(naira(f.funded))}</b></td><td>${f.times}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nobody added money in this period.</div>'}`;
   return page(ctx, 'Top money', '/admin/money', body, { css: ADMIN_CSS });
@@ -430,4 +485,48 @@ ${emailOn ? '' : '<div class="panel" style="margin-bottom:12px;background:var(--
 ${jobs.length ? `<h2 class="h2">Emails going out</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>What</th><th>Status</th><th>Sent</th><th>Started</th></tr></thead><tbody>${jobs.map(j => `<tr><td>${esc(j.what)}</td><td>${esc(j.status.toLowerCase())}</td><td>${short(j.sent)}</td><td>${esc(lagos(j.created_at))}</td></tr>`).join('')}</tbody></table></div>` : ''}
 <h2 class="h2">Recent announcements</h2>${recent.length ? `<div class="list">${recent.map(a => `<div class="item"><div class="grow"><div class="t" style="font-size:16px">${esc(a.title)}</div><div class="s">${esc(lagos(a.created_at))} · ${esc(a.audience.toLowerCase())}${a.overlay ? ' · pop-up' + (a.active ? '' : ' (stopped)') : ''}${a.email !== 'NO' ? ' · email' : ''}</div></div>${a.overlay && a.active ? postBtn(`/api/admin/announcements/${a.id}/stop`, 'Stop pop-up', { cls: 'btn--soft btn--sm' }) : ''}</div>`).join('')}</div>` : '<div class="empty">No announcements yet.</div>'}`;
   return page(ctx, 'Announce', '/admin/messages', body, { css: ADMIN_CSS });
+}
+
+// ── inner circle ────────────────────────────────────────────────────────────
+export function adminInnerCircle(ctx) {
+  const { list, open, invitees, rules, isDefault } = ctx;
+  const n = k => esc(naira(k || 0));
+  const body = `<h1 class="h1">Inner circle</h1><p class="sub">Players you trust to bring people in. Give the role from a player’s page (Users → player → “Add to inner circle”). Members see what the people they brought have spent — never their wallets. Perks (free boosters, Mapo / Nepo status) are given from the player’s page.</p>
+${list.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Member</th><th>Invites</th><th>Invitees’ wallets</th><th>Invitees spent</th><th>Since</th><th></th></tr></thead><tbody>
+${list.map(m => `<tr><td><a href="/admin/users/${esc(m.id)}" style="color:#000;font-weight:800">${esc(m.username)}</a><div class="small" style="color:#000">${esc(m.email || '')}${m.whatsapp ? ' · ' + esc(m.whatsapp) : ''}</div></td><td><b>${short(m.invites)}</b></td><td>${n(m.wallets)}</td><td><b>${n(m.spent)}</b></td><td class="small">${m.inner_circle_at ? esc(lagos(m.inner_circle_at)) : ''}</td><td><a class="btn btn--soft btn--sm" href="/admin/inner-circle?m=${esc(m.id)}#who">People</a></td></tr>`).join('')}
+</tbody></table></div>` : '<div class="empty">Nobody in the inner circle yet.</div>'}
+${open ? `<h2 class="h2" id="who">People ${esc(open.username)} brought (${invitees.length})</h2>${invitees.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Player</th><th>Wallet</th><th>Winnings</th><th>Spent</th><th>Joined</th></tr></thead><tbody>
+${invitees.map(i => `<tr><td><a href="/admin/users/${esc(i.id)}" style="color:#000;font-weight:800">${esc(i.username)}</a>${i.status !== 'ACTIVE' ? ` <span class="badge red">${esc(i.status.toLowerCase())}</span>` : ''}</td><td>${n(i.wallet)}</td><td>${n(i.winnings)}</td><td><b>${n(i.spent)}</b></td><td class="small">${esc(lagos(i.created_at))}</td></tr>`).join('')}
+</tbody></table></div>` : '<div class="empty">Nobody yet.</div>'}` : ''}
+<h2 class="h2">Rules</h2><div class="panel">
+  <p class="small muted" style="margin:0 0 10px">Members read these at <b>/inner-circle</b> (only members and you can open it). ${isDefault ? 'These are the default rules — edit and save to change them.' : 'Empty the box and save to go back to the default rules.'}</p>
+  ${form('/api/admin/inner-circle/rules', `<div class="ta-field"><label class="ta-label" for="f-rules">Rules</label><textarea class="ta-input" id="f-rules" name="rules" rows="14" maxlength="6000">${esc(rules)}</textarea><p class="ta-error" data-err="rules"></p></div>`, { submit: 'Save rules' })}
+  <div class="actions"><a class="btn btn--white btn--sm" href="/inner-circle" target="_blank" rel="noopener">Open the rules page</a>${copyBtn((ctx.origin || '') + '/inner-circle', 'Copy link')}</div>
+  ${form('/api/admin/inner-circle/send', check({ name: 'email', label: 'Also email the link to every member' }), { submit: 'Send rules to all members', btn: 'btn--gold' })}
+</div>`;
+  return page(ctx, 'Inner circle', '/admin/inner-circle', body, { css: ADMIN_CSS });
+}
+
+// ── home page ad requests ───────────────────────────────────────────────────
+export function adminAdRequests(ctx) {
+  const { rows, prices } = ctx;
+  const P = { DAY: ['day', 1], WEEK: ['week', 7], MONTH: ['month', 30], YEAR: ['year', 365] };
+  const st = { PENDING: 'badge', LIVE: 'badge live', ENDED: 'badge', REJECTED: 'badge red', CANCELLED: 'badge' };
+  const card = r => `<div class="panel" style="margin-bottom:12px">
+  <div class="row wrap" style="justify-content:space-between;gap:8px"><b style="font:900 19px var(--display);color:var(--ink)">${esc(r.title)}</b><span class="${st[r.status] || 'badge'}">${esc(r.status.toLowerCase())}</span></div>
+  <p class="small" style="margin:6px 0;color:#000">From <a href="/admin/users/${esc(r.user_id)}" style="color:#000;font-weight:800">${esc(r.username)}</a> (${r.role === 'SPONSOR' ? 'sponsor' : 'player'}) · ${short(r.units)} ${P[r.period]?.[0] || ''}${r.units == 1 ? '' : 's'} · paid ${esc(naira(r.price_kobo))} · ${esc(lagos(r.created_at))}${r.live_until && r.status === 'LIVE' ? ` · live until ${esc(lagos(r.live_until))}` : ''}</p>
+  <div class="small" style="display:grid;gap:3px;color:#000">${r.youtube_url ? `<div>YouTube: <a href="${esc(r.youtube_url)}" target="_blank" rel="noopener">${esc(r.youtube_url)}</a></div>` : ''}${r.image_url ? `<div>Picture: <a href="${esc(r.image_url)}" target="_blank" rel="noopener noreferrer">${esc(r.image_url.slice(0, 80))}</a></div>` : ''}${r.target_url ? `<div>Goes to: <a href="${esc(r.target_url)}" target="_blank" rel="noopener noreferrer">${esc(r.target_url.slice(0, 80))}</a></div>` : ''}${r.details ? `<div style="white-space:pre-wrap">What they want: ${esc(r.details)}</div>` : ''}${r.admin_note ? `<div>Your note: ${esc(r.admin_note)}</div>` : ''}</div>
+  ${r.status === 'PENDING' ? `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">Publish on the home page</summary>${form(`/api/admin/ad-requests/${r.id}/publish`, `
+    <div class="two">${field({ label: 'Days on the home page', name: 'days', type: 'number', value: String((P[r.period]?.[1] || 1) * (r.units || 1)), attrs: 'min="1" max="730"', hint: 'It comes down by itself after this.' })}${field({ label: 'Button text', name: 'cta', placeholder: r.youtube_url && !r.target_url ? 'Watch am' : 'Check am', attrs: 'maxlength="20"' })}</div>
+    ${upload({ label: `Slide picture ${r.youtube_url ? '(optional: the video thumbnail is used if empty)' : '(download theirs and upload it here)'}`, name: 'image_url' })}
+    ${field({ label: 'Message to them (optional)', name: 'note', attrs: 'maxlength="300"' })}
+    ${check({ name: 'email', label: 'Also email them' })}`, { submit: 'Publish and tell them', btn: 'btn--green' })}</details>
+  <details style="margin-top:8px"><summary style="cursor:pointer;font-weight:800">Reject and refund</summary>${form(`/api/admin/ad-requests/${r.id}/reject`, `${field({ label: 'Why (they see this)', name: 'note', attrs: 'maxlength="300" required' })}${check({ name: 'email', label: 'Also email them' })}`, { submit: 'Reject and refund', btn: 'btn--danger' })}</details>` : ''}
+  ${r.status === 'LIVE' ? `<div class="actions">${postBtn(`/api/admin/ad-requests/${r.id}/end`, 'Take it down now', { cls: 'btn--soft btn--sm', confirm: 'Take this ad off the home page now? (No refund.)' })}</div>` : ''}
+</div>`;
+  const body = `<h1 class="h1">Home page ad requests</h1><p class="sub">Players and sponsors apply from “Advertise with us” and pay from their wallet. Publish one to put it on the home page for a number of days — it comes down by itself after that. Rejected requests are refunded.</p>
+<h2 class="h2">Prices</h2><div class="panel">${form('/api/admin/settings', `<div class="two">${moneyField({ label: 'Per day', name: 'slide_price_day_kobo', value: String(prices.DAY / 100) })}${moneyField({ label: 'Per week', name: 'slide_price_week_kobo', value: String(prices.WEEK / 100) })}</div>
+  <div class="two">${moneyField({ label: 'Per month', name: 'slide_price_month_kobo', value: String(prices.MONTH / 100) })}${moneyField({ label: 'Per year', name: 'slide_price_year_kobo', value: String(prices.YEAR / 100) })}</div>`, { submit: 'Save prices' })}</div>
+<h2 class="h2">Requests</h2>${rows.length ? rows.map(card).join('') : '<div class="empty">No requests yet.</div>'}`;
+  return page(ctx, 'Ad requests', '/admin/ad-requests', body, { css: ADMIN_CSS });
 }

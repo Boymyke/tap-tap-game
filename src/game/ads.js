@@ -32,5 +32,5 @@ export async function poolAd(env, poolOrId) {
 // Seconds a pool's pre-game ad needs, so the game can start only after it has finished (plus a short gap).
 export async function adLeadMs(env, pool) {
   const a = await poolAd(env, pool);
-  return a ? (Math.max(5, Number(a.duration_seconds) || 5) + 5) * 1000 : 0;
+  return a ? (15 + 5) * 1000 : 0;   // every ad shows for 15 seconds
 }

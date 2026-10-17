@@ -22,10 +22,10 @@ class Client {
   get(p) { return this.req('GET', p); }
 }
 const BAD = /undefined|NaN|\[object Object\]|__NONCE__/;
-async function page(c, path, { status = 200, contains = [] } = {}) {
+async function page(c, path, { status = 200, contains = [], absent = [] } = {}) {
   const r = await c.get(path);
   const bad = r.type?.includes('text/html') ? (r.text.replace(/<script[\s\S]*?<\/script>/g, '').match(BAD) || [])[0] : null;
-  ok(r.status === status && !bad && contains.every(s => r.text.includes(s)), `${c.name} GET ${path} → ${r.status}${bad ? ' (found ' + bad + ')' : ''}`, contains.filter(s => !r.text.includes(s)));
+  ok(r.status === status && !bad && contains.every(s => r.text.includes(s)) && absent.every(s => !r.text.includes(s)), `${c.name} GET ${path} → ${r.status}${bad ? ' (found ' + bad + ')' : ''}`, [...contains.filter(s => !r.text.includes(s)), ...absent.filter(s => r.text.includes(s)).map(s => 'present: ' + s)]);
   return r;
 }
 async function signup(name, extra = {}) {
@@ -218,9 +218,9 @@ r = await admin.get(AP + '/withdrawals.csv?all=1');
 ok(r.status === 200 && r.text.includes('Bola Test'), 'payouts CSV');
 
 console.log('Sponsor');
-r = await S.post('/api/promos', { title: 'No length ' + tag, kind: 'YOUTUBE', video_url: 'https://youtu.be/dQw4w9WgXcQ' }); ok(r.status === 400 && r.j.field === 'duration_seconds', 'ad needs a length', r.j);
-r = await S.post('/api/promos', { title: 'Odd length ' + tag, kind: 'YOUTUBE', video_url: 'https://youtu.be/dQw4w9WgXcQ', duration_seconds: '7' }); ok(r.status === 400, 'ad length must be 5, 10 or 30', r.j);
-await page(S, '/sponsor/ads', { contains: ['Ad guidelines', 'duration_seconds'] });
+r = await S.post('/api/promos', { title: 'Picture ad ' + tag, kind: 'IMAGE', image_url: '/media/u/2026-10/x.png' }); ok(r.status === 400 && r.j.field === 'video_url', 'ads are YouTube only (no picture ads)', r.j);
+r = await S.post('/api/upload', {}); ok(r.status >= 400, 'sponsor upload needs a file (logo only)', r.j);
+await page(S, '/sponsor/ads', { contains: ['Ad guidelines', 'video_url'], absent: ['duration_seconds'] });
 r = await S.post('/api/promos', { title: 'Cold drinks ' + tag, kind: 'YOUTUBE', video_url: 'https://youtu.be/dQw4w9WgXcQ', target_url: 'https://example.com', duration_seconds: '10' });
 ok(r.status === 200, 'sponsor creates YouTube ad', r.j);
 let adPage = await S.get('/sponsor/ads'); const adId = adPage.text.match(/data-preview-ad="([0-9a-f-]{36})"/)?.[1];
@@ -237,7 +237,7 @@ r = await S.post('/api/pools', { name: 'Brand pool ' + tag, prize: '10,000', ema
 ok(r.status === 200, 'sponsor creates pool with ad + colours', r.j);
 const brandPool = r.j.id;
 await A.post(`/api/pools/${brandPool}/join`, {});
-r = await A.get('/api/promo?at=PRE&pool=' + brandPool); ok(r.j.promo?.id === adId && r.j.promo.lead_capture === 0 && r.j.promo.duration_seconds === 10, 'pool shows its own ad (10 seconds)', r.j);
+r = await A.get('/api/promo?at=PRE&pool=' + brandPool); ok(r.j.promo?.id === adId && r.j.promo.lead_capture === 0 && r.j.promo.duration_seconds === 15, 'pool shows its own ad (always 15 seconds)', r.j);
 r = await admin.post(`/api/admin/sponsors/${sId}/leads`, { on: true }); ok(r.status === 200, 'admin turns on lead capture');
 r = await A.post('/api/leads', { promo: adId, name: 'Ada', email: 'ada@example.com', consent: false }); ok(r.status === 400 && r.j.field === 'consent', 'lead needs consent');
 r = await A.post('/api/leads', { promo: adId, name: 'Ada', email: 'ada@example.com', phone: '08012345678', consent: true }); ok(r.status === 200, 'lead sent with consent', r.j);

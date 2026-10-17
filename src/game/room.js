@@ -3,6 +3,10 @@
 // settles the pool when it ends. Only the worker talks to it — never the browser.
 import { DurableObject } from 'cloudflare:workers';
 import { settlePool } from './settle.js';
+import { prestart } from './gamemail.js';
+
+const PRE_MS = 10000;        // 10 seconds before the start: players-needed check and "starting" emails
+const AWAY_MS = 20000;       // a player not seen in the lobby or on the pool page for this long has left
 
 const DEFAULT_RATE = 15;           // taps/sec for one finger; the worker sends each player's tier limit
 const BURST = 8;
@@ -64,7 +68,12 @@ export class GameRoom extends DurableObject {
         if (changed || this.meta.lapoRules !== meta.lapoRules || this.meta.paused !== meta.paused || !!this.meta.waiting !== meta.waiting) {
           this.meta = { ...(this.meta || {}), ...meta };
           await this.ctx.storage.put('meta', this.meta);
-          if (changed && !meta.paused) await this.ctx.storage.setAlarm(meta.endsAt + 1500);
+          if (changed && !meta.paused) {
+            // one alarm at a time: first the pre-start check (if the start is still ahead), then the settle
+            this.meta.pre = !meta.waiting && meta.startsAt - PRE_MS > now - 2000;
+            await this.ctx.storage.put('meta', this.meta);
+            await this.ctx.storage.setAlarm(this.meta.pre ? Math.max(now, meta.startsAt - PRE_MS) : meta.endsAt + 1500);
+          }
         }
         return j({ ok: true });
       }
@@ -72,11 +81,13 @@ export class GameRoom extends DurableObject {
         if (!this.meta) return j({ error: 'Room not ready' }, 409);
         let p = this.players.get(body.uid);
         if (!p) {
-          p = { uid: body.uid, n: body.name, e: body.emoji || null, tier: body.tier, side: body.side || null, score: 0, raw: 0, cur: { mult: 1, until: 0 }, queue: [], used: {}, boosts: 0, lastBoost: 0, reachedAt: 0, lastAt: 0, allowance: BURST, flagged: 0 };
+          p = { uid: body.uid, n: body.name, e: body.emoji || null, k: Number(body.rank) || 1, tier: body.tier, side: body.side || null, score: 0, raw: 0, cur: { mult: 1, until: 0 }, queue: [], used: {}, boosts: 0, lastBoost: 0, reachedAt: 0, lastAt: 0, allowance: BURST, flagged: 0 };
           this.players.set(p.uid, p); this.sorted = null;
           await this.ctx.storage.put('p:' + p.uid, p);
-        } else if (body.emoji !== undefined && (body.emoji || null) !== (p.e || null)) {
-          p.e = body.emoji || null; await this.ctx.storage.put('p:' + p.uid, p);
+        } else if ((body.emoji !== undefined && (body.emoji || null) !== (p.e || null)) || (body.rank && Number(body.rank) !== p.k)) {
+          if (body.emoji !== undefined) p.e = body.emoji || null;
+          if (body.rank) p.k = Number(body.rank) || 1;
+          await this.ctx.storage.put('p:' + p.uid, p);
         }
         return j({ score: p.score });
       }
@@ -140,10 +151,11 @@ export class GameRoom extends DurableObject {
         const list = this.ranked();
         const uid = url.searchParams.get('uid');
         const me = uid ? this.players.get(uid) : null;
+        if (me) await this.seen(me, now);
         const n = Math.max(3, Math.min(100, Number(url.searchParams.get('n')) || 10));
         const teams = {};
         if (this.meta?.sideA) for (const p of list) if (p.side) teams[p.side] = (teams[p.side] || 0) + p.score;
-        const row = (p, i) => ({ r: i + 1, n: p.n, e: p.e || null, s: p.score, t: p.tier, side: p.side, me: p.uid === uid });
+        const row = (p, i) => ({ r: i + 1, n: p.n, e: p.e || null, k: p.k || 1, s: p.score, t: p.tier, side: p.side, me: p.uid === uid });
         const myRank = me ? list.indexOf(me) + 1 : 0;
         const near = me && myRank > n ? list.slice(Math.max(n, myRank - 3), myRank + 1).map(p => row(p, list.indexOf(p))) : [];
         return j({
@@ -152,6 +164,7 @@ export class GameRoom extends DurableObject {
           total: list.length, teams, startsAt: this.meta?.startsAt, endsAt: this.meta?.endsAt, now
         });
       }
+      case '/seen': { const p = this.players.get(body.uid); if (p) await this.seen(p, now); return j({ ok: true }); }
       case '/snapshot': return j({ ranked: this.ranked().map(p => ({ uid: p.uid, score: p.score, raw: p.raw, reachedAt: p.reachedAt, side: p.side, boosts: p.boosts || 0, flagged: p.flagged || 0 })) });
       case '/settle': { const r = await this.settle(body.id); return j(r); }
       // Server overload: every player's boosters used in this pool (to give them back), then wipe the room.
@@ -165,6 +178,12 @@ export class GameRoom extends DurableObject {
     return j({ error: 'Not found' }, 404);
   }
 
+  // The player has the lobby or the pool page open (saved at most every 15 seconds).
+  async seen(p, now) {
+    p.seen = now;
+    if (now - (p.seenSaved || 0) > 15000) { p.seenSaved = now; await this.ctx.storage.put('p:' + p.uid, p); }
+  }
+
   async settle(poolId) {
     await this.load();
     if (!this.meta) return poolId ? settlePool(this.env, poolId, []) : { skipped: true };   // pool from before game rooms: close it
@@ -175,6 +194,24 @@ export class GameRoom extends DurableObject {
   }
 
   async alarm() {
+    await this.load();
+    if (this.meta?.pre) {
+      const now = Date.now();
+      this.meta.pre = false;
+      await this.ctx.storage.put('meta', this.meta);
+      await this.ctx.storage.setAlarm(this.meta.endsAt + 1500);
+      if (this.meta.paused || this.meta.waiting || now > this.meta.startsAt + 5000) return;
+      try {
+        const absent = [...this.players.values()].filter(p => !p.seen || now - p.seen > AWAY_MS).map(p => p.uid);
+        const r = await prestart(this.env, this.meta.id, absent);
+        if (r.held) {   // not enough players yet: the pool waits for them (like an instant match)
+          this.meta = { ...this.meta, startsAt: Date.parse(r.held.starts_at), endsAt: Date.parse(r.held.ends_at), waiting: true };
+          await this.ctx.storage.put('meta', this.meta);
+          await this.ctx.storage.setAlarm(this.meta.endsAt + 1500);
+        }
+      } catch (e) { console.error('prestart failed', this.meta?.id, e?.stack || e); }
+      return;
+    }
     try { await this.settle(); }
     catch (e) { console.error('settle failed', this.meta?.id, e?.stack || e); await this.ctx.storage.setAlarm(Date.now() + 60000); }
   }

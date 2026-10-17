@@ -140,12 +140,18 @@ export function aboutPage(user) {
 // ── Offline page (cached by the service worker) ──────────────────────────────
 // From the "stop these emails" link in a pool news email. A button (not the link itself) turns them off,
 // so email scanners that open links can't unsubscribe anyone.
-export function unsubPage(u, t) {
+const UNSUB = {
+  news: ['Stop pool news emails?', 'You will stop getting emails about new sponsor pools.', 'pool news'],
+  games: ['Stop top games emails?', 'You will stop getting the daily email of the top live and open games.', 'top games'],
+  invites: ['Stop match invites?', 'Other players won’t be able to invite you to their matches, and you won’t get invite emails.', 'invites']
+};
+export function unsubPage(u, t, k = 'news') {
+  const [title, line] = UNSUB[k] || UNSUB.news;
   const body = `<main class="ta-page" style="justify-content:center"><a class="ta-logo" href="/" style="width:130px">${LOGO_IMG()}</a><div class="ta-card">
-<h1 style="margin:0 0 6px;font:900 30px/1 var(--display)">Stop pool news emails?</h1>
-<p class="ta-note" style="margin:0 0 16px">You will stop getting emails about new sponsor pools. Login codes and account emails still come.</p>
+<h1 style="margin:0 0 6px;font:900 30px/1 var(--display)">${esc(title)}</h1>
+<p class="ta-note" style="margin:0 0 16px">${esc(line)} Login codes and account emails still come.</p>
 <form method="post" class="form" data-api="/api/unsub" novalidate style="display:grid;gap:12px">
-<input type="hidden" name="u" value="${esc(u.slice(0, 64))}"><input type="hidden" name="t" value="${esc(t.slice(0, 64))}">
+<input type="hidden" name="u" value="${esc(u.slice(0, 64))}"><input type="hidden" name="t" value="${esc(t.slice(0, 64))}"><input type="hidden" name="k" value="${esc(UNSUB[k] ? k : 'news')}">
 <div class="ta-msg" role="alert"></div><button class="btn btn--block" type="submit">Yes, stop them</button></form>
 <p class="ta-note" style="margin:14px 0 0">You can turn them on again in Settings.</p></div></main>`;
   return themeShell({ title: 'Email settings', body });

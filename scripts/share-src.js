@@ -32,7 +32,129 @@
     return ctx.createPattern(t, 'repeat');
   }
   var D = '"Barlow Condensed", "Arial Narrow", Arial, sans-serif', B = 'Barlow, Arial, sans-serif';
+  function svgImg(svg, w, h) {   // an inline SVG string (avatar, badge) as an image
+    if (!svg) return Promise.resolve(null);
+    svg = String(svg);
+    if (svg.indexOf('xmlns=') < 0) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+    svg = svg.replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1').replace('<svg', '<svg width="' + w + '" height="' + h + '"');
+    return img('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
+  }
+  async function fonts() { try { await Promise.all([document.fonts.load('italic 900 80px "Barlow Condensed"'), document.fonts.load('900 80px "Barlow Condensed"'), document.fonts.load('800 40px "Barlow Condensed"'), document.fonts.load('700 40px Barlow')]); } catch (e) {} }
+  function bg(ctx, W, H) {
+    var g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#7B45FF'); g.addColorStop(0.55, '#4B1FD8'); g.addColorStop(1, '#2A0F8F');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = texture(ctx); ctx.globalAlpha = 0.6; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+    // soft glow behind the hero
+    var r = ctx.createRadialGradient(W / 2, 420, 40, W / 2, 420, 620); r.addColorStop(0, 'rgba(0,255,110,.22)'); r.addColorStop(1, 'rgba(0,255,110,0)');
+    ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+  }
+  async function header(ctx, W, chip) {
+    var logo = await img('/assets/brand/logo-white.svg');
+    if (logo) ctx.drawImage(logo, 72, 68, 300, 62);
+    ctx.font = '800 34px ' + D; var tw = ctx.measureText(chip).width + 52;
+    ctx.fillStyle = '#150B33'; roundRect(ctx, W - 72 - tw, 70, tw, 60, 30); ctx.fill();
+    ctx.fillStyle = '#00FF6E'; ctx.textBaseline = 'middle'; ctx.fillText(chip, W - 72 - tw + 26, 101); ctx.textBaseline = 'alphabetic';
+  }
+  function footer(ctx, W, H, d, ask) {
+    ctx.fillStyle = 'rgba(21,11,51,.55)'; roundRect(ctx, 72, H - 196, W - 144, 104, 26); ctx.fill();
+    ctx.textBaseline = 'middle';
+    var url = d.display || 'tapammm.live'; ctx.font = '900 ' + fit(ctx, url, 420, 40, '900', D) + 'px ' + D; var uw = ctx.measureText(url).width;
+    ctx.fillStyle = '#00FF6E'; ctx.textAlign = 'right'; ctx.fillText(url, W - 108, H - 144); ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff'; ctx.font = 'italic 900 ' + fit(ctx, ask, W - 216 - uw - 30, 40, 'italic 900', D) + 'px ' + D; ctx.fillText(ask, 108, H - 144);
+    ctx.font = '700 26px ' + B; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.textAlign = 'center'; ctx.fillText('Powered by Ferrn Agency', W / 2, H - 46); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+  function fit(ctx, text, maxW, size, weight, fam) { var s = size; do { ctx.font = weight + ' ' + s + 'px ' + fam; s -= 4; } while (ctx.measureText(text).width > maxW && s > 30); return s + 4; }
+  function pill(ctx, x, y, text, bgc, fg) { ctx.font = '800 30px ' + D; var w = ctx.measureText(text).width + 40; ctx.fillStyle = bgc; roundRect(ctx, x, y, w, 52, 26); ctx.fill(); ctx.fillStyle = fg; ctx.textBaseline = 'middle'; ctx.fillText(text, x + 20, y + 27); ctx.textBaseline = 'alphabetic'; return w; }
+
+  // Profile: the rank character, name, rank, three numbers and the last three badges. No QR.
+  async function renderProfile(d) {
+    var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H; var ctx = cv.getContext('2d');
+    await fonts(); bg(ctx, W, H); await header(ctx, W, 'MY TAP AM');
+    // hero card
+    var y0 = 176, hh = 470;
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; roundRect(ctx, 72, y0 + 14, W - 144, hh, 40); ctx.fill();
+    ctx.fillStyle = '#fff'; roundRect(ctx, 72, y0, W - 144, hh, 40); ctx.fill();
+    ctx.fillStyle = d.color || '#9161FF'; ctx.beginPath(); ctx.arc(250, y0 + 235, 160, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.beginPath(); ctx.arc(250, y0 + 235, 160, Math.PI * 1.05, Math.PI * 1.6); ctx.lineTo(250, y0 + 235); ctx.fill();
+    var av = await svgImg(d.avatar, 300, 300); if (av) ctx.drawImage(av, 100, y0 + 85, 300, 300);
+    ctx.fillStyle = '#150B33'; var nameSize = fit(ctx, d.title || 'Tap Am', W - 144 - 400, 96, '900', D);
+    ctx.font = '900 ' + nameSize + 'px ' + D; ctx.fillText(d.title || 'Tap Am', 450, y0 + 150);
+    ctx.font = '800 38px ' + D; ctx.fillStyle = '#5B4E86'; ctx.fillText((d.label || '').toUpperCase(), 452, y0 + 206);
+    var px = 450; px += pill(ctx, px, y0 + 240, d.tier || 'Lapo baby', '#150B33', '#FFD23F') + 12; pill(ctx, px, y0 + 240, 'Rank ' + (d.level || 1), '#00FF6E', '#150B33');
+    if (d.joined) { ctx.font = '700 28px ' + B; ctx.fillStyle = '#5B4E86'; ctx.fillText('Tapping since ' + d.joined, 452, y0 + 352); }
+    // three numbers
+    var sy = y0 + hh + 46, sw = (W - 144 - 40) / 3, cols = [['#00FF6E', '#150B33'], ['#FFD23F', '#150B33'], ['#FF4FA3', '#fff']];
+    (d.numbers || []).slice(0, 3).forEach(function (n, i) {
+      var x = 72 + i * (sw + 20);
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; roundRect(ctx, x, sy + 10, sw, 170, 28); ctx.fill();
+      ctx.fillStyle = cols[i][0]; roundRect(ctx, x, sy, sw, 170, 28); ctx.fill();
+      ctx.fillStyle = cols[i][1]; ctx.textAlign = 'center'; ctx.font = '900 ' + fit(ctx, n[0], sw - 30, 78, '900', D) + 'px ' + D; ctx.fillText(n[0], x + sw / 2, sy + 96);
+      ctx.font = '800 28px ' + D; ctx.fillText(String(n[1]).toUpperCase(), x + sw / 2, sy + 140); ctx.textAlign = 'left';
+    });
+    // last three badges
+    var by = sy + 226;
+    ctx.fillStyle = '#fff'; ctx.font = 'italic 900 44px ' + D; ctx.fillText('Latest badges', 72, by);
+    ctx.font = '800 32px ' + D; ctx.fillStyle = '#00FF6E'; ctx.textAlign = 'right'; ctx.fillText((d.badgeTotal || 0) + ' won in total', W - 72, by); ctx.textAlign = 'left';
+    var bs = (d.badges || []).slice(0, 3), bw = (W - 144 - 40) / 3;
+    if (!bs.length) { ctx.fillStyle = 'rgba(255,255,255,.14)'; roundRect(ctx, 72, by + 26, W - 144, 170, 28); ctx.fill(); ctx.fillStyle = '#E4DAFF'; ctx.font = '700 34px ' + B; ctx.textAlign = 'center'; ctx.fillText('First badge loading… top the board to win one.', W / 2, by + 122); ctx.textAlign = 'left'; }
+    for (var i = 0; i < bs.length; i++) {
+      var x = 72 + i * (bw + 20), b = bs[i];
+      ctx.fillStyle = 'rgba(255,255,255,.14)'; roundRect(ctx, x, by + 26, bw, 200, 28); ctx.fill();
+      if (b.svg) { var bi = await svgImg(b.svg, 100, 120); if (bi) ctx.drawImage(bi, x + bw / 2 - 50, by + 40, 100, 120); }
+      else { ctx.fillStyle = b.color || '#9161FF'; ctx.beginPath(); ctx.arc(x + bw / 2, by + 98, 52, 0, Math.PI * 2); ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '900 40px ' + D; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(b.text || '★').slice(0, 3), x + bw / 2, by + 100); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; }
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '800 ' + fit(ctx, b.label || '', bw - 24, 28, '800', D) + 'px ' + D; ctx.fillText(b.label || '', x + bw / 2, by + 198); ctx.textAlign = 'left';
+    }
+    footer(ctx, W, H, d, 'Think you fit beat me?');
+    return cv;
+  }
+
+  // Results: the pool, the podium with each winner's character and prize (or the two VS sides). No QR.
+  async function renderResults(d) {
+    var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H; var ctx = cv.getContext('2d');
+    await fonts(); bg(ctx, W, H); await header(ctx, W, 'FINAL RESULTS');
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowOffsetY = 5;
+    ctx.font = '900 92px ' + D; var lines = wrap(ctx, d.title || 'Tap Am', W - 144).slice(0, 2), y = 262;
+    lines.forEach(function (l) { ctx.fillText(l, 72, y); y += 90; });
+    ctx.shadowColor = 'transparent';
+    ctx.font = '700 34px ' + B; ctx.fillStyle = '#E4DAFF'; ctx.fillText(d.line || '', 72, y - 18);
+    var top = y + 30;
+    if (d.vs && d.vs.length === 2) {
+      var vw = (W - 144 - 30) / 2;
+      d.vs.forEach(function (v, i) {
+        var x = 72 + i * (vw + 30), c = i ? '#2E8BFF' : '#FF8A2A', h = 520;
+        ctx.fillStyle = 'rgba(0,0,0,.25)'; roundRect(ctx, x, top + 12, vw, h, 34); ctx.fill();
+        ctx.fillStyle = c; roundRect(ctx, x, top, vw, h, 34); ctx.fill();
+        if (v.win) { ctx.lineWidth = 10; ctx.strokeStyle = '#00FF6E'; roundRect(ctx, x + 5, top + 5, vw - 10, h - 10, 30); ctx.stroke(); pill(ctx, x + 30, top + 30, 'WINNER', '#00FF6E', '#150B33'); }
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '900 ' + fit(ctx, v.name, vw - 50, 88, '900', D) + 'px ' + D; ctx.fillText(v.name, x + vw / 2, top + 220);
+        ctx.font = '900 110px ' + D; ctx.fillText(v.taps, x + vw / 2, top + 360); ctx.font = '800 32px ' + D; ctx.fillText('TAPS · ' + v.players, x + vw / 2, top + 410); ctx.textAlign = 'left';
+      });
+      ctx.fillStyle = '#150B33'; ctx.beginPath(); ctx.arc(W / 2, top + 260, 56, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#FFD23F'; ctx.font = 'italic 900 50px ' + D; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('VS', W / 2, top + 262); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    } else {
+      // podium: 2nd, 1st, 3rd
+      var pw = (W - 144 - 40) / 3, order = [1, 0, 2], hs = [610, 520, 450], colors = ['#FFD23F', '#2E8BFF', '#FF8A2A'], base = top + 700;
+      for (var k = 0; k < 3; k++) {
+        var idx = order[k], r = (d.podium || [])[idx]; if (!r) continue;
+        var x = 72 + k * (pw + 20), h = hs[idx], yy = base - h;
+        ctx.fillStyle = 'rgba(0,0,0,.25)'; roundRect(ctx, x, yy + 12, pw, h, 30); ctx.fill();
+        ctx.fillStyle = colors[idx]; roundRect(ctx, x, yy, pw, h, 30); ctx.fill();
+        var a = await svgImg(r.avatar, 170, 170);
+        ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(x + pw / 2, yy + 20, 92, 0, Math.PI * 2); ctx.fill();
+        if (a) ctx.drawImage(a, x + pw / 2 - 85, yy - 70, 170, 170);
+        ctx.fillStyle = '#150B33'; ctx.beginPath(); ctx.arc(x + pw / 2, yy + 120, 30, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '900 36px ' + D; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(idx + 1), x + pw / 2, yy + 122); ctx.textBaseline = 'alphabetic';
+        ctx.fillStyle = idx === 0 ? '#150B33' : '#fff'; ctx.font = '900 ' + fit(ctx, r.n, pw - 30, 46, '900', D) + 'px ' + D; ctx.fillText(r.n, x + pw / 2, yy + 210);
+        ctx.font = '800 32px ' + D; ctx.fillText(r.s + ' TAPS', x + pw / 2, yy + 256);
+        if (r.prize) { ctx.fillStyle = '#150B33'; roundRect(ctx, x + 24, yy + 284, pw - 48, 66, 18); ctx.fill(); ctx.fillStyle = '#00FF6E'; ctx.font = '900 ' + fit(ctx, r.prize, pw - 80, 44, '900', D) + 'px ' + D; ctx.fillText(r.prize, x + pw / 2, yy + 332); }
+        ctx.textAlign = 'left';
+      }
+    }
+    footer(ctx, W, H, d, d.ask || 'Your turn: tap pass them');
+    return cv;
+  }
+
   async function render(d) {
+    if (d.kind === 'profile') return renderProfile(d);
+    if (d.kind === 'results') return renderResults(d);
     var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     var ctx = cv.getContext('2d');
     try { await Promise.all([document.fonts.load('italic 900 80px "Barlow Condensed"'), document.fonts.load('900 80px "Barlow Condensed"'), document.fonts.load('800 40px "Barlow Condensed"'), document.fonts.load('700 40px Barlow')]); } catch (e) {}
@@ -79,7 +201,7 @@
     box.querySelector('.dlg-in').style.maxWidth = '380px';
     var canvas = null, blob = null;
     render(d).then(function (cv) {
-      canvas = cv; var im = new Image(); im.alt = 'Share card with QR code'; im.style.width = '100%'; im.style.display = 'block';
+      canvas = cv; var im = new Image(); im.alt = 'Share card'; im.style.width = '100%'; im.style.display = 'block';
       cv.toBlob(function (b) { blob = b; im.src = URL.createObjectURL(b); var slot = box.querySelector('[data-card]'); slot.textContent = ''; slot.appendChild(im); }, 'image/png');
     });
     function file() { return blob ? new File([blob], 'tap-am.png', { type: 'image/png' }) : null; }

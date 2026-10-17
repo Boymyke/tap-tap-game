@@ -3,6 +3,8 @@ import { themeShell, esc, ICONS, menuSheet, LOGO_IMG } from './theme.js';
 import { short } from '../tiers.js';
 
 export { esc, short };
+// 1,234 → 1.2K, 3,400,000 → 3.4M (online and visit counters)
+export const compact = n => { n = Number(n || 0); try { return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n); } catch { return String(n); } };
 export const naira = k => '₦' + (Number(k || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
 export const nairaShort = k => { const n = Number(k || 0) / 100; return '₦' + (Math.abs(n) >= 1e6 ? short(n) : n.toLocaleString('en-NG', { maximumFractionDigits: 2 })); };
 export const lagos = (iso, opts = {}) => { try { return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', ...opts }).format(new Date(iso)); } catch { return iso; } };
@@ -230,7 +232,7 @@ export const nameTag = (name, emoji, meaning = null) => `${esc(name)}${emoji ? (
   : ` <span class="nemoji" aria-hidden="true">${esc(emoji)}</span>`) : ''}`;
 // Live countdown pill: "Starts in 2h 03m 10s" / "Ends in 14m 09s" (updated by app.js).
 export const whenPill = p => p.state === 'paused' ? `<span class="when ended">${p.voteUntil ? 'Paused · vote open' : 'Paused · scores saved'}</span>` : p.state === 'waiting'
-  ? `<span class="when waiting" data-waiting>${short(p.players || 0)}/${short(p.maxPlayers)} joined · starts when full</span>`
+  ? `<span class="when waiting" data-waiting>${short(p.players || 0)}/${short(p.needed || p.maxPlayers)} joined · starts at ${short(p.needed || p.maxPlayers)}</span>`
   : p.state === 'ended' || p.state === 'cancelled'
   ? `<span class="when ended">${p.state === 'cancelled' ? 'Cancelled' : 'Ended ' + esc(lagos(p.endsAt))}</span>`
   : `<span class="when" data-when="${esc(p.state === 'soon' ? p.startsAt : p.endsAt)}" data-label="${p.state === 'soon' ? 'Starts in' : 'Ends in'}">${p.state === 'soon' ? 'Starts in' : 'Ends in'} …</span>`;
@@ -244,12 +246,12 @@ export function poolCard(p, i = 0) {
     ? `<div class="vsrow"><span class="code">${esc(p.sideA.slice(0, 3))}</span><span class="vs">VS</span><span class="code">${esc(p.sideB.slice(0, 3))}</span></div><div class="t" style="font-size:17px">${esc(p.name)}</div>`
     : `<div class="t">${esc(p.name)}</div>`;
   const tags = [p.instant ? '<span class="badge instant">⚡ Instant</span>' : '', p.kind === 'SPONSORED' ? `<span class="badge sponsor">${esc(p.sponsor || 'Sponsored')}</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid</span>' : '<span class="badge">Free</span>',
-    p.audience !== 'ALL' ? `<span class="badge ${p.audience === 'NEPO' ? 'nepo' : p.audience === 'MAPO' ? 'mapo' : 'lapo'}">${{ NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo only' }[p.audience]}</span>` : '',
+    p.audience !== 'ALL' ? `<span class="badge ${p.audience === 'NEPO' ? 'nepo' : p.audience === 'MAPO' ? 'mapo' : 'lapo'}">${{ NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo match' }[p.audience]}</span>` : '',
     p.private ? `<span class="badge">${LOCK}Private</span>` : '', p.joined ? '<span class="badge live">Joined</span>' : ''].join('');
   return `<a class="tcard pc ${color}" href="/pool/${esc(p.id)}" style="${p.theme ? `--c:${esc(p.theme)};--cd:color-mix(in srgb,${esc(p.theme)} 65%,#000)` : ''}">
   <div class="tags">${tags}</div>
   ${head}
-  <div class="meta"><span>${PEOPLE}${short(p.players || 0)}${p.instant ? '/' + short(p.maxPlayers) : ''} ${Number(p.players) === 1 && !p.instant ? 'player' : 'players'}</span><span>${p.entryFee ? esc(naira(p.entryFee)) + ' entry' : 'Free entry'}</span>${p.duration ? `<span>⏱ ${esc(fmtDur(p.duration))}</span>` : ''}</div>
+  <div class="meta"><span>${PEOPLE}${short(p.players || 0)}${p.maxPlayers < 100000 ? '/' + short(p.maxPlayers) : ''} ${Number(p.players) === 1 && p.maxPlayers >= 100000 ? 'player' : 'players'}</span><span>${p.entryFee ? esc(naira(p.entryFee)) + ' entry' : 'Free entry'}</span>${p.duration ? `<span>⏱ ${esc(fmtDur(p.duration))}</span>` : ''}</div>
   <div class="foot"><span class="prize"><small>Prize pool</small>${p.prize ? esc(nairaShort(p.prize)) : 'Akara'}</span>${whenPill(p)}</div>
 </a>`;
 }

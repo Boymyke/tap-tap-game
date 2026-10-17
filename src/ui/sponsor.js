@@ -32,17 +32,14 @@ document.querySelectorAll('[data-preview-ad]').forEach(function(b){b.addEventLis
  TA.api('/api/promo?preview='+encodeURIComponent(id),undefined,'GET').then(function(j){b.classList.remove('is-loading');var p=j.promo;if(!p){TA.toast('Ad not found','err');return;}
   var media='';if(p.kind==='YOUTUBE'&&/^[A-Za-z0-9_-]{11}$/.test(p.video_id||''))media='<div data-yt style="border-radius:var(--r-sm);overflow:hidden;background:#000"></div>';
   else if(p.image_url)media='<img src="'+p.image_url.replace(/"/g,'')+'" alt="" style="display:block;width:100%;border-radius:var(--r-sm);max-height:50vh;object-fit:contain;background:#000">';
-  var d=TA.dialog('<div style="display:flex;justify-content:space-between;font:800 12px var(--body);color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px"><span>Preview · how players see it</span><span>Close shows after '+(p.duration_seconds||5)+'s</span></div>'+media+'<h3 style="margin:10px 0 8px"></h3>'+(p.lead_capture?'<p class="small" style="margin:0 0 8px">Lead form shows here: name, email, phone + consent tick.</p>':'')+'<div class="actions">'+(p.target_url?'<span class="btn btn--green btn--sm">Check am out</span>':'')+'<button type="button" class="btn btn--soft btn--sm" data-close>Close preview</button></div>',function(e,close){if(e&&e.target.closest('[data-close]'))close();});
+  var d=TA.dialog('<div style="display:flex;justify-content:space-between;font:800 12px var(--body);color:var(--ink-soft);text-transform:uppercase;margin-bottom:8px"><span>Preview · how players see it</span><span>Close shows after 15s</span></div>'+media+'<h3 style="margin:10px 0 8px"></h3>'+(p.lead_capture?'<p class="small" style="margin:0 0 8px">Lead form shows here: name, email, phone + consent tick.</p>':'')+'<div class="actions">'+(p.target_url?'<span class="btn btn--green btn--sm">Check am out</span>':'')+'<button type="button" class="btn btn--soft btn--sm" data-close>Close preview</button></div>',function(e,close){if(e&&e.target.closest('[data-close]'))close();});
   d.querySelector('h3').textContent=p.title;var y=d.querySelector('[data-yt]');if(y)y.appendChild(TA.ytAd(p.video_id,p.title));});});});`;
 
 export function adForm(pools, { admin = false } = {}) {
   return form('/api/promos', `
   ${field({ label: 'Ad title', name: 'title', placeholder: 'Chop Life Drinks — cold one dey', attrs: 'maxlength="60" required' })}
-  ${choice({ label: 'Ad type', name: 'kind', options: [['IMAGE', 'Picture'], ['YOUTUBE', 'YouTube video']], value: 'YOUTUBE' })}
-  <div data-show="kind=IMAGE">${upload({ label: 'Ad picture (PNG, JPG, WebP or GIF, max 3 MB)', name: 'image_url' })}</div>
-  <div data-show="kind=YOUTUBE">${field({ label: 'YouTube link', name: 'video_url', type: 'url', placeholder: 'https://youtu.be/…', attrs: 'inputmode="url"' })}</div>
+  ${field({ label: 'YouTube link', name: 'video_url', type: 'url', placeholder: 'https://youtu.be/…', attrs: 'inputmode="url" required', hint: 'Ads are YouTube videos. Players see 15 seconds of it before they can close it.' })}
   ${field({ label: 'Link when people tap the ad (optional)', name: 'target_url', type: 'url', placeholder: 'https://yourbrand.com', attrs: 'inputmode="url"' })}
-  ${choice({ label: 'How long players see it before they can close it', name: 'duration_seconds', options: [['5', '5 seconds'], ['10', '10 seconds'], ['30', '30 seconds']], value: '5' })}
   <p class="small muted" style="margin:0">${admin ? 'A new Tap Am ad becomes the running ad (the one running now pauses). It shows in the pools you make.' : 'Pick this ad when you create a pool (“With ad”). It shows only in that pool: before the game (finishing before the first tap), to players who join late, and before results. Ads go live after a quick Tap Am check against the guidelines.'} YouTube videos start playing by themselves (muted).</p>`, { submit: 'Save ad', shine: true });
 }
 
@@ -76,7 +73,7 @@ ${pools.length ? `<div class="pgrid">${pools.map(poolCard).join('')}</div>` : '<
 <h2 class="h2">Brand profile</h2><div class="panel">${form('/api/sponsor/profile', `
   ${field({ label: 'Company or brand name', name: 'company', value: profile?.company || '', attrs: 'maxlength="60" required' })}
   ${field({ label: 'Website (optional)', name: 'website', type: 'url', value: profile?.website || '', placeholder: 'https://yourbrand.com' })}
-  ${upload({ label: 'Logo (optional)', name: 'logo_url', value: profile?.logo_url || '' })}`, { submit: 'Save profile' })}
+  ${upload({ label: 'Logo (optional, small: it is shrunk to 400 px, 200 KB max)', name: 'logo_url', value: profile?.logo_url || '' })}`, { submit: 'Save profile' })}
   <p class="small muted" style="margin:10px 0 0">Lead capture on your ads is ${profile?.lead_capture ? '<b>ON</b> — players can send you their name, email and phone (only with their consent).' : 'off. Ask Tap Am to switch it on for your brand.'}</p></div>`;
   return appPage({ user, title: 'Sponsor', active: '/sponsor', body, wallet });
 }

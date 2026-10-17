@@ -37,7 +37,8 @@ export async function createChallenge(env, me, data) {
   const open = Number((await env.DB.prepare("SELECT COUNT(*) n FROM challenges WHERE from_id=? AND to_id=? AND status='PENDING'").bind(me.id, to.id).first())?.n || 0);
   if (open) return json({ error: `You already sent ${to.username} a challenge. Wait for them to answer.`, field: 'to' }, 409);
   // the same switches as a normal pool: players may buy time, Lapo baby rules, boosters
-  const opts = { time_topup: data.time_topup === true ? 1 : 0, lapo_rules: data.lapo_rules === true ? 1 : 0, boosters_allowed: data.boosters_allowed === false ? 0 : 1 };
+  // (the super admin can switch the Lapo-rules and boosters options off for everybody)
+  const opts = { time_topup: data.time_topup === true ? 1 : 0, lapo_rules: s.opt_lapo_rules !== '0' && data.lapo_rules === true ? 1 : 0, boosters_allowed: s.opt_boosters !== '0' && data.boosters_allowed === false ? 0 : 1 };
   const id = uid();
   if (stake > 0 && !await debit(env, me.id, stake, { type: 'STAKE', reference: id, note: `Tap-off stake vs ${to.username}` })) return fundsError(`You need ${naira(stake)} in your wallet for this stake.`);
   await env.DB.prepare('INSERT INTO challenges(id,from_id,to_id,stake_kobo,duration_seconds,status,expires_at,time_topup,lapo_rules,boosters_allowed) VALUES(?,?,?,?,?,?,?,?,?,?)')
@@ -101,8 +102,8 @@ export async function answerChallenge(env, me, id, action, data) {
       env.DB.prepare('INSERT INTO pool_entries(pool_id,user_id,paid_kobo) VALUES(?,?,?)').bind(poolId, c.to_id, c.stake_kobo),
       env.DB.prepare('UPDATE challenges SET pool_id=? WHERE id=?').bind(poolId, c.id)]);
     const room = await initRoom(env, pool); if (!room.ok) throw new Error('game room did not start');
-    for (const u of await env.DB.prepare('SELECT id, username, tier, tier_until, role, emoji FROM users WHERE id IN (?,?)').bind(c.from_id, c.to_id).all().then(r => r.results))
-      await roomCall(env, poolId, '/join', { uid: u.id, name: u.username, tier: tierOf(u), side: null, emoji: u.emoji || null });
+    for (const u of await env.DB.prepare('SELECT id, username, tier, tier_until, role, emoji, rank_level FROM users WHERE id IN (?,?)').bind(c.from_id, c.to_id).all().then(r => r.results))
+      await roomCall(env, poolId, '/join', { uid: u.id, name: u.username, tier: tierOf(u), side: null, emoji: u.emoji || null, rank: u.rank_level || 1 });
     await startInstantIfFull(env, poolId);   // both seats are taken: the countdown starts now
   } catch (e) {
     console.error('tap-off start failed', c.id, e?.message);

@@ -1,6 +1,6 @@
 /* Tap Am game client: taps (batched to the server), finger limits by tier, multi-pool, boosters
    (queued, with live tips), live board strip, combos and milestones, tap sounds, vibration,
-   connection state on the card, ads around the game (close after 5, 10 or 30s) and the end screen.
+   connection state on the card, ads around the game (close after 15s) and the end screen.
    The server is the source of truth: it caps tap speed per tier and keeps the official score. */
 (function () {
   'use strict';
@@ -283,17 +283,13 @@
     }
     function paintBoostList() {
       var list = $('boost-list'); list.textContent = '';
-      var mine = boosters.filter(function (b) { return b.owned; }), more = boosters.filter(function (b) { return !b.owned; });
-      var pages = Math.max(1, Math.ceil(mine.length / PER)); bPage = Math.min(bPage, pages - 1);
+      // Best boosters first (strongest × longest); ones that are used up, or at their limit for this game, sink to the bottom.
+      var power = function (b) { return (Number(b.mult) || 1) * (Number(b.dur) || 0); };
+      var spent = function (b) { return b.qty < 1 || (b.perGame > 0 && (focus.used[b.id] || 0) >= b.perGame); };
+      var mine = boosters.filter(function (b) { return b.owned; }).sort(function (a, c) { return (spent(a) - spent(c)) || (power(c) - power(a)); });
+      var more = boosters.filter(function (b) { return !b.owned; }).sort(function (a, c) { return (!!a.lock - !!c.lock) || (power(c) - power(a)); });
       if (!mine.length) { var p = document.createElement('p'); p.textContent = 'You no get any booster yet. Buy one below and it goes to work straight away.'; list.appendChild(p); }
-      mine.slice(bPage * PER, bPage * PER + PER).forEach(function (b) { list.appendChild(boostRow(b)); });
-      if (pages > 1) {
-        var pg = document.createElement('div'); pg.className = 'bpager';
-        var prev = document.createElement('button'); prev.type = 'button'; prev.className = 'btn btn--soft btn--sm'; prev.textContent = 'Back'; prev.disabled = bPage === 0; prev.onclick = function () { bPage--; paintBoostList(); };
-        var lbl = document.createElement('span'); lbl.textContent = 'Page ' + (bPage + 1) + ' of ' + pages;
-        var next = document.createElement('button'); next.type = 'button'; next.className = 'btn btn--soft btn--sm'; next.textContent = 'More'; next.disabled = bPage >= pages - 1; next.onclick = function () { bPage++; paintBoostList(); };
-        pg.appendChild(prev); pg.appendChild(lbl); pg.appendChild(next); list.appendChild(pg);
-      }
+      mine.forEach(function (b) { list.appendChild(boostRow(b)); });
       if (more.length) { var h = document.createElement('div'); h.className = 'bsub'; h.textContent = 'You don’t have these yet'; list.appendChild(h); more.forEach(function (b) { list.appendChild(boostRow(b)); }); }
     }
     boostBtn.addEventListener('click', function () { bPage = 0; paintBoostList(); openSheet('boost-sheet'); });
@@ -386,7 +382,7 @@
     }
     setInterval(suggest, 2000);
 
-    /* ── ads: when you open the game, in the lobby, and before results. The sponsor picks 5, 10 or 30 seconds;
+    /* ── ads: when you open the game, in the lobby, and before results. Every ad shows for 15 seconds;
        a line fills left to right, then the ad can close (and closes by itself a moment later). ── */
     var promoEl = $('promo'), promoBody = $('promo-body'), promoX = $('promo-x'), promoWait = $('promo-wait'), promoLine = $('promo-line'), promoAfter = null, promoTimer = 0, promoAuto = 0, promoStart = 0;
     function closePromo() { if (promoEl.hidden || promoX.disabled) return; promoEl.hidden = true; promoBody.textContent = ''; clearInterval(promoTimer); clearTimeout(promoAuto); clearInterval(promoStart); var f = promoAfter; promoAfter = null; if (f) f(); }
@@ -399,7 +395,7 @@
       var pool = focus, left = Math.floor((pool.starts - now()) / 1000);
       TA.api('/api/promo?at=' + at + '&pool=' + encodeURIComponent(pool.id) + (at === 'LOBBY' ? '&left=' + left : ''), undefined, 'GET').then(function (j) {
         var p = j && j.promo; if (!p) { if (then) then(); return; }
-        if (at === 'LOBBY' && pool.starts - now() < ((Number(p.duration_seconds) || 5) + 1) * 1000) { if (then) then(); return; }
+        if (at === 'LOBBY' && pool.starts - now() < 16000) { if (then) then(); return; }
         clearInterval(promoStart);
         // safety net: a lobby ad still open when the game starts closes, so nobody loses tapping time
         // (checked against the live start time, which moves when an instant match fills)
@@ -422,14 +418,14 @@
         promoBody.appendChild(row);
         promoAfter = then || null; promoEl.hidden = false;
         // close button unlocks after the ad's length (5, 10 or 30 seconds)
-        var secs = [5, 10, 30].indexOf(Number(p.duration_seconds)) > -1 ? Number(p.duration_seconds) : 5, left = secs;
-        promoX.disabled = true; promoWait.textContent = 'Wait ' + left + 's';
+        var secs = 15, left = secs;   // every ad shows for 15 seconds
+        promoX.disabled = true; promoWait.textContent = left; promoX.setAttribute('aria-label', 'Ad closes in ' + left + ' seconds');
         promoLine.getAnimations && promoLine.getAnimations().forEach(function (a) { a.cancel(); });
         if (promoLine.animate) promoLine.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: secs * 1000, easing: 'linear', fill: 'forwards' });
         clearInterval(promoTimer); clearTimeout(promoAuto);
         promoTimer = setInterval(function () {
-          left--; if (left > 0) { promoWait.textContent = 'Wait ' + left + 's'; return; }
-          clearInterval(promoTimer); promoX.disabled = false; promoWait.textContent = 'Close'; promoX.focus();
+          left--; if (left > 0) { promoWait.textContent = left; return; }
+          clearInterval(promoTimer); promoX.disabled = false; promoWait.textContent = '×'; promoX.setAttribute('aria-label', 'Close ad'); promoX.focus();
           promoAuto = setTimeout(closePromo, p.lead_capture && !p.lead_done ? 15000 : 3000);
         }, 1000);
       });
