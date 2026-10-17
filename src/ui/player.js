@@ -1,5 +1,5 @@
 // Player pages: home, pools list, pool detail (lobby / instructions / results), create pool.
-import { tapoffButton, appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag, postBtn, playerPicker, fmtDur, pager } from './kit.js';
+import { tapoffButton, appPage, anyPage, esc, naira, nairaShort, short, compact, lagos, lagosDate, poolCard, tierBadge, stateBadge, whenPill, field, moneyField, select, choice, check, form, copyRow, copyBtn, upgradeAttrs, icon, nameTag, postBtn, playerPicker, fmtDur, pager } from './kit.js';
 import { ICONS } from './theme.js';
 import { rankAvatar, avatarSvg, avatarFor } from './avatar.js';
 import { PATTERNS, patternBg } from './patterns.js';
@@ -12,6 +12,12 @@ const shareCardAttr = d => `data-share-card='${esc(JSON.stringify(d))}'`;
 
 export const HOME_CSS = `
 .slides{position:relative;margin:2px 0 16px}
+.livestats{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.livestats .ls{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;background:rgba(21,11,51,.35);color:#fff;font-weight:700;font-size:14px;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.18)}
+.livestats b{font:900 16px var(--display);color:var(--green);font-variant-numeric:tabular-nums}
+.livestats .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(0,255,110,.6);animation:lsPulse 1.8s infinite}
+@keyframes lsPulse{70%{box-shadow:0 0 0 8px rgba(0,255,110,0)}100%{box-shadow:0 0 0 0 rgba(0,255,110,0)}}
+@media (prefers-reduced-motion:reduce){.livestats .dot{animation:none}}
 .slides-track{display:grid;grid-auto-flow:column;grid-auto-columns:100%;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:var(--r)}
 .slides-track::-webkit-scrollbar{display:none}
 .slide{scroll-snap-align:start;position:relative;display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;min-height:156px;padding:18px 16px 18px 20px;border-radius:var(--r);text-decoration:none;overflow:hidden;border:3px solid rgba(255,255,255,.92);box-shadow:0 6px 0 rgba(0,0,0,.25)}
@@ -60,6 +66,7 @@ export function dashboardPage(ctx) {
   const count = shown.length;
   const section = (title, list, href, empty) => `<h2 class="h2">${title}${href ? ` <a href="${href}">See all</a>` : ''}</h2>${list.length ? `<div class="hscroll">${list.map(poolCard).join('')}</div>` : `<div class="empty">${empty}</div>`}`;
   const body = `${ctx.s?.overload === '1' ? '<div class="panel" style="margin-bottom:14px;box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>Our servers dey overloaded.</b><p class="muted" style="margin:6px 0 0">We paused the games for now and gave everybody back the money and boosters they spent on them. The pools will restart soon — check your notifications.</p></div>' : ''}
+${ctx.stats ? `<div class="livestats" aria-label="Tap Am right now"><span class="ls"><i class="dot" aria-hidden="true"></i><b data-stat="online" data-n="${Number(ctx.stats.online) || 1}">${esc(compact(ctx.stats.online || 1))}</b> online now</span><span class="ls"><b data-stat="visits" data-n="${Number(ctx.stats.visits) || 0}">${esc(compact(ctx.stats.visits || 0))}</b> visits</span></div>` : ''}
 ${count ? `<section class="slides" data-slides aria-roledescription="carousel" aria-label="Featured">
   <div class="slides-track">${slideHtml}</div>
   ${count > 1 ? `<div class="slides-dots">${Array.from({ length: count }, (_, i) => `<button type="button" aria-label="Slide ${i + 1}" aria-current="${i === 0}"></button>`).join('')}</div>` : ''}
@@ -163,7 +170,7 @@ export function poolPage(ctx) {
   <div class="stats"><div><div class="k">Prize pool</div><div class="v">${p.prize ? esc(nairaShort(p.prize)) : 'Akara'}</div></div><div><div class="k">Entry</div><div class="v">${p.entryFee ? esc(naira(p.entryFee)) : 'Free'}</div></div>
   <div><div class="k">Players</div><div class="v" data-players>${short(p.players || 0)}${p.maxPlayers < 100000 ? `<small style="font-size:14px"> / ${short(p.maxPlayers)}</small>` : ''}</div></div><div><div class="k">${p.state === 'waiting' ? 'Match length' : p.state === 'soon' ? 'Starts' : p.state === 'live' ? 'Ends' : 'Ended'}</div><div class="v" style="font-size:16px;line-height:1.3">${p.state === 'waiting' ? esc(fmtDur(p.duration)) : esc(lagos(p.state === 'soon' ? p.startsAt : p.endsAt))}</div></div></div>
   <div style="margin-top:12px">${whenPill(p).replace('data-when', 'data-reload-at-zero data-when')}</div>
-  ${p.state === 'waiting' ? `<div class="bar-progress" style="margin-top:10px" aria-hidden="true"><i data-fill style="width:${pct((p.players || 0) / Math.max(1, p.maxPlayers))}%"></i></div>` : ''}
+  ${p.state === 'waiting' ? `<div class="bar-progress" style="margin-top:10px" aria-hidden="true"><i data-fill style="width:${pct((p.players || 0) / Math.max(1, p.needed || p.maxPlayers))}%"></i></div>` : ''}
 </section>`;
 
   let action = '';
@@ -184,15 +191,15 @@ export function poolPage(ctx) {
       ${p.private && !p.invited ? field({ label: 'Pool password', name: 'password', placeholder: 'XXXX-XXXX', attrs: 'autocapitalize="characters" autocomplete="off" maxlength="9" required' }) : ''}
       ${vs ? choice({ label: 'Pick your side', name: 'side', options: [[p.sideA, p.sideA], [p.sideB, p.sideB]], value: '' }) : ''}
       ${p.entryFee ? `<div class="note">Entry fee <b>${esc(naira(p.entryFee))}</b> comes from your wallet (you have ${esc(naira(wallet.balance_kobo))}). It joins the prize and is <b>not refunded</b> once the pool starts.</div>${wallet.balance_kobo < p.entryFee && wallet.winnings_kobo >= p.entryFee ? check({ name: 'use_winnings', label: `Pay from my winnings (${esc(naira(wallet.winnings_kobo))})` }) : ''}` : ''}
-      ${p.state === 'waiting' ? `<div class="note">Instant match: it starts by itself ${INSTANT_LEAD_MS / 1000} seconds after the last of the ${short(p.maxPlayers)} seats fills, then runs ${esc(fmtDur(p.duration))}. ${p.entryFee ? 'If it doesn’t fill in time, your entry fee comes back.' : ''}</div>` : ''}
+      ${p.state === 'waiting' ? `<div class="note">${p.instant ? 'Instant match' : 'Waiting for players'}: it starts by itself ${INSTANT_LEAD_MS / 1000} seconds after ${short(p.needed || p.maxPlayers)} players are in, then runs ${esc(fmtDur(p.duration))}. ${p.entryFee ? 'If it doesn’t fill in time, your entry fee comes back.' : ''}</div>` : ''}
     `, { submit: p.entryFee ? `Pay ${naira(p.entryFee)} and join` : 'Join this pool', shine: true })}</div>`;
   } else if (p.joined && p.state === 'waiting') {
-    const left = Math.max(0, p.maxPlayers - (p.players || 0));
+    const left = Math.max(0, (p.needed || p.maxPlayers) - (p.players || 0));
     action = `<div class="panel waitbox" style="margin-top:14px">
       <div class="wait-n"><b data-left>${short(left)}</b><span>more player${left === 1 ? '' : 's'} to go</span></div>
-      <p style="margin:8px 0 0">You’re in! The match starts by itself ${INSTANT_LEAD_MS / 1000} seconds after the last seat fills, and runs <b>${esc(fmtDur(p.duration))}</b>. Keep this page open and we’ll take you straight to the game — or we’ll send you a notification.</p>
+      <p style="margin:8px 0 0">You’re in! The match starts by itself ${INSTANT_LEAD_MS / 1000} seconds after ${short(p.needed || p.maxPlayers)} players are in, and runs <b>${esc(fmtDur(p.duration))}</b>. Keep this page open and we’ll take you straight to the game — or we’ll send you a notification.</p>
       <p class="small muted" style="margin:8px 0 0">Not full by ${esc(lagos(p.startsAt))}? It’s cancelled${p.entryFee ? ' and your entry fee comes back' : ''}. Share the code to fill it faster.</p>
-      <div class="actions"><button type="button" class="btn btn--green btn--shine btn--block" data-share-url="${esc(url)}" data-share-text="Join my Tap Am instant match “${esc(p.name)}” — we start when ${short(p.maxPlayers)} people join. Code ${esc(p.code)}">${ICONS.share} Invite friends to fill it</button></div>
+      <div class="actions"><button type="button" class="btn btn--green btn--shine btn--block" data-share-url="${esc(url)}" data-share-text="Join my Tap Am match “${esc(p.name)}” — we start when ${short(p.needed || p.maxPlayers)} people join. Code ${esc(p.code)}">${ICONS.share} Invite friends to fill it</button></div>
     </div>`;
   } else if (p.joined) {
     action = `<div class="panel" style="margin-top:14px">
@@ -209,9 +216,10 @@ export function poolPage(ctx) {
   if (open && isCreator) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Invite players</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Search by name. They get a notification with this pool${p.private ? ', and they can join without the password' : ''}.</p>${form(`/api/pools/${p.id}/invite`, playerPicker({ name: 'invites', label: 'Players', id: 'inv' }), { submit: 'Send invites', btn: 'btn--green' })}</div>`;
   if (canTop) action += `<div class="panel" style="margin-top:14px"><h2 style="margin:0 0 4px;font:900 20px var(--display);color:var(--ink)">Make the prize bigger</h2><p class="muted" style="margin:0 0 10px;font-size:14px">Anybody can add money from their wallet to the prize. It goes to the winners and is not refunded once the pool starts (unless the pool is cancelled or paused). Adding here does not change the time${p.timeTopup ? ' — inside the game, players can buy more time (₦10,000 = +10 seconds)' : ''}.</p>${form(`/api/pools/${p.id}/topup`, `${moneyField({ label: 'Amount (₦)', name: 'amount', placeholder: '1,000', attrs: 'required' })}`, { submit: 'Add to prize', btn: 'btn--gold' })}</div>`;
   const sp = p.split, tie = p.tie === 'SPLIT' ? 'Ties: tied players split the prize.' : 'Ties: whoever reached the score first wins.';
-  const aud = { ALL: 'Everybody fit join.', LAPO: 'Lapo babies only.', MAPO: 'Mapo and Nepo babies only.', NEPO: 'Nepo babies only.' }[p.audience] || '';
+  const aud = { ALL: 'Everybody fit join.', LAPO: 'Lapo baby match: Mapo and Nepo babies can join, but they play as Lapo babies here (no Mapo or Nepo boosters or perks).', MAPO: 'Mapo and Nepo babies only.', NEPO: 'Nepo babies only.' }[p.audience] || '';
   const instr = `<section class="panel instr" style="margin-top:14px"><h2>Pool instructions</h2><ul>
-    ${p.instant ? `<li><b>Instant match:</b> ${p.state === 'waiting' ? `starts by itself when ${short(p.maxPlayers)} players join` : `started when ${short(p.maxPlayers)} players joined`}, and runs ${esc(fmtDur(p.duration))}.</li>` : `<li>Runs ${esc(fmtDur(p.duration))}${p.state === 'soon' ? `, from ${esc(lagos(p.startsAt))}` : ''}.</li>`}
+    ${p.instant ? `<li><b>Instant match:</b> ${p.state === 'waiting' ? `starts by itself when ${short(p.needed || p.maxPlayers)} players join` : `started when ${short(p.needed || p.maxPlayers)} players joined`}, and runs ${esc(fmtDur(p.duration))}.</li>` : `<li>Runs ${esc(fmtDur(p.duration))}${p.state === 'soon' ? `, from ${esc(lagos(p.startsAt))}` : ''}.</li>${p.needed && p.state !== 'ended' ? `<li><b>Players needed to start:</b> ${short(p.needed)}. If fewer have joined at the start time, it waits for them, then starts by itself.</li>` : ''}`}
+    <li>${p.maxPlayers < 100000 ? `Up to <b>${short(p.maxPlayers)}</b> players can join.` : 'No limit on players.'}</li>
     ${p.vsSplit ? '' : `<li>${esc(splitText(sp, p.splitStyle, p.vsSplit))}.</li>`}
     ${vs && p.vsSplit ? `<li>VS pool: pick ${esc(p.sideA)} or ${esc(p.sideB)}. The side with the most taps in total wins the <b>whole</b> prize pool, and everybody on that side who tapped shares it by their taps (more taps, bigger share). If both sides finish level, each side shares half.</li>` : ''}
     <li>${esc(tie)}</li><li>${esc(aud)}</li>
@@ -223,36 +231,37 @@ export function poolPage(ctx) {
   </ul>
   <div class="code-line"><span>Code:</span><b>${esc(p.code)}</b>${copyBtn(p.code, 'Copy')}</div>
   ${isCreator && p.private ? `<div class="code-line" style="margin-top:8px"><span>Password:</span><b>${esc(p.password)}</b>${copyBtn(p.password, 'Copy')}</div>` : ''}
-  <div class="actions"><button type="button" class="btn btn--soft btn--sm" data-share-url="${esc(url)}" data-share-text="Join my Tap Am pool “${esc(p.name)}” — code ${esc(p.code)}">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" ${shareCardAttr({ url, title: p.name, line: (p.prize ? 'Prize pool ' + nairaShort(p.prize) + ' · ' : '') + (p.entryFee ? naira(p.entryFee) + ' entry' : 'Free entry'), code: p.code, display: 'www.tapammm.live', color: p.theme || (p.kind === 'SPONSORED' ? '#FF8A2A' : p.kind === 'PAID' ? '#FF4FA3' : '#2E8BFF') })}>${ICONS.qr} QR share card</button></div>
+  ${p.state === 'ended' || p.state === 'cancelled' ? '' : `<div class="actions"><button type="button" class="btn btn--soft btn--sm" data-share-url="${esc(url)}" data-share-text="Join my Tap Am pool “${esc(p.name)}” — code ${esc(p.code)}">${ICONS.share} Share link</button><button type="button" class="btn btn--sm" ${shareCardAttr({ url, title: p.name, line: (p.prize ? 'Prize pool ' + nairaShort(p.prize) + ' · ' : '') + (p.entryFee ? naira(p.entryFee) + ' entry' : 'Free entry'), code: p.code, display: 'www.tapammm.live', color: p.theme || (p.kind === 'SPONSORED' ? '#FF8A2A' : p.kind === 'PAID' ? '#FF4FA3' : '#2E8BFF') })}>${ICONS.qr} QR share card</button></div>`}
 </section>`;
 
   const creator = isCreator && entries ? `<h2 class="h2">Players who joined (${entries.length})</h2><div class="panel">
     <p class="muted" style="margin:0 0 10px">Pools can’t be deleted until they end.</p>
-    ${entries.length ? `<div class="list">${entries.slice(0, 50).map(e => `<div class="item" style="box-shadow:none;padding:8px 4px"><div class="mini-ava">${avatarSvg(avatarFor(e.username), { size: 36 })}</div><div class="grow"><div class="t" style="font-size:15px">${esc(e.username)}</div><div class="s">Joined ${esc(lagos(e.joined_at))}${e.paid_kobo ? ' · paid ' + esc(naira(e.paid_kobo)) : ''}${e.side_choice ? ' · ' + esc(e.side_choice) : ''}</div></div></div>`).join('')}</div>` : '<p class="muted" style="margin:0">Nobody don join yet. Share the code!</p>'}
+    ${entries.length ? `<div class="list">${entries.slice(0, 50).map(e => `<div class="item" style="box-shadow:none;padding:8px 4px"><div class="mini-ava">${rankAvatar(e.rank_level || 1, { size: 36 })}</div><div class="grow"><div class="t" style="font-size:15px">${esc(e.username)}</div><div class="s">Joined ${esc(lagos(e.joined_at))}${e.paid_kobo ? ' · paid ' + esc(naira(e.paid_kobo)) : ''}${e.side_choice ? ' · ' + esc(e.side_choice) : ''}</div></div></div>`).join('')}</div>` : '<p class="muted" style="margin:0">Nobody don join yet. Share the code!</p>'}
   </div>` : '';
 
   const rows = results || board?.top || [];
   const leader = rows.length ? `<h2 class="h2">${p.state === 'ended' ? 'Final board' : 'Leaderboard'}</h2>
     ${board?.teams && Object.keys(board.teams).length ? `<div class="grid g2" style="margin-bottom:12px">${Object.entries(board.teams).map(([k, v], i) => `<div class="tcard card ${i ? 'c-sky' : 'c-orange'}" style="padding:12px 14px"><div class="stat"><span class="k">Team ${esc(k)}</span><span class="v">${short(v)}</span></div></div>`).join('')}</div>` : ''}
-    <div class="list">${rows.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="mini-ava">${avatarSvg(avatarFor(r.n), { size: 36 })}</div><div class="grow"><div class="t" style="font-size:16px">${nameTag(r.n, r.e)}${r.t === 'NEPO' ? ' <span class="badge nepo" style="font-size:10px;padding:3px 7px">Nepo</span>' : r.t === 'MAPO' ? ' <span class="badge mapo" style="font-size:10px;padding:3px 7px">Mapo</span>' : ''}</div>${r.side ? `<div class="s">Team ${esc(r.side)}</div>` : ''}</div><div style="text-align:right"><div class="amt">${short(r.s)}</div>${r.prize ? `<div class="small pos" style="font-weight:800">${esc(naira(r.prize))}</div>` : ''}</div></div>`).join('')}
+    <div class="list">${rows.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="mini-ava">${rankAvatar(r.k || 1, { size: 36 })}</div><div class="grow"><div class="t" style="font-size:16px">${nameTag(r.n, r.e)}${r.t === 'NEPO' ? ' <span class="badge nepo" style="font-size:10px;padding:3px 7px">Nepo</span>' : r.t === 'MAPO' ? ' <span class="badge mapo" style="font-size:10px;padding:3px 7px">Mapo</span>' : ''}</div>${r.side ? `<div class="s">Team ${esc(r.side)}</div>` : ''}</div><div style="text-align:right"><div class="amt">${short(r.s)}</div>${r.prize ? `<div class="small pos" style="font-weight:800">${esc(naira(r.prize))}</div>` : ''}</div></div>`).join('')}
     ${board?.near?.length ? `<div class="small" style="text-align:center;color:#fff;opacity:.8">· · ·</div>${board.near.map(r => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">#${r.r}</b><div class="grow"><div class="t" style="font-size:16px">${nameTag(r.n, r.e)}</div></div><div class="amt">${short(r.s)}</div></div>`).join('')}` : ''}</div>`
     : (p.state === 'ended' ? '<div class="empty" style="margin-top:14px">Nobody tap for this pool.</div>' : '');
 
   const listHref = user?.role === 'SPONSOR' ? '/sponsor/pools' : user?.role === 'ADMIN' ? '/admin/pools' : '/pools';
   const body = head + action + instr + creator + leader;
-  const script = p.state === 'waiting' ? `
-(function(){var id=${JSON.stringify(p.id)},joined=${p.joined ? 'true' : 'false'},busy=false,mark=document.querySelector('[data-waiting]');
+  const script = p.state === 'waiting' || (p.joined && p.state === 'soon') ? `
+(function(){var id=${JSON.stringify(p.id)},joined=${p.joined ? 'true' : 'false'},busy=false,mark=document.querySelector('[data-waiting],[data-reload-at-zero]');
 function stop(){clearInterval(t);document.removeEventListener('visibilitychange',tick);}
 function tick(){if(!mark||!document.contains(mark))return stop();if(busy||document.hidden)return;busy=true;
  TA.api('/api/pools/'+encodeURIComponent(id)+'/state',undefined,'GET').then(function(j){busy=false;if(!j._ok)return;
   if(!document.contains(mark))return stop();
-  if(j.state!=='waiting'){stop();if(joined&&j.state!=='cancelled'&&j.state!=='ended'){TA.toast('The pool is full — game on!');TA.go('/play?pools='+encodeURIComponent(id));}else TA.go(location.pathname,{replace:true,fresh:true});return;}
-  var left=Math.max(0,j.maxPlayers-j.players);
-  document.querySelectorAll('[data-waiting]').forEach(function(e){e.textContent=j.players+'/'+j.maxPlayers+' joined · starts when full';});
+  if(j.state==='soon')return;
+  if(j.state!=='waiting'){stop();if(joined&&j.state!=='cancelled'&&j.state!=='ended'){TA.toast('Game on!');TA.go('/play?pools='+encodeURIComponent(id));}else TA.go(location.pathname,{replace:true,fresh:true});return;}
+  var need=j.needed||j.maxPlayers,left=Math.max(0,need-j.players);
+  document.querySelectorAll('[data-waiting]').forEach(function(e){e.textContent=j.players+'/'+need+' joined · starts at '+need;});
   document.querySelectorAll('[data-left]').forEach(function(e){e.textContent=left;});
-  var f=document.querySelector('[data-fill]');if(f)f.style.width=Math.round(Math.min(1,j.players/Math.max(1,j.maxPlayers))*100)+'%';
+  var f=document.querySelector('[data-fill]');if(f)f.style.width=Math.round(Math.min(1,j.players/Math.max(1,need))*100)+'%';
   var pl=document.querySelector('[data-players]');if(pl&&pl.firstChild)pl.firstChild.nodeValue=String(j.players);});}
-var t=setInterval(tick,3000);document.addEventListener('visibilitychange',tick);})();` : '';
+var t=setInterval(tick,${p.state === 'soon' ? 8000 : 3000});document.addEventListener('visibilitychange',tick);})();` : '';
   return appPage({ user, title: p.name, active: listHref, back: listHref, body, wallet, css: POOL_CSS, script, theme, bgCss });
 }
 
@@ -293,6 +302,7 @@ const CREATE_CSS = `
 export function createPoolPage(ctx) {
   const { user, wallet, role, tierKey, ads, theme, bgCss, blast = null, lapoLeft = null } = ctx;
   const admin = role === 'ADMIN', sponsor = role === 'SPONSOR';
+  const opts = { lapo: admin || ctx.opts?.lapo !== false, boosters: admin || ctx.opts?.boosters !== false };   // the super admin turns these options on/off
   const canColour = admin || sponsor;   // pool colours, background and tap area: sponsors and the admin only
   // Day and time are typed in Lagos time (UTC+1, no summer time): UTC fields of (now + 1h) = the Lagos clock.
   const lagosClock = ms => new Date(ms + 3600000).toISOString();
@@ -318,16 +328,18 @@ export function createPoolPage(ctx) {
     <div class="qchips" role="group" aria-label="Quick picks"><button type="button" class="qchip" data-q="30">In 30 min</button><button type="button" class="qchip" data-q="60">In 1 hour</button><button type="button" class="qchip" data-q="t20">Tonight 8 PM</button><button type="button" class="qchip" data-q="m20">Tomorrow 8 PM</button><button type="button" class="qchip" data-q="sat18">Saturday 6 PM</button></div>
     <div class="two">${field({ label: 'Day', name: 'start_date', type: 'date', value: lagosClock(nextSlot).slice(0, 10), attrs: `min="${minDay}" max="${maxDay}" required disabled` })}${field({ label: 'Time (Lagos)', name: 'start_time', type: 'time', value: lagosClock(nextSlot).slice(11, 16), attrs: 'step="300" required disabled' })}</div>
   </div>
-  <div class="group" data-show="start_mode=INSTANT">
-    ${field({ label: 'Players needed to start', name: 'instant_players', value: '2', attrs: 'inputmode="numeric" autocomplete="off" maxlength="5" data-num', tip: 'The match waits until this many players join, then starts by itself. Nobody else can join once it is full.' })}
-    <div class="qchips" role="group" aria-label="Quick picks">${[2, 4, 10, 20, 50, 100].map(n => `<button type="button" class="qchip${n === 2 ? ' on' : ''}" data-n="${n}">${n} players</button>`).join('')}</div>
-    <p class="ta-hint" style="margin:0">It starts ${INSTANT_LEAD_MS / 1000} seconds after the last seat fills. If it isn’t full within 24 hours, it’s cancelled and every entry fee goes back.</p>
+  <div class="group">
+    <div class="two">${field({ label: 'Players needed to start', name: 'instant_players', value: '2', attrs: 'inputmode="numeric" autocomplete="off" maxlength="5" data-num', tip: 'The game waits until this many players join, then starts by itself. A scheduled pool that is short at its start time waits for them too.' })}
+    ${field({ label: 'Max players (cap)', name: 'max_players', value: '', placeholder: 'Unlimited', attrs: 'inputmode="numeric" autocomplete="off" maxlength="6" data-num', tip: 'The most people that can join. Leave it on Unlimited to let everybody in. Must be at least the players needed to start.' })}</div>
+    <div class="qchips" role="group" aria-label="Quick picks for players needed">${[2, 4, 10, 20, 50, 100].map(n => `<button type="button" class="qchip${n === 2 ? ' on' : ''}" data-n="${n}">${n} to start</button>`).join('')}</div>
+    <p class="ta-hint" style="margin:0" data-show="start_mode=INSTANT">It starts ${INSTANT_LEAD_MS / 1000} seconds after enough players are in. If they aren’t in within 24 hours, it’s cancelled and every entry fee goes back.</p>
+    <p class="ta-hint" style="margin:0" data-show="start_mode=LATER" hidden>Short of players at the start time? It waits up to 24 hours for them, then it’s cancelled and every entry fee goes back.</p>
   </div>
   ${choice({ label: 'How long does it run?', name: 'duration', options: [['60', '1 min'], ['300', '5 min'], ['900', '15 min'], ['1800', '30 min'], ['3600', '1 hour'], ...(admin ? [['86400', '1 day'], ['604800', '1 week'], ['2592000', '30 days'], ['31536000', '1 year'], ['CUSTOM', 'Custom']] : [])], value: '60' })}
   ${admin ? '' : '<p class="ta-hint" style="margin-top:-8px">Longer games and custom lengths are set by the Tap Am team.</p>'}
   <div class="group" data-show="duration=CUSTOM" hidden><div class="two">${field({ label: 'Length', name: 'custom_len', value: '2', attrs: 'inputmode="decimal" autocomplete="off" maxlength="6" disabled' })}${select({ label: 'Unit', name: 'custom_unit', options: [['MIN', 'Minutes'], ['HOUR', 'Hours'], ['DAY', 'Days']], value: 'HOUR', attrs: 'disabled' })}</div></div>
   <div class="preview when-prev" data-when-preview aria-live="polite"></div>
-  ${choice({ label: 'Who fit join', name: 'audience', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo only'], ['MAPO', 'Mapo + Nepo'], ['NEPO', 'Nepo only']], value: 'ALL', cls: 'wrap4' })}
+  ${choice({ label: 'Who fit join', name: 'audience', options: [['ALL', 'Everybody'], ['LAPO', 'Lapo match'], ['MAPO', 'Mapo + Nepo'], ['NEPO', 'Nepo only']], value: 'ALL', cls: 'wrap4' })}
   ${choice({ label: 'Game type', name: 'game_type', options: [['STANDARD', 'Normal'], ['MATCH', 'VS (two sides)']], value: 'STANDARD', tip: 'VS: players pick a side. The side with the most taps wins the whole pot, and everyone on it shares by taps.' })}
   <div class="group" data-show="game_type=MATCH">
     <div class="two">${field({ label: 'Side A', name: 'side_a', placeholder: 'Jollof', attrs: 'maxlength="24" autocomplete="off"' })}${field({ label: 'Side B', name: 'side_b', placeholder: 'Fried rice', attrs: 'maxlength="24" autocomplete="off"' })}</div>
@@ -338,11 +350,10 @@ export function createPoolPage(ctx) {
   <div class="preview" data-split-preview>Winner takes all.</div></div>
   <div class="preview" data-show="game_type=MATCH" hidden>VS: the side with the most taps wins the whole prize pool, shared by everybody on that side by their taps.</div>
   ${choice({ label: 'If players tie', name: 'tie_rule', options: [['FIRST', 'First to reach wins'], ['SPLIT', 'Split the prize']], value: 'FIRST' })}
-  <div data-show="start_mode=LATER" hidden>${field({ label: 'Max players', name: 'max_players', placeholder: 'No limit', attrs: 'inputmode="numeric" autocomplete="off" data-num', hint: 'Leave empty for no limit.', tip: 'The most people that can join. When the pool is full, nobody else can join. Leave it empty to let everybody in.' })}</div>
   ${playerPicker({ name: 'invites', label: 'Invite players <small>(optional)</small>', hint: 'Search by name and add as many as you like (50 at a time). They get a notification with the link, and invited players can join a private pool without the password.' })}
   ${playerPicker({ name: 'blocked', id: 'f-block', label: 'Block players from this pool <small>(optional)</small>', hint: 'Type a nickname. Blocked players can’t join or play in this pool.' })}
   <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'time_topup', label: '<b>Let players buy more time during the game</b> (₦10,000 = +10 seconds)', checked: true })}<button type="button" class="tip" data-tip="During the game, a button lets anybody buy more time: every ₦10,000 adds 10 seconds to the clock for everybody." aria-label="More info">i</button></div>
-  <div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'lapo_rules', label: '<b>Use Lapo baby rules</b> (level the game)' })}<button type="button" class="tip" data-tip="Everybody in this pool plays like a Lapo baby: one finger at a time, the Lapo tap speed, and only the boosters every player can use. Mapo and Nepo perks are switched off here, so it is a fair fight." aria-label="More info">i</button></div>
+  ${opts.lapo ? `<div class="row" style="justify-content:flex-start;gap:8px;align-items:flex-start">${check({ name: 'lapo_rules', label: '<b>Use Lapo baby rules</b> (level the game)' })}<button type="button" class="tip" data-tip="Everybody in this pool plays like a Lapo baby: one finger at a time, the Lapo tap speed, and only the boosters every player can use. Mapo and Nepo perks are switched off here, so it is a fair fight." aria-label="More info">i</button></div>` : ''}
   ${canColour ? `${check({ name: 'custom_pad', label: `Set the tap area for this pool${sponsor ? ' (your brand colours)' : ''}` })}
   <div class="group" data-show="custom_pad=true">
     <div class="padprev tcard" data-padprev style="background:${patternBg('waves', '#2E8BFF')}">TAP AM</div>
@@ -365,7 +376,7 @@ export function createPoolPage(ctx) {
     : choice({ label: 'Show your ad in this pool?', name: 'with_ad', options: [['NO', 'Without ad'], ['YES', 'With ad']], value: 'NO', tip: 'With ad: your ad shows before the game (it finishes before the first tap), to players who join late, and before results.' })}
   <div class="group" data-show="with_ad=YES">${approved.length ? select({ label: admin ? 'Pick the ad' : 'Pick your ad', name: 'promo_id', options: approved.map(a => [a.id, a.title + (a.owner ? ' · ' + a.owner : '')]) }) : `<div class="note" style="margin:0">You don’t have an approved ad yet. <a href="${sponsor ? '/sponsor/ads' : '/admin/ads'}"><b>Create an ad first</b></a></div>`}</div>` : ''}
   ${check({ name: 'is_private', label: 'Private pool — Tap Am makes a password you share' })}
-  ${check({ name: 'boosters_allowed', label: 'Allow boosters', checked: true })}
+  ${opts.boosters ? check({ name: 'boosters_allowed', label: 'Allow boosters', checked: true }) : ''}
   ${admin ? '' : `<div class="note">Once you create a pool, <b>you can’t delete it</b> until it ends. Prize money you put in is locked into the pool.</div>${check({ name: 'ack', label: 'I understand the pool can’t be deleted until it ends.' })}`}
 `, { submit: 'Create pool', shine: true })}</div>`;
   const script = `
@@ -389,7 +400,7 @@ function mode(){return (f.querySelector('input[name=start_mode]:checked')||{}).v
 function when(){var m=mode(),d=dur(),bad=false,txt;
  if(d<60){txt='A pool runs at least 1 minute.';bad=true;}
  else if(d>${admin ? 31622400 : 3600}){txt='${admin ? 'A pool fit run 1 year max.' : 'Pick a length up to 1 hour.'}';bad=true;}
- else if(m==='INSTANT'){var n=parseInt(String(f.instant_players.value).replace(/[^0-9]/g,''),10)||0;txt=n<2?'An instant match needs at least 2 players.':'Starts by itself when '+n.toLocaleString('en-NG')+' players join, then runs '+fd(d)+'.';bad=n<2;}
+ else if(m==='INSTANT'){var n=parseInt(String(f.instant_players.value).replace(/[^0-9]/g,''),10)||0,cap=parseInt(String(f.max_players.value).replace(/[^0-9]/g,''),10)||0;txt=n<2?'At least 2 players are needed to start.':cap&&cap<n?'Max players can’t be less than the players needed.':'Starts by itself when '+n.toLocaleString('en-NG')+' players join, then runs '+fd(d)+(cap?' · up to '+cap.toLocaleString('en-NG')+' players':' · no player limit')+'.';bad=n<2||(cap&&cap<n);}
  else{var s=m==='LATER'?Date.parse(f.start_date.value+'T'+f.start_time.value+':00+01:00'):Date.now();
   if(!s){txt='Pick the day and time.';bad=true;}
   else if(m==='LATER'&&s<Date.now()-60000){txt='That time don pass. Pick a later time.';bad=true;}
@@ -441,11 +452,13 @@ export function resultsPage(ctx) {
   const url = `${origin}/pool/${p.id}/results`;
   const medal = ['🥇', '🥈', '🥉'];
   const top3 = rows.slice(0, 3);
-  const pod = top3.length ? `<div class="pod">${[1, 0, 2].map(i => top3[i] ? `<div class="tcard ${['c-sunny', 'c-sky', 'c-orange'][i]} ${i === 0 ? 'p1' : ''}"><span class="pl">${i + 1}</span><div class="mini-ava">${avatarSvg(avatarFor(top3[i].n), { size: i === 0 ? 56 : 44 })}</div><span class="nm">${esc(top3[i].n)}</span><span class="tp">${short(top3[i].s)} taps</span>${top3[i].prize ? `<span class="pz">${esc(nairaShort(top3[i].prize))}</span>` : ''}</div>` : '<div></div>').join('')}</div>` : '';
+  const pod = top3.length ? `<div class="pod">${[1, 0, 2].map(i => top3[i] ? `<div class="tcard ${['c-sunny', 'c-sky', 'c-orange'][i]} ${i === 0 ? 'p1' : ''}"><span class="pl">${i + 1}</span><div class="mini-ava">${rankAvatar(top3[i].k || 1, { size: i === 0 ? 56 : 44 })}</div><span class="nm">${esc(top3[i].n)}</span><span class="tp">${short(top3[i].s)} taps</span>${top3[i].prize ? `<span class="pz">${esc(nairaShort(top3[i].prize))}</span>` : ''}</div>` : '<div></div>').join('')}</div>` : '';
   const vsBlock = vs ? `<div class="vsres">${[p.side_a, p.side_b].map((x, i) => `<div class="tcard ${i ? 'c-sky' : 'c-orange'} ${vs.winners.includes(x) ? 'win' : ''}"><div class="side">${esc(x)}</div><div class="tt">${short(vs.taps[x] || 0)} taps · ${short(vs.count[x] || 0)} player${vs.count[x] === 1 ? '' : 's'}</div>${vs.winners.includes(x) ? `<span class="tag">${vs.winners.length > 1 ? 'Draw' : 'WINNERS'}${vs.won[x] ? ' · ' + esc(nairaShort(vs.won[x])) : ''}</span>` : ''}</div>`).join('')}</div>` : '';
-  const list = rows.length ? `<h2 class="h2">Top ${Math.min(10, rows.length)}</h2><div class="list rlist">${rows.slice(0, 10).map((r, i) => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">${i < 3 ? medal[i] : '#' + (i + 1)}</b><div class="mini-ava">${avatarSvg(avatarFor(r.n), { size: 36 })}</div><div class="grow"><div class="t" style="font-size:16px">${esc(r.n)}</div>${r.side ? `<div class="s">Team ${esc(r.side)}</div>` : ''}</div><div class="amt"><b>${short(r.s)}</b><small>taps</small>${r.prize ? `<div class="pos" style="font:900 14px var(--display)">${esc(naira(r.prize))}</div>` : ''}</div></div>`).join('')}</div>` : '<div class="empty">Nobody tapped in this pool.</div>';
+  const list = rows.length ? `<h2 class="h2">Top ${Math.min(10, rows.length)}</h2><div class="list rlist">${rows.slice(0, 10).map((r, i) => `<div class="item ${r.me ? 'board-me' : ''}"><b class="rk">${i < 3 ? medal[i] : '#' + (i + 1)}</b><div class="mini-ava">${rankAvatar(r.k || 1, { size: 36 })}</div><div class="grow"><div class="t" style="font-size:16px">${esc(r.n)}</div>${r.side ? `<div class="s">Team ${esc(r.side)}</div>` : ''}</div><div class="amt"><b>${short(r.s)}</b><small>taps</small>${r.prize ? `<div class="pos" style="font:900 14px var(--display)">${esc(naira(r.prize))}</div>` : ''}</div></div>`).join('')}</div>` : '<div class="empty">Nobody tapped in this pool.</div>';
   const winLine = vs ? (vs.winners.length === 1 ? `Team ${vs.winners[0]} won` : 'It ended in a draw') : top3[0] ? `${top3[0].n} won` : 'Results';
-  const card = { url, kind: 'results', title: p.name, line: `${winLine}${p.prize_kobo ? ' · Prize pool ' + nairaShort(p.prize_kobo) : ''}`, stats: vs ? [p.side_a, p.side_b].map(x => `${x}: ${short(vs.taps[x] || 0)} taps`) : top3.map((r, i) => `${medal[i]} ${r.n}${r.prize ? ' ' + nairaShort(r.prize) : ''}`), code: p.hashtag, display: 'www.tapammm.live', color: '#9161FF' };
+  const card = { url, kind: 'results', title: p.name, line: `${lagosDate(p.ends_at)} · ${short(players)} player${players === 1 ? '' : 's'}${p.prize_kobo ? ' · Prize pool ' + nairaShort(p.prize_kobo) : ''}`, display: 'tapammm.live', color: '#9161FF',
+    vs: vs ? [p.side_a, p.side_b].map(x => ({ name: x, taps: short(vs.taps[x] || 0), players: `${short(vs.count[x] || 0)} PLAYER${vs.count[x] === 1 ? '' : 'S'}`, win: vs.winners.length === 1 && vs.winners[0] === x })) : null,
+    podium: top3.map(r => ({ n: r.n, s: short(r.s), prize: r.prize ? nairaShort(r.prize) : '', avatar: rankAvatar(r.k || 1, { size: 170 }) })), ask: winLine === 'Results' ? 'Your turn: tap pass them' : `${winLine}. Your turn!` };
   const mine = me ? `<div class="panel" style="margin-top:14px;text-align:center"><div class="small muted">Your result</div><b style="font:900 28px var(--display)">${me.final_rank ? '#' + me.final_rank : '—'} · ${short(me.taps || 0)} taps</b>${me.prize_kobo ? `<div class="pos" style="font:900 22px var(--display);margin-top:4px">You won ${esc(naira(me.prize_kobo))}</div>` : '<div class="muted small" style="margin-top:4px">No prize this time</div>'}</div>` : '';
   const body = `<section class="tcard rhead c-purple"><span class="badge live">Final results</span><h1>${esc(p.name)}</h1>
 <div class="meta"><span>${esc(lagosDate(p.ends_at))}</span><span>${short(players)} player${players === 1 ? '' : 's'}</span><span>${p.prize_kobo ? 'Prize pool ' + esc(nairaShort(p.prize_kobo)) : 'Free pool'}</span>${p.entry_fee_kobo ? `<span>${esc(naira(p.entry_fee_kobo))} entry</span>` : ''}</div></section>

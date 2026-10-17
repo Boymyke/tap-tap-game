@@ -147,8 +147,8 @@ body.is-game{background:var(--bg-deep)}
 .promo-media iframe{display:block;width:100%;aspect-ratio:16/9;border:0}
 .promo-in h3{margin:10px 4px 8px;font:900 21px/1.1 var(--display)}
 .promo-in .lbl{gap:10px}
-.promo-x{flex:none;min-height:34px;padding:0 12px;border:0;border-radius:var(--r-in);background:var(--ink);color:#fff;font:800 13px var(--body);cursor:pointer;text-transform:none;letter-spacing:0}
-.promo-x[disabled]{cursor:default;background:var(--cloud);color:var(--ink-soft)}
+.promo-x{flex:none;display:grid;place-items:center;width:38px;height:38px;padding:0;border:0;border-radius:50%;background:var(--ink);color:#fff;font:900 22px/1 var(--body);cursor:pointer;text-transform:none;letter-spacing:0}
+.promo-x[disabled]{cursor:default;background:var(--cloud);color:var(--ink-soft);font:800 14px/1 var(--body)}
 /* how long until the ad can close: a line that fills left to right */
 .promo-line{height:5px;margin:0 4px 10px;border-radius:999px;background:var(--cloud);overflow:hidden}
 .promo-line i{display:block;height:100%;width:100%;border-radius:inherit;background:var(--green);transform:scaleX(0);transform-origin:left center}
@@ -238,7 +238,7 @@ export function playPage(ctx) {
 <label class="ta-check" style="margin:4px 0 10px"><input type="checkbox" id="cash-win"><span>Pay from my winnings instead of my wallet</span></label>
 <div class="actions"><button type="button" class="btn btn--green btn--block" id="cash-go">Add ₦10,000 (+10s)</button></div></div></div>
 <div class="gsheet" id="voice-sheet" hidden><div class="gsheet-in" role="dialog" aria-modal="true" aria-labelledby="vo-h"><h2 id="vo-h">Live voice <button type="button" class="iconbtn" data-close aria-label="Close">${ICONS.close}</button></h2><p id="v-status">Listen to the top players talk while you tap. Only Nepo babies in the top ${voice.topN} of this pool fit talk.</p><div class="vlist" id="v-list"></div><div class="actions"><button type="button" class="btn btn--green btn--sm" id="v-listen">Listen</button><button type="button" class="btn btn--gold btn--sm" id="v-talk" hidden>Talk</button><button type="button" class="btn btn--soft btn--sm" id="v-leave" hidden>Leave voice</button></div></div></div>
-<div class="promo" id="promo" hidden><div class="promo-in" role="dialog" aria-modal="true" aria-label="Sponsored"><div class="lbl"><span id="promo-by">Sponsored</span><button type="button" class="promo-x" id="promo-x" aria-label="Close ad" disabled><span id="promo-wait">Wait 5s</span></button></div><div class="promo-line" aria-hidden="true"><i id="promo-line"></i></div><div id="promo-body"></div></div></div>
+<div class="promo" id="promo" hidden><div class="promo-in" role="dialog" aria-modal="true" aria-label="Sponsored"><div class="lbl"><span id="promo-by">Sponsored</span><button type="button" class="promo-x" id="promo-x" aria-label="Close ad" disabled><span id="promo-wait">15</span></button></div><div class="promo-line" aria-hidden="true"><i id="promo-line"></i></div><div id="promo-body"></div></div></div>
 <script type="application/json" id="game-data">${safeJson(data)}</script>`;
   return themeShell({ title: single ? single.name : 'Play', body, css: CSS, bodyClass: 'is-game', scripts: ['/assets/sounds.js', '/assets/game.js', ...(voice.enabled ? ['/assets/voice.js'] : [])], theme, bgCss: poolBg || bgCss, noZoom: true });
 }

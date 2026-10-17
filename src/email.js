@@ -119,3 +119,51 @@ export function announcementEmail({ title, message, link, linkLabel, unsub = '',
 <h1 style="margin:0 0 14px;font-family:'Arial Black',Arial,sans-serif;font-size:26px;line-height:1.15;color:#150B33">${esc(title)}</h1>${paras}${link ? button(link, linkLabel || 'Open Tap Am') : ''}`;
   return { subject, text, html: frame({ pre: String(message).slice(0, 110), body, site, foot: service ? 'This is a service message about your Tap Am account.' : unsubLine(unsub, 'You get this because you said yes to Tap Am news.') }) };
 }
+
+// ── game emails: invites, "about to start", top games, gifts ────────────────
+const kicker = t => `<p style="margin:0 0 6px;font-size:13px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#9161FF">${esc(t)}</p>`;
+const h1 = t => `<h1 style="margin:0 0 10px;font-family:'Arial Black',Arial,sans-serif;font-size:27px;line-height:1.12;color:#150B33">${esc(t)}</h1>`;
+const para = t => `<p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#2B2250">${esc(t)}</p>`;
+// A pool as a little ticket: name, prize, entry, when.
+function poolTicket({ name, prize = '', entry = '', when = '', color = '#2E8BFF' }) {
+  const cell = (k, v) => `<td style="padding:0 14px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:.5px;text-transform:uppercase;color:#C9BDF5">${esc(k)}<br><span style="font-family:'Arial Black',Arial,sans-serif;font-size:19px;letter-spacing:0;color:${k === 'Prize pool' ? '#00FF6E' : '#ffffff'}">${esc(v)}</span></td>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 4px"><tr><td bgcolor="#150B33" style="background:#150B33;border-radius:18px;border-left:8px solid ${esc(color)};padding:16px 18px">
+<div style="font-family:'Arial Black',Arial,sans-serif;font-size:20px;line-height:1.2;color:#ffffff;margin:0 0 10px">${esc(name)}</div>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>${cell('Prize pool', prize || 'Akara')}${cell('Entry', entry || 'Free')}${when ? cell('When', when) : ''}</tr></table></td></tr></table>`;
+}
+const footFor = (unsub, why, kind) => `${esc(why)} ${unsub ? `<a href="${esc(unsub)}" style="color:#00FF6E">${esc(kind)}</a> or change it` : 'Change it'} any time in Settings.`;
+
+export function inviteEmail({ from, pool, url, prize, entry, when, needed = 0, starting = false, unsub = '', site }) {
+  const subject = starting ? `“${pool}” is starting — ${from} invited you` : `${from} invited you to “${pool}”`;
+  const lead = starting ? `${from} invited you to this pool and it is starting now. Jump in before the taps fly.` : `${from} wants you in this Tap Am ${needed ? 'match' : 'pool'}. Fastest finger wins.`;
+  const text = `${subject}\n\n${lead}\n${prize ? `Prize pool: ${prize}\n` : ''}Entry: ${entry || 'Free'}\n${when ? `When: ${when}\n` : ''}\nJoin here: ${url}\n\nDon't want invites? ${unsub || 'Change it in Settings.'}`;
+  const body = `${kicker(starting ? 'Starting now' : 'You’re invited')}${h1(starting ? 'Your invite is going live' : `${from} invited you`)}${para(lead)}
+${poolTicket({ name: pool, prize, entry, when })}
+${needed ? `<p style="margin:10px 0 0;font-size:14px;color:#5B4E86">It starts by itself when <b>${esc(needed)}</b> players are in.</p>` : ''}
+${button(url, starting ? 'Play now' : 'Join the pool')}`;
+  return { subject, text, html: frame({ pre: lead, body, site, foot: footFor(unsub, 'You get this because a player invited you to a match.', 'Stop invites') }) };
+}
+
+export function startingEmail({ pool, url, secs = 10, site }) {
+  const subject = `⏱ “${pool}” starts in ${secs} seconds`;
+  const lead = `You joined “${pool}” and it starts in ${secs} seconds. Get back to the game and tap!`;
+  const body = `${kicker('Game about to start')}${h1(`${secs} seconds to go!`)}${para(lead)}
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0"><tr><td bgcolor="#FFD23F" style="background:#FFD23F;border-radius:16px;padding:14px 18px;font-family:'Arial Black',Arial,sans-serif;font-size:22px;color:#150B33">${esc(pool)}</td></tr></table>
+${button(url, 'Back to the game')}<p style="margin:8px 0 0;font-size:13px;color:#5B4E86">Taps only count while the pool is live. The server score is the official score.</p>`;
+  return { subject, text: `${lead}\n\n${url}`, html: frame({ pre: lead, body, site, foot: 'You get this because you joined this game and left the lobby.' }) };
+}
+
+export function topGamesEmail({ games, unsub = '', site }) {
+  const subject = `🔥 Top Tap Am games right now`;
+  const rows = games.map(g => `<tr><td style="padding:0 0 10px"><a href="${esc(g.url)}" style="text-decoration:none">${poolTicket({ name: g.name, prize: g.prize, entry: g.entry, when: g.when, color: g.live ? '#00FF6E' : '#FFD23F' })}</a></td></tr>`).join('');
+  const text = `Top Tap Am games right now:\n\n${games.map(g => `• ${g.name} — ${g.prize || 'Akara'} (${g.when}) ${g.url}`).join('\n')}\n\nStop these emails: ${unsub}`;
+  const body = `${kicker('For Mapo & Nepo babies')}${h1('Top games right now')}${para('The biggest live and open pools on Tap Am. Pick one and show them your finger.')}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>${button(`${site}/pools`, 'See all pools')}`;
+  return { subject, text, html: frame({ pre: games.map(g => g.name).slice(0, 3).join(' · '), body, site, foot: footFor(unsub, 'You get this because you’re a Mapo or Nepo baby and said yes to game emails.', 'Stop these emails') }) };
+}
+
+export function giftEmail({ what, note = '', url, site }) {
+  const subject = `🎁 Tap Am sent you a gift`;
+  const body = `${kicker('A gift from Tap Am')}${h1(`You got ${what}!`)}${note ? para(note) : ''}${para('It’s already in your account. Use it in your next game.')}${button(url, 'Open Tap Am')}`;
+  return { subject, text: `Tap Am sent you ${what}.${note ? `\n\n${note}` : ''}\n\n${url}`, html: frame({ pre: `You got ${what}`, body, site, foot: 'This is a service message about your Tap Am account.' }) };
+}

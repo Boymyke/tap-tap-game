@@ -5,15 +5,29 @@ import { json, readJson, allow, nowIso, uid, hashPassword, safeEqual, sessionCoo
 import { normWhatsapp } from '../auth-api.js';
 import { tierOf, tierLabel, isNepo, isPaid, requireRole, debit, credit, giveItem, takeItem, owns, itemLock, notify, settings, num, parseJson, clampInt, naira, loadUser, getWallet, upgradeError, fundsError, lagosDay, periodKeys } from '../core.js';
 import { perks, THEMES, SOUNDS } from '../tiers.js';
-import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool, addInvites, castVote } from '../game/pools.js';
+import { listPools, getPool, joinPool, createPool, poolPublic, poolState, roomCall, topUpPool, addInvites, castVote, neededOf } from '../game/pools.js';
 import { allRanks, rankInfo } from '../game/ranks.js';
 import { createChallenge, answerChallenge } from '../game/challenges.js';
 import { pendingOverlay } from '../game/announce.js';
+import { submitAdRequest, cancelAdRequest } from '../game/adrequests.js';
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
 export async function handlePlayApi(req, env, path, user) {
   const m = path.match(/^\/api\/pools\/([^/]+)(?:\/(join|board|boost|topup|invite|state|result|vote))?$/);
+
+  // ── home page ad requests (players and sponsors) ──
+  if (path === '/api/ad-requests' && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
+    const { data, response } = await readJson(req); if (response) return response;
+    return submitAdRequest(env, await loadUser(env, user.id), data);
+  }
+  const arm = path.match(/^\/api\/ad-requests\/([0-9a-f-]{36})\/cancel$/);
+  if (arm && req.method === 'POST') {
+    const deny = requireRole(user, ['USER', 'SPONSOR']); if (deny) return deny;
+    if (!await allow(env, 'adreqc:' + user.id, 20, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
+    return cancelAdRequest(env, user, arm[1]);
+  }
 
   // ── pools ──
   if (path === '/api/pools' && req.method === 'GET') {
@@ -86,9 +100,11 @@ export async function handlePlayApi(req, env, path, user) {
   // Pool status for the "waiting for players" screen (instant matches).
   if (m && m[2] === 'state' && req.method === 'GET') {
     const deny = requireRole(user, ['USER', 'SPONSOR', 'ADMIN']); if (deny) return deny;
-    const p = await env.DB.prepare('SELECT status, pause_mode, vote_until, starts_at, ends_at, settled_at, max_players, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=pools.id) AS players FROM pools WHERE id=?').bind(m[1]).first();
+    const p = await env.DB.prepare('SELECT status, pause_mode, vote_until, starts_at, ends_at, settled_at, max_players, min_players, instant, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=pools.id) AS players FROM pools WHERE id=?').bind(m[1]).first();
     if (!p) return json({ error: 'Pool not found.' }, 404);
-    return json({ state: poolState(p), players: Number(p.players), maxPlayers: Number(p.max_players), startsAt: p.starts_at, endsAt: p.ends_at });
+    const st = poolState(p);
+    if (user.role === 'USER' && (st === 'soon' || st === 'waiting')) await roomCall(env, m[1], '/seen', { uid: user.id }).catch(() => {});   // on the pool page: not "left"
+    return json({ state: st, players: Number(p.players), maxPlayers: Number(p.max_players), needed: neededOf(p), startsAt: p.starts_at, endsAt: p.ends_at });
   }
   // The creator (or the super admin) invites more players after the pool is made.
   if (m && m[2] === 'invite' && req.method === 'POST') {
@@ -243,6 +259,8 @@ export async function handlePlayApi(req, env, path, user) {
     }
     const cols = [];
     if (typeof data.emailNews === 'boolean') cols.push(env.DB.prepare('UPDATE users SET email_news=? WHERE id=?').bind(data.emailNews ? 1 : 0, user.id));
+    if (typeof data.emailGames === 'boolean') cols.push(env.DB.prepare('UPDATE users SET email_games=? WHERE id=?').bind(data.emailGames ? 1 : 0, user.id));
+    if (typeof data.allowInvites === 'boolean') cols.push(env.DB.prepare('UPDATE users SET allow_invites=? WHERE id=?').bind(data.allowInvites ? 1 : 0, user.id));
     if (cols.length) await env.DB.batch(cols);
     if (typeof data.vibrate === 'boolean') prefs.vibrate = data.vibrate;
     if (typeof data.muted === 'boolean') prefs.muted = data.muted;
@@ -382,7 +400,7 @@ export async function handlePlayApi(req, env, path, user) {
     p = pool ? await poolAd(env, pool) : null;
     // Before the game: the ad must finish before the game starts, so skip it when there isn't time.
     const left = Number(sp.get('left'));
-    if (p && sp.get('at') === 'LOBBY' && Number.isFinite(left) && left < (Number(p.duration_seconds) || 5) + 3) p = null;
+    if (p && sp.get('at') === 'LOBBY' && Number.isFinite(left) && left < 15 + 3) p = null;
     // count a view at most 3 times per player per ad every 10 minutes, so scripts can't inflate sponsor numbers
     if (p && await allow(env, `pv:${user.id}:${p.id}`, 3, 600)) await env.DB.prepare('UPDATE promos SET views=views+1 WHERE id=?').bind(p.id).run();
     if (p && user.role === 'USER') p.lead_done = !!(await env.DB.prepare('SELECT 1 FROM leads WHERE promo_id=? AND user_id=?').bind(p.id, user.id).first());

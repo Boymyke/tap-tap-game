@@ -1,0 +1,24 @@
+Grape            #6A35FF  RGB 106,53,255  CMYK 58,79,0,0  — Main background (top)
+Grape Deep       #2A0F8F  RGB 42,15,143  CMYK 71,90,0,44  — Main background (bottom)
+Night            #1B0B4D  RGB 27,11,77  CMYK 65,86,0,70  — Deepest background
+Tap Green        #00FF6E  RGB 0,255,110  CMYK 100,0,57,0  — Primary action, highlights, money won
+Tap Green Dark   #00B852  RGB 0,184,82  CMYK 100,0,55,28  — Button shadow under Tap Green
+Logo Purple      #AA0FEA  RGB 170,15,234  CMYK 27,94,0,8  — The AM box in the logo
+Mark Green       #006012  RGB 0,96,18  CMYK 100,0,81,62  — App icon tile, finger mark
+Ink              #150B33  RGB 21,11,51  CMYK 59,78,0,80  — Text on light, outlines
+Ink 2            #2B1C5E  RGB 43,28,94  CMYK 54,70,0,63  — Secondary text on light
+Ink Soft         #5B4E86  RGB 91,78,134  CMYK 32,42,0,47  — Muted text on light
+Paper            #FFFFFF  RGB 255,255,255  CMYK 0,0,0,0  — Cards, panels
+Cloud            #F4F0FF  RGB 244,240,255  CMYK 4,6,0,0  — Inputs, soft panels
+Line             #E6DEFF  RGB 230,222,255  CMYK 10,13,0,0  — Borders on light
+Lilac            #E4DAFF  RGB 228,218,255  CMYK 11,15,0,0  — Muted text on dark
+
+Sunny            #FFD23F  shadow #D9A400  RGB 255,210,63  CMYK 0,18,75,0
+Pink             #FF4FA3  shadow #C42A78  RGB 255,79,163  CMYK 0,69,36,0
+Sky              #2E8BFF  shadow #1A5FC2  RGB 46,139,255  CMYK 82,45,0,0
+Orange           #FF8A2A  shadow #C95F10  RGB 255,138,42  CMYK 0,46,84,0
+Teal             #21D4C8  shadow #0F9A91  RGB 33,212,200  CMYK 84,0,6,17
+Purple           #9161FF  shadow #5E30D6  RGB 145,97,255  CMYK 43,62,0,0
+Danger           #FF4D5E  shadow #C21F33  RGB 255,77,94  CMYK 0,70,63,0
+
+CMYK values are screen conversions. Ask your printer for a proof before a big run.

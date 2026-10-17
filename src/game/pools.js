@@ -2,6 +2,7 @@
 import { uid, nowIso, json, allow, logError, likeEsc } from '../lib.js';
 import { isPattern } from '../ui/patterns.js';
 import { adLeadMs, runningAdminAd, NO_AD } from './ads.js';
+import { emailInvitees } from './gamemail.js';
 import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, giveItem, notify, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -57,13 +58,17 @@ export function poolState(p, now = Date.now()) {
   return now < s ? 'soon' : now < e ? 'live' : 'ended';
 }
 
+const audienceOf = d => ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(String(d.audience).toUpperCase()) ? String(d.audience).toUpperCase() : 'ALL';
+// Players needed before the game starts (older instant matches stored it as the cap).
+export const neededOf = p => Number(p.min_players) || (p.instant ? Number(p.max_players) : 0) || 0;
+
 // Can this user join this pool? Returns null or { why, need }.
 export function joinBlock(pool, user) {
   if (!user || user.role !== 'USER') return { why: 'Only player accounts can join pools.' };
   const t = tierOf(user);
   if (pool.audience === 'NEPO' && t !== 'NEPO') return { why: 'This pool na for Nepo babies only.', need: 'NEPO' };
   if (pool.audience === 'MAPO' && t === 'LAPO') return { why: 'This pool na for Mapo and Nepo babies.', need: 'MAPO' };
-  if (pool.audience === 'LAPO' && t !== 'LAPO') return { why: 'This pool na for Lapo babies only.' };
+  // Lapo-only pools: Mapo and Nepo babies may join, but they play as Lapo babies there (Lapo rules are forced on).
   return null;
 }
 export const joinBlocked = (pool, user) => joinBlock(pool, user)?.why || null;
@@ -122,11 +127,15 @@ export async function createPool(env, user, d) {
   if (dur < MIN_POOL_SECONDS) return json({ error: `A pool must run at least ${MIN_POOL_SECONDS} seconds.`, field: durField }, 400);
   if (admin ? dur > ADMIN_MAX_POOL_SECONDS : dur > MAX_POOL_SECONDS) return json({ error: admin ? 'A pool fit run 1 year max.' : 'A pool fit run 7 days max.', field: durField }, 400);
   if (!admin && !PLAYER_DURATIONS.includes(dur)) return json({ error: 'Pick one of the lengths: 1, 5, 15 or 30 minutes, or 1 hour. Only the super admin can set other lengths.', field: durField === 'custom_len' ? 'duration' : durField }, 400);
+  // Players needed to start (instant matches and scheduled pools) and the most players that can join (the cap).
   let instantN = 0;
+  if (mode === 'INSTANT' || mode === 'LATER') {
+    const raw = String(d.min_players ?? d.instant_players ?? '').replace(/[,\s]/g, '');
+    if (mode === 'LATER' && raw === '') instantN = 0;   // older forms: a scheduled pool starts on time, whoever joined
+    else if (!/^\d+$/.test(raw) || +raw < 2 || +raw > INSTANT_MAX) return json({ error: `Players needed to start must be 2 to ${INSTANT_MAX.toLocaleString('en-NG')}.`, field: 'instant_players' }, 400);
+    else instantN = +raw;
+  }
   if (mode === 'INSTANT') {
-    const raw = String(d.instant_players ?? '').replace(/[,\s]/g, '');
-    if (!/^\d+$/.test(raw) || +raw < 2 || +raw > INSTANT_MAX) return json({ error: `An instant match needs 2 to ${INSTANT_MAX.toLocaleString('en-NG')} players.`, field: 'instant_players' }, 400);
-    instantN = +raw;
     // Until it fills, the start time is the deadline: the cron cancels and refunds it if nobody fills it by then.
     start = now + clampInt(num(s, 'instant_wait_hours', 24), 1, 168, 24) * 3600000;
   }
@@ -137,7 +146,7 @@ export async function createPool(env, user, d) {
   if (sponsor) kind = 'SPONSORED';
   else if (!admin && !['FREE', 'PAID'].includes(kind)) kind = 'FREE';
   if (!['FREE', 'PAID', 'SPONSORED'].includes(kind)) kind = 'FREE';
-  const audience = ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(String(d.audience).toUpperCase()) ? String(d.audience).toUpperCase() : 'ALL';
+  const audience = audienceOf(d);
   const entryFee = kind === 'PAID' ? clampInt(toKobo(d.entry_fee), 0, 100000000, 0) : 0;
   if (kind === 'PAID' && entryFee < 10000) return json({ error: 'Entry fee for a paid pool must be at least ₦100.', field: 'entry_fee' }, 400);
   let prize = kind === 'FREE' ? 0 : clampInt(toKobo(d.prize || 0), 0, 10000000000, 0);
@@ -154,16 +163,22 @@ export async function createPool(env, user, d) {
   if (gameType === 'MATCH' && (!sideB || sideA.toLowerCase() === sideB.toLowerCase())) return json({ error: 'Name side B (different from side A).', field: 'side_b' }, 400);
   // Pool colours, background and tap area: sponsors and the admin only.
   const canColour = admin || sponsor;
-  const lapoRules = d.lapo_rules === true ? 1 : 0;   // everybody plays like a Lapo baby (1 finger, Lapo speed, everybody boosters)
+  // The super admin decides whether players and sponsors get the "Lapo baby rules" and "Allow boosters" options.
+  const optLapo = admin || s.opt_lapo_rules !== '0', optBoost = admin || s.opt_boosters !== '0';
+  // everybody plays like a Lapo baby (1 finger, Lapo speed, everybody boosters). Lapo-only pools always do:
+  // Mapo and Nepo babies may join them, but they play as Lapo babies there.
+  const lapoRules = audienceOf(d) === 'LAPO' || (optLapo && d.lapo_rules === true) ? 1 : 0;
   // Pool tap area (colour + pattern). Players use it unless the creator lets them use their own.
   const custom = canColour && d.custom_pad !== false && (HEX.test(d.theme_color || '') || isPattern(d.pad_pattern));
   const theme = custom && HEX.test(d.theme_color || '') ? d.theme_color : null;
   const padPattern = custom && isPattern(d.pad_pattern) ? d.pad_pattern : null;
   const allowOwnPad = custom ? (d.allow_own_pad === true ? 1 : 0) : 1;
   const bg = canColour && HEX.test(d.bg_color || '') ? d.bg_color : null;
-  const maxRaw = mode === 'INSTANT' ? '' : String(d.max_players ?? '').replace(/[,\s]/g, '');
-  const maxPlayers = mode === 'INSTANT' ? instantN : maxRaw === '' ? NO_LIMIT : clampInt(maxRaw, 2, NO_LIMIT, NO_LIMIT);
-  if (maxRaw !== '' && (!/^\d+$/.test(maxRaw) || +maxRaw < 2)) return json({ error: 'Max players must be 2 or more (or leave it empty).', field: 'max_players' }, 400);
+  // Cap: empty = no limit. Older instant-match forms had no cap field: the match was capped at the players needed.
+  const maxRaw = String(d.max_players ?? '').replace(/[,\s]/g, '').replace(/^unlimited$/i, '');
+  if (maxRaw !== '' && (!/^\d+$/.test(maxRaw) || +maxRaw < 2)) return json({ error: 'Max players must be 2 or more (or leave it empty for no limit).', field: 'max_players' }, 400);
+  const maxPlayers = maxRaw !== '' ? clampInt(maxRaw, 2, NO_LIMIT, NO_LIMIT) : mode === 'INSTANT' && d.max_players === undefined ? instantN : NO_LIMIT;
+  if (instantN && maxPlayers < instantN) return json({ error: `Max players can’t be less than the ${instantN} players needed to start.`, field: 'max_players' }, 400);
   const cut = kind === 'PAID' ? num(s, 'house_cut_pct', 0) : 0;
   if (kind === 'PAID' || prize > 0) {   // money involved: the creator must be an adult
     if (player && !user.adult_confirmed_at) { if (d.adult !== true) return adultError(); await env.DB.prepare('UPDATE users SET adult_confirmed_at=? WHERE id=?').bind(nowIso(), user.id).run(); }
@@ -177,9 +192,9 @@ export async function createPool(env, user, d) {
     if (!ad || (!admin && ad.owner_id !== user.id)) return json({ error: 'Pick one of your ads, or create an ad first.', field: 'promo_id', redirect: sponsor ? '/sponsor/ads' : '/admin/ads', go: 'Create an ad' }, 400);
     if (!ad.approved) return json({ error: 'That ad is still waiting for approval. Pick an approved ad or choose “Without ad”.', field: 'promo_id' }, 400);
     if (!ad.active) return json({ error: 'That ad is paused. Turn it on first, or pick another ad.', field: 'promo_id' }, 400);
-    promoId = ad.id; adSecs = Number(ad.duration_seconds) || 5;
+    promoId = ad.id; adSecs = 15;
   } else if (admin && d.with_ad === 'NO') promoId = NO_AD;
-  else if (admin) adSecs = Number((await runningAdminAd(env))?.duration_seconds) || 0;
+  else if (admin) adSecs = (await runningAdminAd(env)) ? 15 : 0;
   // "Start now" with an ad: the game starts once the ad has had time to finish.
   if (mode === 'NOW' && adSecs) { start = now + (adSecs + 5) * 1000; end = start + dur * 1000; }
 
@@ -203,8 +218,8 @@ export async function createPool(env, user, d) {
     id, name, description, starts_at: iso(start), ends_at: iso(end), kind, audience, instant: mode === 'INSTANT' ? 1 : 0, duration_seconds: dur,
     entry_fee_kobo: entryFee, prize_kobo: prize, winners_count: split.length, split: JSON.stringify(split), split_style: style, tie_rule: tie, house_cut_pct: cut,
     is_private: isPrivate ? 1 : 0, join_password: password, sponsor_user_id: sponsor ? user.id : null, sponsor_name: sponsorName,
-    theme_color: theme, pad_pattern: padPattern, allow_own_pad: allowOwnPad, bg_color: bg, lapo_rules: lapoRules, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: d.boosters_allowed === false ? 0 : 1,
-    max_players: maxPlayers, hashtag: code, created_by: user.id, status: mode === 'INSTANT' ? 'WAITING' : start > now ? 'SCHEDULED' : 'LIVE', min_tier: audience === 'ALL' ? 'LAPO' : audience, promo_id: promoId,
+    theme_color: theme, pad_pattern: padPattern, allow_own_pad: allowOwnPad, bg_color: bg, lapo_rules: lapoRules, game_type: gameType, side_a: sideA, side_b: sideB, vs_split: gameType === 'MATCH' ? 1 : 0, boosters_allowed: optBoost && d.boosters_allowed === false ? 0 : 1,
+    max_players: maxPlayers, min_players: instantN, hashtag: code, created_by: user.id, status: mode === 'INSTANT' ? 'WAITING' : start > now ? 'SCHEDULED' : 'LIVE', min_tier: audience === 'ALL' || audience === 'LAPO' ? 'LAPO' : audience, promo_id: promoId,
     time_topup: d.time_topup === false ? 0 : 1
   };
   const cols = Object.keys(pool);
@@ -224,9 +239,9 @@ export async function createPool(env, user, d) {
     if (blastAud) await credit(env, user.id, blastPrice, { type: 'REFUND', reference: id, note: 'Email not sent: pool not created' }).catch(() => {});
     return json({ error: 'Server wahala: the pool was NOT created and any money you put in is back. Try again in a minute.' }, 503);
   }
-  const invited = await addInvites(env, user, pool, d.invites);
+  const invited = await addInvites(env, user, pool, d.invites, { email: true });
   const blocked = await addBlocks(env, user, pool, d.blocked);
-  const msg = (blastAud ? 'Pool created. Tap Am will email it to players in the next few minutes.' : mode === 'INSTANT' ? `Instant match created. It starts when ${instantN} players join.` : 'Pool created') + (invited ? ` ${invited} player${invited === 1 ? '' : 's'} invited.` : '');
+  const msg = (blastAud ? 'Pool created. Tap Am will email it to players in the next few minutes.' : mode === 'INSTANT' ? `Instant match created. It starts when ${instantN} players join.` : instantN ? `Pool created. It starts at the time you picked once ${instantN} players have joined.` : 'Pool created') + (invited ? ` ${invited} player${invited === 1 ? '' : 's'} invited.` : '');
   return json({ message: msg + (blocked ? ` ${blocked} player${blocked === 1 ? '' : 's'} blocked.` : ''), id, code, password, invited, blocked, redirect: `/pool/${id}` });
 }
 
@@ -299,12 +314,12 @@ export async function joinPool(env, user, pool, d) {
   }
   if (fee > 0) await env.DB.prepare('UPDATE pools SET prize_kobo=prize_kobo+? WHERE id=?').bind(fee, pool.id).run();
   await initRoom(env, pool);
-  await roomCall(env, pool.id, '/join', { uid: user.id, name: user.username, tier: tierOf(user), side, emoji: user.emoji || null });
+  await roomCall(env, pool.id, '/join', { uid: user.id, name: user.username, tier: tierOf(user), side, emoji: user.emoji || null, rank: user.rank_level || 1 });
   const paidMsg = fee ? ` ${naira(fee)} entry paid.` : '';
   if (pool.status === 'WAITING') {   // instant match: this seat may be the last one
     const live = await startInstantIfFull(env, pool.id);
-    if (live) return json({ message: `You don join!${paidMsg} The pool is full — the match starts in ${Math.round(live.lead / 1000)} seconds!`, redirect: `/play?pools=${pool.id}` });
-    const left = Math.max(1, Number(pool.max_players) - Number(pool.players) - 1);
+    if (live) return json({ message: `You don join!${paidMsg} Enough players are in — the match starts in ${Math.round(live.lead / 1000)} seconds!`, redirect: `/play?pools=${pool.id}` });
+    const left = Math.max(1, neededOf(pool) - Number(pool.players) - 1);
     return json({ message: `You don join!${paidMsg} Waiting for ${left} more player${left === 1 ? '' : 's'}.`, redirect: `/pool/${pool.id}` });
   }
   return json({ message: fee ? `You don join! ${naira(fee)} entry paid.` : 'You don join!', redirect: `/pool/${pool.id}` });
@@ -316,7 +331,7 @@ export function poolPublic(p) {
     id: p.id, name: p.name, description: p.description, code: p.hashtag, kind: p.kind, audience: p.audience, startsAt: p.starts_at, endsAt: p.ends_at,
     entryFee: p.entry_fee_kobo, prize: p.prize_kobo, split, splitStyle: p.split_style || 'TOP', tie: p.tie_rule, private: !!p.is_private, players: p.players,
     sponsor: p.sponsor_name, theme: p.theme_color, padPattern: p.pad_pattern || null, allowOwnPad: p.allow_own_pad === undefined ? true : !!p.allow_own_pad, lapoRules: !!p.lapo_rules, paused: p.status === 'PAUSED', pauseMode: p.status === 'PAUSED' ? (p.pause_mode || 'REFUND') : null, voteUntil: p.status === 'PAUSED' ? p.vote_until || null : null, bg: p.bg_color, gameType: p.game_type, sideA: p.side_a, sideB: p.side_b, vsSplit: !!p.vs_split, boosters: !!p.boosters_allowed,
-    houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), promoId: p.promo_id && p.promo_id !== NO_AD ? p.promo_id : null, createdBy: p.created_by, creatorRole: p.creator_role || null,
+    houseCut: Number(p.house_cut_pct || 0), maxPlayers: Number(p.max_players || NO_LIMIT), needed: neededOf(p), promoId: p.promo_id && p.promo_id !== NO_AD ? p.promo_id : null, createdBy: p.created_by, creatorRole: p.creator_role || null,
     joined: !!p.joined, myPrize: Number(p.my_prize || 0), myRank: p.final_rank || null, invited: !!p.invited, instant: !!p.instant, timeTopup: !!p.time_topup, duration: Number(p.duration_seconds) || Math.round((Date.parse(p.ends_at) - Date.parse(p.starts_at)) / 1000), state: poolState(p)
   };
 }
@@ -438,14 +453,33 @@ export async function startInstantIfFull(env, poolId) {
   const lead = Math.max(INSTANT_LEAD_MS, await adLeadMs(env, p));   // the pre-game ad finishes before the first tap
   const start = Date.now() + lead, end = start + Math.max(MIN_POOL_SECONDS, Number(p.duration_seconds) || MIN_POOL_SECONDS) * 1000;
   const r = await env.DB.prepare(`UPDATE pools SET status='LIVE', starts_at=?, ends_at=? WHERE id=? AND status='WAITING' AND settled_at IS NULL AND duration_seconds IS ?
-    AND (SELECT COUNT(*) FROM pool_entries WHERE pool_id=?) >= max_players`).bind(iso(start), iso(end), p.id, p.duration_seconds, p.id).run();
+    AND (SELECT COUNT(*) FROM pool_entries WHERE pool_id=?) >= MIN(max_players, CASE WHEN min_players>0 THEN min_players ELSE max_players END)`).bind(iso(start), iso(end), p.id, p.duration_seconds, p.id).run();
   if (!r.meta.changes) return null;
   const live = { ...p, status: 'LIVE', starts_at: iso(start), ends_at: iso(end), lead };
   await initRoom(env, live);
   const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(p.id).all()).results.map(x => x.user_id);
-  for (const u of players) await notify(env, u, `“${p.name}” is full — the match starts in ${Math.round(lead / 1000)} seconds! Tap now.`, `/play?pools=${p.id}`);
-  if (p.created_by && !players.includes(p.created_by)) await notify(env, p.created_by, `Your instant match “${p.name}” is full and has started.`, `/pool/${p.id}`);
+  for (const u of players) await notify(env, u, `“${p.name}” has enough players — the match starts in ${Math.round(lead / 1000)} seconds! Tap now.`, `/play?pools=${p.id}`);
+  if (p.created_by && !players.includes(p.created_by)) await notify(env, p.created_by, `Your ${p.instant ? 'instant match' : 'pool'} “${p.name}” has enough players and has started.`, `/pool/${p.id}`);
   return live;
+}
+
+// Scheduled pools with "players needed to start": 10 seconds before the start, if too few have joined, the
+// pool waits for them like an instant match (same deadline rule, then cancelled and refunded). Guarded on the
+// status and start time, so it runs once. Returns the new pool row, or null when the pool starts as planned.
+export async function holdIfShort(env, poolId) {
+  const p = await env.DB.prepare('SELECT p.*, (SELECT COUNT(*) FROM pool_entries x WHERE x.pool_id=p.id) AS players FROM pools p WHERE id=?').bind(poolId).first();
+  if (!p || p.status !== 'SCHEDULED' || p.settled_at || !(Number(p.min_players) > 0) || Number(p.players) >= Number(p.min_players)) return null;
+  const s = await settings(env);
+  const deadline = Date.now() + clampInt(num(s, 'instant_wait_hours', 24), 1, 168, 24) * 3600000;
+  const dur = Number(p.duration_seconds) || Math.round((Date.parse(p.ends_at) - Date.parse(p.starts_at)) / 1000);
+  const r = await env.DB.prepare("UPDATE pools SET status='WAITING', starts_at=?, ends_at=?, duration_seconds=? WHERE id=? AND status='SCHEDULED' AND starts_at=? AND settled_at IS NULL")
+    .bind(iso(deadline), iso(deadline + dur * 1000), dur, p.id, p.starts_at).run();
+  if (!r.meta.changes) return null;
+  const held = { ...p, status: 'WAITING', starts_at: iso(deadline), ends_at: iso(deadline + dur * 1000), duration_seconds: dur };
+  const need = Number(p.min_players) - Number(p.players);
+  const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(p.id).all()).results.map(x => x.user_id);
+  for (const u of new Set([...players, p.created_by].filter(Boolean))) await notify(env, u, `“${p.name}” needs ${need} more player${need === 1 ? '' : 's'} before it starts. It starts by itself when they join — share the code ${p.hashtag}.`, `/pool/${p.id}`);
+  return held;
 }
 
 // Cron: instant matches that didn't fill before their deadline are cancelled and everybody's money goes back.
@@ -453,11 +487,11 @@ export async function expireWaiting(env) {
   const rows = (await env.DB.prepare("SELECT * FROM pools WHERE status='WAITING' AND settled_at IS NULL AND starts_at<=? LIMIT 25").bind(nowIso()).all()).results;
   let n = 0;
   for (const p of rows) {
-    const r = await cancelPool(env, p, { why: 'Match did not fill', waitingOnly: true, note: `“${p.name}” didn’t get ${p.max_players} players in time, so it was cancelled. Any money you paid into it is back with you.` });
+    const r = await cancelPool(env, p, { why: 'Match did not fill', waitingOnly: true, note: `“${p.name}” didn’t get ${neededOf(p)} players in time, so it was cancelled. Any money you paid into it is back with you.` });
     if (!r.cancelled) continue;
     n++;
     await roomCall(env, p.id, '/reset').catch(() => {});
-    if (p.created_by) await notify(env, p.created_by, `Your instant match “${p.name}” didn’t fill in time (${r.players}/${p.max_players} joined), so it was cancelled.${r.seeded > 0 ? ' Your prize money is back in your wallet.' : ''}`, `/pool/${p.id}`);
+    if (p.created_by) await notify(env, p.created_by, `Your ${p.instant ? 'instant match' : 'pool'} “${p.name}” didn’t get enough players in time (${r.players}/${neededOf(p)} joined), so it was cancelled.${r.seeded > 0 ? ' Your prize money is back in your wallet.' : ''}`, `/pool/${p.id}`);
   }
   return n;
 }
@@ -500,14 +534,15 @@ export async function extendPool(env, pool, minutes) {
 
 // ── invites ─────────────────────────────────────────────────────────────────
 // raw: usernames (array or comma list). Unknown names, the inviter and players already invited are skipped.
-export async function addInvites(env, user, pool, raw) {
+export async function addInvites(env, user, pool, raw, { email = false } = {}) {
   const names = [...new Set((Array.isArray(raw) ? raw : String(raw || '').split(',')).map(x => String(x).trim()).filter(x => x && x.length <= 24))].slice(0, 50);
   if (!names.length) return 0;
   if (user.role !== 'ADMIN' && !await allow(env, 'invday:' + user.id, 40, 86400)) return 0;   // anti-spam: 40 invite batches a day
   const have = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pool_invites WHERE pool_id=?').bind(pool.id).first())?.n || 0);
   const room = Math.max(0, MAX_INVITES - have);
   if (!room) return 0;
-  const users = (await env.DB.prepare(`SELECT id FROM users WHERE role='USER' AND status='ACTIVE' AND id!=? AND username IN (${names.map(() => '?').join(',')})`).bind(user.id, ...names).all()).results.slice(0, room);
+  // players who switched off "let people invite me" are skipped (the super admin can still invite them)
+  const users = (await env.DB.prepare(`SELECT id FROM users WHERE role='USER' AND status='ACTIVE' AND id!=? ${user.role === 'ADMIN' ? '' : 'AND allow_invites=1'} AND username IN (${names.map(() => '?').join(',')})`).bind(user.id, ...names).all()).results.slice(0, room);
   const from = user.role === 'ADMIN' ? 'Tap Am' : (pool.sponsor_name || user.username);
   let n = 0;
   for (const u of users) {
@@ -515,6 +550,12 @@ export async function addInvites(env, user, pool, raw) {
     if (!r.meta.changes) continue;
     n++;
     await notify(env, u.id, `${from} invited you to ${pool.instant ? 'the instant match' : 'the pool'} “${pool.name}”. Tap to join.`, `/pool/${pool.id}`);
+  }
+  // Emails: at creation, or straight away when the pool is already live or waiting for players. Invites added
+  // to a scheduled pool later get their email when it starts (see prestart).
+  const st = poolState(pool);
+  if (n && (email || st === 'live' || st === 'waiting')) {
+    await emailInvitees(env, pool, { starting: st === 'live', userIds: users.map(u => u.id) }).catch(e => console.error('invite emails', e?.message));
   }
   return n;
 }
@@ -593,8 +634,8 @@ export async function closeVotes(env) {
       for (const u of used) for (const [item, n] of Object.entries(u.used || {})) if (n > 0) await giveItem(env, u.uid, item, n, { gift: true, note: 'Match restarted' });
       await roomCall(env, p.id, '/reset').catch(() => {});
       await initRoom(env, next);
-      const entries = (await env.DB.prepare('SELECT e.user_id, e.side_choice, u.username, u.tier, u.tier_until, u.role, u.emoji FROM pool_entries e JOIN users u ON u.id=e.user_id WHERE e.pool_id=?').bind(p.id).all()).results;
-      for (const e of entries) await roomCall(env, p.id, '/join', { uid: e.user_id, name: e.username, tier: tierOf(e), side: e.side_choice, emoji: e.emoji || null });
+      const entries = (await env.DB.prepare('SELECT e.user_id, e.side_choice, u.username, u.tier, u.tier_until, u.role, u.emoji, u.rank_level FROM pool_entries e JOIN users u ON u.id=e.user_id WHERE e.pool_id=?').bind(p.id).all()).results;
+      for (const e of entries) await roomCall(env, p.id, '/join', { uid: e.user_id, name: e.username, tier: tierOf(e), side: e.side_choice, emoji: e.emoji || null, rank: e.rank_level || 1 });
     } else await initRoom(env, next);
     await env.DB.prepare('DELETE FROM pool_votes WHERE pool_id=?').bind(p.id).run();
     const players = (await env.DB.prepare('SELECT user_id FROM pool_entries WHERE pool_id=?').bind(p.id).all()).results.map(r => r.user_id);

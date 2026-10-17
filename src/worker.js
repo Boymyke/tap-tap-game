@@ -6,11 +6,12 @@ import { landingPage, demoPools } from './ui/landing.js';
 import { howToPlayPage, merchPage, faqPage, aboutPage, offlinePage, errorPage, unsubPage } from './ui/pages.js';
 import { dashboardPage, poolsPage, poolPage, createPoolPage, resultsPage } from './ui/player.js';
 import { storePage, bagPage, walletPage, plansPage, txLabel } from './ui/shop.js';
-import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage, winnersPage, playersPage, profilePage } from './ui/profile.js';
+import { mePage, settingsPage, calcPage, notificationsPage, topPage, ranksPage, suggestPoolPage, invitePage, winnersPage, playersPage, profilePage, innerCirclePage, advertisePage } from './ui/profile.js';
 import { anyPage } from './ui/kit.js';
 import { playPage } from './ui/game.js';
 import { sponsorHome, sponsorPools, sponsorAds, sponsorLeads } from './ui/sponsor.js';
-import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, adminMoney, setupPage, suggestPage, adminErrors, adminMessages } from './ui/admin.js';
+import { adminLoginPage, adminHome, adminHealth, adminUsers, adminUser, adminGifts, adminPools, adminStore, adminRanks, adminAds, adminSlides, adminBackgrounds, adminWithdrawals, adminSuggestions, adminMerch, adminBadges, adminCodes, adminMoney, setupPage, suggestPage, adminErrors, adminMessages, adminInnerCircle, adminAdRequests } from './ui/admin.js';
+import { members as icMembers, invitees as icInvitees, rulesText, DEFAULT_RULES } from './game/inner.js';
 import { emailProblem } from './auth-rules.js';
 import { emailConfigured } from './email.js';
 import { handleAuthApi } from './auth-api.js';
@@ -29,6 +30,8 @@ import { awardBadges } from './game/badges.js';
 import { processEmailBlasts, unsubOk } from './game/blasts.js';
 import { challengeLists, expireChallenges } from './game/challenges.js';
 import { siteLinks, processEmailJobs } from './game/announce.js';
+import { queueTopGames } from './game/gamemail.js';
+import { expireSlides, slidePrices } from './game/adrequests.js';
 import { challengesPage } from './ui/challenges.js';
 import { logAuth, decryptPhrase, canKeepCopies } from './phrase.js';
 import { runChecks, healthSweep } from './health.js';
@@ -136,18 +139,20 @@ async function handleSiteApi(req, env, path) {
     if (!await allow(env, 'unsub:' + clientIp(req), 30, 3600)) return json({ error: 'Too many tries. Wait small.' }, 429);
     const id = String(data.u || '').slice(0, 64);
     if (!await unsubOk(env, id, data.t)) return json({ error: 'This link is not valid. Turn emails off in Settings instead.' }, 400);
-    await env.DB.prepare('UPDATE users SET email_news=0 WHERE id=?').bind(id).run();
-    return json({ message: 'Done. No more pool news emails.' });
+    const col = { news: 'email_news', games: 'email_games', invites: 'allow_invites' }[data.k] || 'email_news';
+    await env.DB.prepare(`UPDATE users SET ${col}=0 WHERE id=?`).bind(id).run();
+    return json({ message: { email_news: 'Done. No more pool news emails.', email_games: 'Done. No more top games emails.', allow_invites: 'Done. Nobody can invite you to matches now.' }[col] });
   }
   if (path === '/api/presence' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
     const vid = String(data.vid || '');
     if (!/^[0-9a-z-]{10,40}$/i.test(vid)) return json({ error: 'Bad visitor id' }, 400);
-    if (await allow(env, 'presence:' + clientIp(req), 120, 3600)) {
+    // per visitor, plus a high per-IP ceiling (many phones share one carrier IP)
+    if (await allow(env, 'presenceip:' + clientIp(req), 3000, 3600)) {
       const now = nowIso();
       await env.DB.prepare('INSERT INTO visitors(vid,first_seen,last_seen) VALUES(?,?,?) ON CONFLICT(vid) DO UPDATE SET last_seen=excluded.last_seen').bind(vid, now, now).run();
     }
-    return json(await siteStats(env));
+    return json(await memo('stats', 10000, () => siteStats(env)), 200, { 'cache-control': 'no-store' });
   }
   if (path === '/api/merch/notify' && req.method === 'POST') {
     const { data, response } = await readJson(req); if (response) return response;
@@ -228,6 +233,8 @@ async function sweep(env, cron) {
   try { await reconcileBachs(env); } catch (e) { console.error('bachs reconcile', e?.message); }
   try { await awardBadges(env); } catch (e) { console.error('badges', e?.message); }
   try { await processEmailBlasts(env, env.PUBLIC_URL || 'https://tapammm.live'); } catch (e) { console.error('blasts', e?.message); await logError(env, 'cron pool emails', e); }
+  try { await expireSlides(env); } catch (e) { console.error('slide expiry', e?.message); await logError(env, 'cron home ad expiry', e); }
+  try { await queueTopGames(env); } catch (e) { console.error('top games', e?.message); await logError(env, 'cron top games email', e); }
   try { await processEmailJobs(env, env.PUBLIC_URL || 'https://tapammm.live'); } catch (e) { console.error('announce emails', e?.message); await logError(env, 'cron announcement emails', e); }
   const minute = new Date().getUTCMinutes();
   if (minute % 15 < 5) { try { await healthSweep(env); } catch (e) { console.error('health', e?.message); } }
@@ -267,8 +274,29 @@ async function hideAdminPath(env, res) {
 }
 
 // ── entry ───────────────────────────────────────────────────────────────────
+// Load sampling for the health page: 1 request in 20 records its time (hourly buckets), so the super admin can
+// see how busy and how fast the server is without a write on every request.
+const SAMPLE = 20;
+function sampleLoad(env, ctx, ms, status) {
+  if (Math.random() * SAMPLE >= 1) return;
+  const hour = 'H' + new Date().toISOString().slice(0, 13);
+  const up = (k, n) => env.DB.prepare('INSERT INTO metrics(key,day,n) VALUES(?,?,?) ON CONFLICT(key,day) DO UPDATE SET n=n+excluded.n').bind(k, hour, n);
+  const work = env.DB.batch([up('req_n', SAMPLE), up('req_ms', Math.round(ms) * SAMPLE), up('req_slow', ms > 1500 ? SAMPLE : 0), up('req_5xx', status >= 500 ? SAMPLE : 0)]).catch(() => {});
+  if (ctx?.waitUntil) ctx.waitUntil(work);
+}
+
 export default {
   async fetch(req, env, ctx) {
+    const t0 = Date.now();
+    const res = await handle(req, env, ctx);
+    try { sampleLoad(env, ctx, Date.now() - t0, res.status); } catch {}
+    return res;
+  },
+  async scheduled(event, env, ctx) { ctx.waitUntil(sweep(env, event.cron)); }
+};
+
+async function handle(req, env, ctx) {
+  {
     const requestId = uid();
     let user = null;
     try {
@@ -306,9 +334,8 @@ export default {
       if (new URL(req.url).pathname.startsWith('/api/')) return json({ error: 'Server wahala. Try again.', requestId }, 500);
       return html(errorPage(500, { user, ref: requestId.slice(0, 8) }), 500);
     }
-  },
-  async scheduled(event, env, ctx) { ctx.waitUntil(sweep(env, event.cron)); }
-};
+  }
+}
 
 // ── pages ───────────────────────────────────────────────────────────────────
 async function route(req, env, url, path, user) {
@@ -327,7 +354,7 @@ async function route(req, env, url, path, user) {
     case '/offline': return html(offlinePage());
     case '/policy': return go(req, '/rules', 301);
     case '/suggest': return html(suggestPage(user));
-    case '/unsub': return html(unsubPage(q.get('u') || '', q.get('t') || ''), 200, { 'x-robots-tag': 'noindex' });
+    case '/unsub': return html(unsubPage(q.get('u') || '', q.get('t') || '', q.get('k') || 'news'), 200, { 'x-robots-tag': 'noindex' });
     case '/admin/setup': if (isAdmin(user)) return go(req, '/admin'); return html(setupPage());
     case '/admin/login': if (isAdmin(user)) return go(req, '/admin'); return html(adminLoginPage(), 200, { 'x-robots-tag': 'noindex' });
     case '/pay/callback': return go(req, await payCallback(req, env));
@@ -366,7 +393,7 @@ async function route(req, env, url, path, user) {
 
   const resultsM = path.match(/^\/pool\/([^/]+)\/results$/);
   if (resultsM) return resultsRoute(req, env, url, resultsM[1], user);
-  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|me|settings|calc|notifications|suggest-pool|invite|challenges|sponsor|admin)(\/|\.|$)/;
+  const APP = /^\/(dashboard|pools|pool|play|store|bag|wallet|me|settings|calc|notifications|suggest-pool|invite|challenges|advertise|inner-circle|sponsor|admin)(\/|\.|$)/;
   if (!APP.test(path)) return html(errorPage(404, { user }), 404);
   if (!user) return path.startsWith('/admin') ? go(req, '/admin/login') : loginFirst(req, url);
 
@@ -385,12 +412,12 @@ async function route(req, env, url, path, user) {
       }
       // one round trip for everything on the home page
       const [slides, sponsored, live, upcoming, mine] = await env.DB.batch([
-        env.DB.prepare("SELECT s.*, sp.company AS sponsor FROM slides s LEFT JOIN sponsor_profiles sp ON sp.user_id=s.sponsor_id WHERE s.status='LIVE' ORDER BY s.sort, s.created_at DESC LIMIT 8"),
+        env.DB.prepare("SELECT s.*, sp.company AS sponsor FROM slides s LEFT JOIN sponsor_profiles sp ON sp.user_id=s.sponsor_id WHERE s.status='LIVE' AND (s.expires_at IS NULL OR s.expires_at>?) ORDER BY s.sort, s.created_at DESC LIMIT 8").bind(nowIso()),
         listStmt(env, user, { scope: 'sponsored', limit: 8 }), listStmt(env, user, { scope: 'live', limit: 8 }), listStmt(env, user, { scope: 'players-soon', limit: 8 }), listStmt(env, user, { scope: 'mine', limit: 10 })]);
-      const ranks = await allRanks(env);
+      const [ranks, stats] = await Promise.all([allRanks(env), memo('stats', 20000, () => siteStats(env))]);
       if (slides.results.length) env.DB.prepare(`UPDATE slides SET views=views+1 WHERE id IN (${slides.results.map(() => '?').join(',')})`).bind(...slides.results.map(x => x.id)).run().catch(() => {});
       return html(dashboardPage({ ...b, rank: rankInfo(ranks, user), slides: slides.results, sponsored: sponsored.results.map(poolPublic), live: live.results.map(poolPublic), upcoming: upcoming.results.map(poolPublic),
-        mine: mine.results.map(poolPublic).filter(p => p.state !== 'ended' && p.state !== 'cancelled'), origin, referralBatch: num(b.s, 'referral_batch', 10) }));
+        mine: mine.results.map(poolPublic).filter(p => p.state !== 'ended' && p.state !== 'cancelled'), origin, stats, referralBatch: num(b.s, 'referral_batch', 10) }));
     }
     case '/pools': {
       const scope = ['open', 'live', 'sponsored', 'players-soon', 'mine', 'created', 'recent'].includes(q.get('scope')) ? q.get('scope') : 'open';
@@ -416,7 +443,7 @@ async function route(req, env, url, path, user) {
         const made = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pools WHERE created_by=? AND created_at>=?').bind(user.id, dayStart).first())?.n || 0);
         lapoLeft = { max, left: Math.max(0, max - made) };
       }
-      return html(createPoolPage({ ...b, role: user.role, ads, blast, lapoLeft }));
+      return html(createPoolPage({ ...b, role: user.role, ads, blast, lapoLeft, opts: { lapo: b.s?.opt_lapo_rules !== '0', boosters: b.s?.opt_boosters !== '0' } }));
     }
     case '/play': return playRoute(req, env, url, user, b);
     case '/store': {
@@ -480,6 +507,15 @@ async function route(req, env, url, path, user) {
       const mine = (await env.DB.prepare("SELECT message,status,created_at FROM suggestions WHERE user_id=? AND kind='POOL' ORDER BY created_at DESC LIMIT 10").bind(user.id).all()).results;
       return html(suggestPoolPage({ ...b, mine }));
     }
+    case '/advertise': {   // players and sponsors apply for a home page slot
+      if (user.role !== 'USER' && user.role !== 'SPONSOR') return go(req, homeFor(user));
+      const mine = (await env.DB.prepare('SELECT * FROM ad_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 30').bind(user.id).all()).results;
+      return html(advertisePage({ ...b, mine, prices: slidePrices(b.s) }));
+    }
+    case '/inner-circle': {   // the rules: inner circle members (and the super admin) only
+      if (!user.inner_circle && user.role !== 'ADMIN') return html(errorPage(404, { user }), 404);
+      return html(innerCirclePage({ ...b, rules: rulesText(b.s), count: Number(user.referral_count || 0) }));
+    }
     case '/notifications': {
       const pg = pageNum(q);
       const notes = (await env.DB.prepare('SELECT id,text,link,read,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 31 OFFSET ?').bind(user.id, (pg - 1) * 30).all()).results;
@@ -487,7 +523,7 @@ async function route(req, env, url, path, user) {
     }
     case '/challenges': {
       if (user.role !== 'USER') return go(req, homeFor(user));
-      return html(challengesPage({ ...b, lists: await challengeLists(env, user), on: b.s.tapoffs_on === '1', stakesOn: b.s.stakes_on === '1', to: String(q.get('to') || '').slice(0, 24) }));
+      return html(challengesPage({ ...b, lists: await challengeLists(env, user), on: b.s.tapoffs_on === '1', stakesOn: b.s.stakes_on === '1', opts: { lapo: b.s.opt_lapo_rules !== '0', boosters: b.s.opt_boosters !== '0' }, to: String(q.get('to') || '').slice(0, 24) }));
     }
   }
 
@@ -540,7 +576,7 @@ async function topWinners(env, period, { limit = 50, offset = 0, term = '' } = {
 async function winnersRoute(env, q, user) {
   const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'ALL';
   const term = String(q.get('q') || '').trim().slice(0, 24), pg = pageNum(q);
-  const rows = await topWinners(env, period, { offset: (pg - 1) * 50, term });
+  const rows = await memo(`win:${period}:${term}:${pg}`, 30000, () => topWinners(env, period, { offset: (pg - 1) * 50, term }));   // cached 30 s per server
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
   return html(winnersPage({ user, period, term, page: pg, hasNext: rows.length > 50, rows: rows.slice(0, 50), theme: b.theme, bgCss: b.bgCss }));
 }
@@ -557,13 +593,14 @@ async function profileRoute(env, url, nick, user) {
   const p = await env.DB.prepare("SELECT id, username, emoji, rank_level, tier, tier_until, lifetime_taps, games_played, wins, created_at, role, status FROM users WHERE username=?").bind(nick).first();
   if (!p || p.role !== 'USER' || p.status !== 'ACTIVE') return html(errorPage(404, { user }), 404);
   const own = user?.id === p.id;
-  const [won, badges] = await Promise.all([
+  const [won, badges, bcount] = await Promise.all([
     env.DB.prepare('SELECT COALESCE(SUM(prize_kobo),0) n, COUNT(*) c FROM pool_entries WHERE user_id=? AND prize_kobo>0').bind(p.id).first(),
-    env.DB.prepare("SELECT b.kind,b.period,b.taps,b.amount_kobo,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all()]);
+    env.DB.prepare("SELECT b.kind,b.period,b.taps,b.amount_kobo,sb.name AS sname,sb.meaning AS smeaning,sb.color AS scolor,sb.label AS slabel FROM badges b LEFT JOIN special_badges sb ON b.kind='X:' || sb.id WHERE b.user_id=? AND (b.kind NOT LIKE 'X:%' OR sb.active=1) ORDER BY b.created_at DESC LIMIT 40").bind(p.id).all(),
+    env.DB.prepare('SELECT COUNT(*) n FROM badges WHERE user_id=?').bind(p.id).first()]);
   const ranks = await allRanks(env);
   const b = user ? await base(env, user) : { theme: 'grape', bgCss: '' };
   const tapoffsOn = (await settings(env)).tapoffs_on === '1';
-  return html(profilePage({ user, tapoffsOn, p: { ...p, tierName: tierLabel(p) }, own, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
+  return html(profilePage({ user, tapoffsOn, p: { ...p, tierName: tierLabel(p) }, own, won: won ? Number(won.n) : null, prizes: won ? Number(won.c) : null, badges: badges.results, badgeTotal: Number(bcount?.n || 0), rank: rankInfo(ranks, p), origin: env.PUBLIC_URL || url.origin, theme: b.theme, bgCss: b.bgCss }));
 }
 
 // Public results page for a finished pool (anyone with the link can see it; it's made to be shared).
@@ -571,9 +608,9 @@ async function resultsRoute(req, env, url, id, user) {
   const p = await env.DB.prepare('SELECT * FROM pools WHERE id=? OR hashtag=?').bind(id, String(id).toUpperCase()).first();
   if (!p) return html(errorPage(404, { user }), 404);
   if (!p.settled_at || p.status === 'CANCELLED') return go(req, user ? `/pool/${p.id}` : '/');
-  const rows = (await env.DB.prepare(`SELECT pe.user_id, u.username n, pe.taps s, pe.prize_kobo prize, pe.side_choice side, pe.final_rank
+  const rows = (await env.DB.prepare(`SELECT pe.user_id, u.username n, u.rank_level k, pe.taps s, pe.prize_kobo prize, pe.side_choice side, pe.final_rank
     FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? AND pe.taps>0 ORDER BY pe.taps DESC, pe.reached_at ASC LIMIT 10`).bind(p.id).all()).results
-    .map(r => ({ n: r.n, s: r.s, side: r.side, me: r.user_id === user?.id, prize: r.prize }));
+    .map(r => ({ n: r.n, k: r.k, s: r.s, side: r.side, me: r.user_id === user?.id, prize: r.prize }));
   const players = Number((await env.DB.prepare('SELECT COUNT(*) n FROM pool_entries WHERE pool_id=?').bind(p.id).first())?.n || 0);
   let vs = null;
   if (p.vs_split && p.side_a) {
@@ -595,9 +632,9 @@ async function poolRoute(req, env, id, user, b, origin) {
   if (isCreator) pub.password = p.join_password;
   let board = null, results = null;
   if (p.settled_at && pub.state !== 'cancelled') {
-    const rows = (await env.DB.prepare(`SELECT pe.user_id, pe.final_rank AS r, u.username AS n, pe.taps AS s, u.tier, u.tier_until, u.role, pe.side_choice AS side, pe.prize_kobo AS prize
+    const rows = (await env.DB.prepare(`SELECT pe.user_id, pe.final_rank AS r, u.username AS n, u.rank_level AS k, pe.taps AS s, u.tier, u.tier_until, u.role, pe.side_choice AS side, pe.prize_kobo AS prize
       FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? AND pe.final_rank IS NOT NULL ORDER BY pe.taps DESC, pe.final_rank LIMIT 100`).bind(p.id).all()).results;
-    results = rows.map((r, i) => ({ r: p.vs_split ? r.r : i + 1, n: r.n, s: r.s, t: tierOf(r), side: r.side, prize: r.prize, me: r.user_id === user.id }));
+    results = rows.map((r, i) => ({ r: p.vs_split ? r.r : i + 1, n: r.n, k: r.k, s: r.s, t: tierOf(r), side: r.side, prize: r.prize, me: r.user_id === user.id }));
     const teams = {};
     if (p.side_a) for (const r of (await env.DB.prepare('SELECT side_choice, SUM(taps) t FROM pool_entries WHERE pool_id=? GROUP BY side_choice').bind(p.id).all()).results) if (r.side_choice) teams[r.side_choice] = r.t;
     board = { top: results, me: p.joined ? { rank: p.final_rank, score: p.my_taps } : null, teams };
@@ -606,7 +643,7 @@ async function poolRoute(req, env, id, user, b, origin) {
   }
   const jb = user.role === 'USER' ? joinBlock(p, user) : { why: 'Only player accounts can join pools.' };
   const myBoosters = user.role === 'USER' ? Number((await env.DB.prepare("SELECT COALESCE(SUM(i.quantity),0) n FROM inventory i JOIN store_items s ON s.id=i.item_id WHERE i.user_id=? AND s.kind='BOOSTER'").bind(user.id).first())?.n || 0) : 0;
-  const entries = isCreator ? (await env.DB.prepare('SELECT u.username, pe.joined_at, pe.paid_kobo, pe.side_choice FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? ORDER BY pe.joined_at DESC LIMIT 200').bind(p.id).all()).results : null;
+  const entries = isCreator ? (await env.DB.prepare('SELECT u.username, u.rank_level, pe.joined_at, pe.paid_kobo, pe.side_choice FROM pool_entries pe JOIN users u ON u.id=pe.user_id WHERE pe.pool_id=? ORDER BY pe.joined_at DESC LIMIT 200').bind(p.id).all()).results : null;
   const votes = pub.pauseMode === 'VOTE' ? { ...(await voteCounts(env, p.id)), mine: (await env.DB.prepare('SELECT choice FROM pool_votes WHERE pool_id=? AND user_id=?').bind(p.id, user.id).first())?.choice || null } : null;
   return html(poolPage({ ...b, pool: pub, board, results, isCreator, joinBlock: jb, myBoosters, entries, origin, votes }));
 }
@@ -642,8 +679,10 @@ async function inviteRoute(env, url, user) {
   if (!user.referral_code) {   // older accounts and sponsors made before sponsors could invite
     for (let i = 0; i < 5 && !user.referral_code; i++) { const c = randomCode(6); const r = await env.DB.prepare('UPDATE users SET referral_code=? WHERE id=? AND referral_code IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE referral_code=?)').bind(c, user.id, c).run(); if (r.meta.changes) user.referral_code = c; }
   }
-  const [b, joined] = await Promise.all([base(env, user), env.DB.prepare("SELECT username, created_at FROM users WHERE referred_by=? AND status='ACTIVE' ORDER BY created_at DESC LIMIT 50").bind(user.id).all()]);
-  return html(invitePage({ ...b, origin: env.PUBLIC_URL || url.origin, joined: joined.results, referralBatch: num(b.s, 'referral_batch', 10) }));
+  // inner circle members also see what each person they brought has spent (never their wallet)
+  const [b, joined] = await Promise.all([base(env, user), user.inner_circle ? icInvitees(env, user.id, { limit: 200 }).then(r => ({ results: r.filter(x => x.status === 'ACTIVE') }))
+    : env.DB.prepare("SELECT username, created_at FROM users WHERE referred_by=? AND status='ACTIVE' ORDER BY created_at DESC LIMIT 50").bind(user.id).all()]);
+  return html(invitePage({ ...b, origin: env.PUBLIC_URL || url.origin, joined: joined.results, inner: !!user.inner_circle, referralBatch: num(b.s, 'referral_batch', 10) }));
 }
 
 // ── sponsor ─────────────────────────────────────────────────────────────────
@@ -701,7 +740,9 @@ async function adminRoute(req, env, url, path, user) {
       (SELECT COUNT(*) FROM suggestions WHERE kind='POOL' AND status='NEW') poolIdeas,
       (SELECT COALESCE(SUM(n),0) FROM metrics WHERE key='taps' AND day=?) tapsToday,
       (SELECT COALESCE(SUM(amount_kobo),0) FROM pool_time_buys) timeBought,
-      (SELECT COALESCE(SUM(amount_kobo),0) FROM pool_time_buys WHERE created_at>=?) timeBoughtToday`).bind(now, now, now, now, lagosDay(), new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19)).first();
+      (SELECT COALESCE(SUM(amount_kobo),0) FROM pool_time_buys WHERE created_at>=?) timeBoughtToday,
+      (SELECT COALESCE(SUM(amount_kobo),0) FROM payments WHERE status='SUCCESS' AND datetime(COALESCE(verified_at,created_at))>=datetime(?)) paidToday,
+      (SELECT COALESCE(SUM(amount_kobo),0) FROM payments WHERE status='SUCCESS') paidAll`).bind(now, now, now, now, lagosDay(), new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString().replace('T', ' ').slice(0, 19), new Date(Date.parse(lagosDay() + 'T00:00:00Z') - 3600000).toISOString()).first();
     const audit = (await env.DB.prepare('SELECT action,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 15').all()).results;
     const errors24 = Number((await env.DB.prepare('SELECT COUNT(*) n FROM error_log WHERE created_at>?').bind(new Date(Date.now() - 86400000).toISOString()).first())?.n || 0);
     return html(adminHome({ ...b, stats: s, settings: await settings(env), audit, errors24 }));
@@ -730,7 +771,13 @@ async function adminRoute(req, env, url, path, user) {
       env.DB.prepare('SELECT * FROM alerts ORDER BY COALESCE(resolved_at,"9999") DESC, last_at DESC LIMIT 30'),
       env.DB.prepare('SELECT (SELECT COUNT(*) FROM users) users,(SELECT COUNT(*) FROM pools) pools,(SELECT COUNT(*) FROM pool_entries) entries,(SELECT COUNT(*) FROM wallet_transactions) tx,(SELECT COUNT(*) FROM notifications) notes,(SELECT COUNT(*) FROM tap_stats) stats')]);
     const c = counts.results[0];
-    return html(adminHealth({ ...b, checks, dbBytes, metrics: Object.values(byDay), alerts: alerts.results, settings: await settings(env), usage: [['Users', c.users], ['Pools', c.pools], ['Pool entries', c.entries], ['Money records', c.tx], ['Notifications', c.notes], ['Top-tapper rows', c.stats]] }));
+    // server load: sampled requests per hour (last 24 h), a live database round trip, people online now
+    const hrs = (await env.DB.prepare("SELECT key,day,n FROM metrics WHERE key IN ('req_n','req_ms','req_slow','req_5xx') AND day>=?").bind('H' + new Date(Date.now() - 24 * 3600000).toISOString().slice(0, 13)).all()).results;
+    const byHour = {}; for (const r of hrs) (byHour[r.day] = byHour[r.day] || { hour: r.day.slice(1) })[r.key] = Number(r.n);
+    const pings = []; for (let i = 0; i < 3; i++) { const t = Date.now(); await env.DB.prepare('SELECT 1').first(); pings.push(Date.now() - t); }
+    const online = (await siteStats(env)).online;
+    const load = { hours: Object.values(byHour).sort((x, y) => x.hour < y.hour ? -1 : 1), dbMs: Math.round(pings.sort((x, y) => x - y)[1]), online };
+    return html(adminHealth({ ...b, load, checks, dbBytes, metrics: Object.values(byDay), alerts: alerts.results, settings: await settings(env), usage: [['Users', c.users], ['Pools', c.pools], ['Pool entries', c.entries], ['Money records', c.tx], ['Notifications', c.notes], ['Top-tapper rows', c.stats]] }));
   }
   if (path === '/admin/users') {
     const term = String(q.get('q') || '').trim().slice(0, 60), pg = pageNum(q);
@@ -795,13 +842,31 @@ async function adminRoute(req, env, url, path, user) {
     const items = (await env.DB.prepare('SELECT m.*, (SELECT COUNT(*) FROM merch_interest i WHERE i.item=m.id) AS interested FROM merch m ORDER BY m.sort, m.created_at DESC LIMIT 200').all()).results;
     return html(adminMerch({ ...b, items, edit: items.find(i => i.id === q.get('edit')) || null }));
   }
+  if (path === '/admin/ad-requests') {
+    const rows = (await env.DB.prepare(`SELECT r.*, u.username, u.role, u.email FROM ad_requests r JOIN users u ON u.id=r.user_id
+      ORDER BY CASE r.status WHEN 'PENDING' THEN 0 WHEN 'LIVE' THEN 1 ELSE 2 END, r.created_at DESC LIMIT 200`).all()).results;
+    return html(adminAdRequests({ ...b, rows, prices: slidePrices(await settings(env)) }));
+  }
+  if (path === '/admin/inner-circle') {
+    const list = await icMembers(env);
+    const open = q.get('m') ? await env.DB.prepare('SELECT id, username FROM users WHERE id=? AND inner_circle=1').bind(q.get('m')).first() : null;
+    const s = await settings(env);
+    return html(adminInnerCircle({ ...b, list, open, invitees: open ? await icInvitees(env, open.id, { withWallet: true, limit: 500 }) : [], rules: rulesText(s), isDefault: !String(s.inner_circle_rules || '').trim(), origin: env.PUBLIC_URL || new URL(req.url).origin }));
+  }
   if (path === '/admin/money') {
     const period = ['DAY', 'WEEK', 'MONTH', 'YEAR', 'ALL'].includes(q.get('p')) ? q.get('p') : 'DAY';
     const start = periodStart(period);
+    const since = start === '0000' ? '1970-01-01' : start;
+    const PAID = "status='SUCCESS' AND datetime(COALESCE(verified_at,created_at))>=datetime(?)";
+    const [pin, pby, pdays, precent] = await env.DB.batch([
+      env.DB.prepare(`SELECT COALESCE(SUM(amount_kobo),0) total, COUNT(*) n, COUNT(DISTINCT user_id) payers FROM payments WHERE ${PAID}`).bind(since),
+      env.DB.prepare(`SELECT purpose, COALESCE(SUM(amount_kobo),0) total, COUNT(*) n FROM payments WHERE ${PAID} GROUP BY purpose ORDER BY total DESC`).bind(since),
+      env.DB.prepare(`SELECT date(datetime(COALESCE(verified_at,created_at),'+1 hour')) d, COALESCE(SUM(amount_kobo),0) total, COUNT(*) n FROM payments WHERE status='SUCCESS' AND datetime(COALESCE(verified_at,created_at))>=datetime('now','-14 days') GROUP BY d ORDER BY d DESC`),
+      env.DB.prepare(`SELECT p.reference, p.purpose, p.amount_kobo, p.provider, COALESCE(p.verified_at,p.created_at) at, u.id uid, u.username FROM payments p LEFT JOIN users u ON u.id=p.user_id WHERE p.status='SUCCESS' ORDER BY datetime(COALESCE(p.verified_at,p.created_at)) DESC LIMIT 50`)]);
     const [winners, funded] = await Promise.all([
       topWinners(env, period, { limit: 50 }),
       env.DB.prepare(`SELECT u.id, u.username, u.role, SUM(t.amount_kobo) AS funded, COUNT(*) AS times FROM wallet_transactions t JOIN users u ON u.id=t.user_id WHERE t.type='FUND' AND t.amount_kobo>0 AND datetime(t.created_at)>=datetime(?) GROUP BY u.id ORDER BY funded DESC LIMIT 50`).bind(start === '0000' ? '1970-01-01' : start).all()]);
-    return html(adminMoney({ ...b, period, winners: winners.slice(0, 50), funded: funded.results }));
+    return html(adminMoney({ ...b, period, winners: winners.slice(0, 50), funded: funded.results, paystack: { ...pin.results[0], by: pby.results, days: pdays.results, recent: precent.results } }));
   }
   if (path === '/admin/codes') return html(adminCodes({ ...b, codes: (await env.DB.prepare('SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 200').all()).results }));
   if (path === '/admin/badges') {

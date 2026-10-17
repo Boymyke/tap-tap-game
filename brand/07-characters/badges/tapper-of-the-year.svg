@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="badge-svg" viewBox="0 0 100 120" width="400" height="480" role="img" aria-label="Tapper of the year">
+<path d="M30 70l-10 44 18-8 12 14 6-44zM70 70l10 44-18-8-12 14-6-44z" fill="#FFB800" stroke="#150B33" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M50 4l10 8 13-2 5 12 12 5-2 13 8 10-8 10 2 13-12 5-5 12-13-2-10 8-10-8-13 2-5-12-12-5 2-13-8-10 8-10-2-13 12-5 5-12 13 2z" fill="#FFD23F" stroke="#150B33" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="50" cy="50" r="27" fill="#FFB800" stroke="#150B33" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M50 30l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#fff" stroke="#150B33" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="50" y="76" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,Arial,sans-serif" font-weight="900" font-size="11" fill="#fff" stroke="#150B33" stroke-width="3" paint-order="stroke">YEAR</text></svg>

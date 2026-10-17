@@ -1,0 +1,31 @@
+:root{
+  --ta-grape:#6A35FF;
+  --ta-grape-deep:#2A0F8F;
+  --ta-night:#1B0B4D;
+  --ta-tap-green:#00FF6E;
+  --ta-tap-green-dark:#00B852;
+  --ta-logo-purple:#AA0FEA;
+  --ta-mark-green:#006012;
+  --ta-ink:#150B33;
+  --ta-ink-2:#2B1C5E;
+  --ta-ink-soft:#5B4E86;
+  --ta-paper:#FFFFFF;
+  --ta-cloud:#F4F0FF;
+  --ta-line:#E6DEFF;
+  --ta-lilac:#E4DAFF;
+  --ta-sunny:#FFD23F;
+  --ta-sunny-shadow:#D9A400;
+  --ta-pink:#FF4FA3;
+  --ta-pink-shadow:#C42A78;
+  --ta-sky:#2E8BFF;
+  --ta-sky-shadow:#1A5FC2;
+  --ta-orange:#FF8A2A;
+  --ta-orange-shadow:#C95F10;
+  --ta-teal:#21D4C8;
+  --ta-teal-shadow:#0F9A91;
+  --ta-purple:#9161FF;
+  --ta-purple-shadow:#5E30D6;
+  --ta-danger:#FF4D5E;
+  --ta-danger-shadow:#C21F33;
+  --ta-gradient:linear-gradient(160deg,#6A35FF,#2A0F8F);
+}
