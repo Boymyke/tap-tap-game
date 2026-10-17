@@ -186,13 +186,17 @@ export function poolPage(ctx) {
     <div class="actions" style="justify-content:center"><a class="btn btn--green btn--shine" href="/pool/${esc(p.id)}/results">${ICONS.share} See &amp; share results</a></div></div>`;
   else if (!p.joined && user?.role === 'USER') {
     if (joinBlock) action = `<div class="panel" style="margin-top:14px"><p style="margin:0 0 4px;font-weight:700">${esc(joinBlock.why)}</p>${joinBlock.need ? `<div class="actions"><a class="btn btn--green" href="/plans">See plans</a></div>` : ''}</div>`;
-    else action = `<div class="panel" style="margin-top:14px">${form(`/api/pools/${p.id}/join`, `
+    else {
+    const down = p.audience === 'LAPO' && tierKey && tierKey !== 'LAPO';   // Mapo / Nepo baby joining a Lapo baby match
+    action = `<div class="panel" style="margin-top:14px">${form(`/api/pools/${p.id}/join`, `
+      ${down ? `<input type="hidden" name="downgrade" value="true"><div class="note" style="margin:0"><b>This is a Lapo baby match.</b> You can play it as a Lapo baby: one finger, the Lapo tap speed and only the boosters every player can use. Your ${tierKey === 'NEPO' ? 'Nepo' : 'Mapo'} plan stays the same everywhere else.</div>` : ''}
       ${p.private && p.invited ? '<div class="note">You’re invited, so you don’t need the password.</div>' : ''}
       ${p.private && !p.invited ? field({ label: 'Pool password', name: 'password', placeholder: 'XXXX-XXXX', attrs: 'autocapitalize="characters" autocomplete="off" maxlength="9" required' }) : ''}
       ${vs ? choice({ label: 'Pick your side', name: 'side', options: [[p.sideA, p.sideA], [p.sideB, p.sideB]], value: '' }) : ''}
       ${p.entryFee ? `<div class="note">Entry fee <b>${esc(naira(p.entryFee))}</b> comes from your wallet (you have ${esc(naira(wallet.balance_kobo))}). It joins the prize and is <b>not refunded</b> once the pool starts.</div>${wallet.balance_kobo < p.entryFee && wallet.winnings_kobo >= p.entryFee ? check({ name: 'use_winnings', label: `Pay from my winnings (${esc(naira(wallet.winnings_kobo))})` }) : ''}` : ''}
       ${p.state === 'waiting' ? `<div class="note">${p.instant ? 'Instant match' : 'Waiting for players'}: it starts by itself ${INSTANT_LEAD_MS / 1000} seconds after ${short(p.needed || p.maxPlayers)} players are in, then runs ${esc(fmtDur(p.duration))}. ${p.entryFee ? 'If it doesn’t fill in time, your entry fee comes back.' : ''}</div>` : ''}
-    `, { submit: p.entryFee ? `Pay ${naira(p.entryFee)} and join` : 'Join this pool', shine: true })}</div>`;
+    `, { submit: down ? (p.entryFee ? `Downgrade and pay ${naira(p.entryFee)} to play this match` : 'Downgrade to play this match') : p.entryFee ? `Pay ${naira(p.entryFee)} and join` : 'Join this pool', shine: true })}</div>`;
+    }
   } else if (p.joined && p.state === 'waiting') {
     const left = Math.max(0, (p.needed || p.maxPlayers) - (p.players || 0));
     action = `<div class="panel waitbox" style="margin-top:14px">

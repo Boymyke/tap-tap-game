@@ -282,6 +282,9 @@ export async function joinPool(env, user, pool, d) {
   if (state === 'ended' || state === 'cancelled') return json({ error: 'This pool don close.' }, 409);
   if (pool.status === 'PAUSED') return json({ error: 'This pool is paused for now. It will restart soon — join then.' }, 409);
   if (pool.joined) return json({ message: 'You don already join', redirect: `/pool/${pool.id}` });
+  // Lapo baby matches: Mapo and Nepo babies join only by agreeing to play this one match as a Lapo baby.
+  if (pool.audience === 'LAPO' && tierOf(user) !== 'LAPO' && ![true, 'true', '1', 1].includes(d.downgrade))
+    return json({ error: 'This is a Lapo baby match. Tap “Downgrade to play this match” to play it as a Lapo baby.', code: 'DOWNGRADE' }, 409);
   if (pool.is_private && !pool.invited) {   // invited players come in without the password
     const given = String(d.password || '').trim().toUpperCase();
     if (!given || given !== String(pool.join_password).toUpperCase()) return json({ error: 'That password no correct.', field: 'password' }, 403);

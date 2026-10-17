@@ -266,28 +266,33 @@
     }
     // The sheet lists the boosters you own first, 6 to a page, then up to 3 you don't have (buy and use in one tap).
     var bPage = 0, PER = 6;
+    // Lapo-rules matches: Mapo and Nepo boosters don't work here. That's the match's rule, not an upgrade prompt.
+    var LAPO_MSG = 'This match is using Lapo baby rules. Only the boosters every player can use work here.';
+    function lapoOff(b) { return !!(focus.lapoRules && !b.everybody); }
     function boostRow(b) {
-      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'bopt' + (b.lock ? ' locked' : '') + (!b.owned && !b.lock ? ' buy' : ''); btn.style.setProperty('--c', b.color || '#2E8BFF');
+      var off = lapoOff(b), lock = off ? null : b.lock;
+      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'bopt' + (lock || off ? ' locked' : '') + (!b.owned && !lock && !off ? ' buy' : ''); btn.style.setProperty('--c', b.color || '#2E8BFF');
       var limitHit = b.perGame && (focus.used[b.id] || 0) >= b.perGame;
       btn.innerHTML = '<span class="m"></span><span class="t"></span><span class="q"></span>';
       btn.querySelector('.m').textContent = String(b.mult).replace(/\.0$/, '') + '×';
       btn.querySelector('.t').appendChild(document.createTextNode(b.name));
-      var sm = document.createElement('small'); sm.textContent = b.lock ? 'Locked: ' + b.lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
+      var sm = document.createElement('small'); sm.textContent = off ? 'Not in this match: Lapo baby rules' : lock ? 'Locked: ' + lock.why : (b.mult + '× every tap for ' + b.dur + 's' + (b.perGame ? ' · ' + b.perGame + ' per game' : '') + (limitHit ? ' · used' : '')); btn.querySelector('.t').appendChild(sm);
       var q = btn.querySelector('.q');
-      if (b.lock) q.textContent = b.lock.need === 'RANK' ? 'Rank up' : 'Upgrade';
+      if (off) q.textContent = 'Lapo rules';
+      else if (lock) q.textContent = lock.need === 'RANK' ? 'Rank up' : 'Upgrade';
       else if (!b.owned) { q.textContent = 'Buy ' + TA.naira(b.price); q.className = 'q buyq'; }
       else q.textContent = '×' + b.qty;
-      if (b.owned && !b.lock && (b.qty < 1 || limitHit)) btn.disabled = true;
-      btn.addEventListener('click', function () { if (b.lock) { closeSheets(); TA.upgrade(b.lock.need || 'MAPO', b.name); return; } if (!b.owned || b.qty < 1) buyAndUse(b, btn); else useBooster(b); });
+      if (b.owned && !lock && !off && (b.qty < 1 || limitHit)) btn.disabled = true;
+      btn.addEventListener('click', function () { if (off) { TA.toast(LAPO_MSG); return; } if (lock) { closeSheets(); TA.upgrade(b.lock.need || 'MAPO', b.name); return; } if (!b.owned || b.qty < 1) buyAndUse(b, btn); else useBooster(b); });
       return btn;
     }
     function paintBoostList() {
       var list = $('boost-list'); list.textContent = '';
       // Best boosters first (strongest × longest); ones that are used up, or at their limit for this game, sink to the bottom.
       var power = function (b) { return (Number(b.mult) || 1) * (Number(b.dur) || 0); };
-      var spent = function (b) { return b.qty < 1 || (b.perGame > 0 && (focus.used[b.id] || 0) >= b.perGame); };
+      var spent = function (b) { return lapoOff(b) || b.qty < 1 || (b.perGame > 0 && (focus.used[b.id] || 0) >= b.perGame); };
       var mine = boosters.filter(function (b) { return b.owned; }).sort(function (a, c) { return (spent(a) - spent(c)) || (power(c) - power(a)); });
-      var more = boosters.filter(function (b) { return !b.owned; }).sort(function (a, c) { return (!!a.lock - !!c.lock) || (power(c) - power(a)); });
+      var more = boosters.filter(function (b) { return !b.owned; }).sort(function (a, c) { return (lapoOff(a) - lapoOff(c)) || (!!a.lock - !!c.lock) || (power(c) - power(a)); });
       if (!mine.length) { var p = document.createElement('p'); p.textContent = 'You no get any booster yet. Buy one below and it goes to work straight away.'; list.appendChild(p); }
       mine.forEach(function (b) { list.appendChild(boostRow(b)); });
       if (more.length) { var h = document.createElement('div'); h.className = 'bsub'; h.textContent = 'You don’t have these yet'; list.appendChild(h); more.forEach(function (b) { list.appendChild(boostRow(b)); }); }
@@ -309,7 +314,7 @@
       var p = focus; if (!fromTip) closeSheets();
       TA.api('/api/pools/' + encodeURIComponent(p.id) + '/boost', { item: b.id }).then(function (j) {
         boosting = false;
-        if (!j._ok) { TA.fail(j); return; }
+        if (!j._ok) { if (j.code === 'LAPO_RULES') { TA.toast(LAPO_MSG); return; } TA.fail(j); return; }
         p.mult = j.mult; p.multUntil = j.multUntil; p.queued = j.queued || 0; b.qty--; p.used[b.id] = (p.used[b.id] || 0) + 1;
         if (!document.getElementById('boost-sheet').hidden) paintBoostList();
         if (j.mult === b.mult && !j.queued) party(String(b.mult).replace(/\.0$/, '') + '× BOOST!'); else TA.toast(j.message || 'Booster queued');

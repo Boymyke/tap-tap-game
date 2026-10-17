@@ -15,7 +15,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 class Client {
   constructor(name) { this.name = name; this.cookie = ''; }
   async req(method, path, body) {
-    const r = await fetch(BASE + path, { method, redirect: 'manual', headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(this.cookie ? { cookie: this.cookie } : {}), origin: BASE }, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const go = () => fetch(BASE + path, { method, redirect: 'manual', headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(this.cookie ? { cookie: this.cookie } : {}), origin: BASE }, body: body !== undefined ? JSON.stringify(body) : undefined });
+    let r; for (let i = 0; ; i++) { try { r = await go(); break; } catch (e) { if (i > 4) throw e; await sleep(3000); } }   // local dev restarts now and then
     const sc = r.headers.get('set-cookie'); if (sc) { const m = /nakam_session=([^;]*)/.exec(sc); if (m) this.cookie = m[1] ? 'nakam_session=' + m[1] : ''; }
     const text = await r.text(); let j = null; try { j = JSON.parse(text); } catch {}
     return { status: r.status, j: j || {}, text };
@@ -23,7 +24,9 @@ class Client {
   post(p, b = {}) { return this.req('POST', p, b); }
   get(p) { return this.req('GET', p); }
 }
-const q = sql => JSON.parse(execSync(`npx wrangler d1 execute tap-am-ui-preview -c wrangler.preview.jsonc --local --json --command "${sql.replace(/"/g, '\\"')}"`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString())[0].results;
+const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);   // let local dev settle after a direct DB call
+const q = sql => { const r = q0(sql); pause(2000); return r; };
+const q0 = sql => JSON.parse(execSync(`npx wrangler d1 execute tap-am-ui-preview -c wrangler.preview.jsonc --local --json --command "${sql.replace(/"/g, '\\"')}"`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString())[0].results;
 const cron = async () => { await fetch(BASE + '/__scheduled?cron=*/5+*+*+*+*').catch(() => {}); await sleep(1500); };
 async function signup(name) {
   const c = new Client(name), email = `${name.toLowerCase().replace(/_/g, '')}@example.com`;
@@ -71,9 +74,17 @@ r = await N.post(`/api/pools/${lp}/join`, {}); ok(r.status === 409, 'the cap kee
 console.log('Lapo matches');
 r = await A.post('/api/pools', { name: 'Lapo ' + tag, start_mode: 'INSTANT', instant_players: '2', duration: '60', audience: 'LAPO', ack: true });
 const lap = r.j.id;
-r = await N.post(`/api/pools/${lap}/join`, {}); ok(r.status === 200, 'a Nepo baby can join a Lapo match', r.j);
+page = await N.get('/pool/' + lap); ok(page.text.includes('Downgrade to play this match') && page.text.includes('name="downgrade"'), 'a Nepo baby sees “Downgrade to play this match”');
+page = await B.get('/pool/' + lap); ok(!page.text.includes('Downgrade to play this match') && page.text.includes('Join this pool'), 'a Lapo baby just joins');
+r = await N.post(`/api/pools/${lap}/join`, {}); ok(r.status === 409 && r.j.code === 'DOWNGRADE', 'a Nepo baby can’t join without downgrading', r.j);
+r = await N.post(`/api/pools/${lap}/join`, { downgrade: 'true' }); ok(r.status === 200, 'a Nepo baby downgrades and joins the Lapo match', r.j);
 ok(q(`SELECT lapo_rules FROM pools WHERE id='${lap}'`)[0].lapo_rules === 1, 'Lapo matches always use Lapo rules');
+ok(q(`SELECT tier FROM users WHERE id='${N.id}'`)[0].tier === 'NEPO', 'their Nepo plan is unchanged');
 page = await N.get('/pool/' + lap); ok(page.text.includes('play as Lapo babies here'), 'pool page explains it');
+r = await B.post(`/api/pools/${lap}/join`, {}); await sleep(16500);
+q(`INSERT INTO inventory(user_id,item_id,quantity) VALUES('${N.id}','b-nepo-owambe',1) ON CONFLICT(user_id,item_id) DO UPDATE SET quantity=1`); await sleep(1500);
+r = await N.post(`/api/pools/${lap}/boost`, { item: 'b-nepo-owambe' });
+ok(r.status === 403 && r.j.code === 'LAPO_RULES' && /using Lapo baby rules/.test(r.j.error) && !r.j.redirect, 'a Nepo booster says “this match is using Lapo baby rules” (no upgrade prompt)', r.j);
 
 console.log('Option switches');
 await admin.post('/api/admin/settings', { opt_lapo_rules: false, opt_boosters: false });
