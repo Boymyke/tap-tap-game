@@ -46,6 +46,8 @@ export async function runChecks(env) {
   if (pk) checks[checks.length - 1].live = true;
   else add('payments', gateway(env) ? 'ok' : testPayments(env) ? 'warn' : 'crit', 'Payments', gateway(env) ? 'Bachs connected.' : testPayments(env) ? 'Test mode: payments are simulated.' : 'Payments are switched off.', gateway(env) ? '' : 'Add the PAYSTACK_SECRET_KEY secret to the worker once your Paystack business account is live.');
   add('email', emailConfigured(env) ? 'ok' : 'warn', 'Email', emailConfigured(env) ? 'Sign-up and alert emails are being sent.' : (env.OTP_DEV_MODE === '1' ? 'No email service connected: sign-up codes show on screen (test mode).' : 'No email service connected: people sign up without an email code, and alerts and announcement emails are skipped.'), emailConfigured(env) ? '' : 'Add the ZeptoMail “Send Mail token” as the ZEPTOMAIL_TOKEN secret on the worker (EMAIL_FROM is no-reply@tapammm.live).');
+  add('voice', env.CALLS_APP_ID && env.CALLS_APP_TOKEN ? (s.voice_on === '0' ? 'warn' : 'ok') : 'warn', 'Live voice in games', env.CALLS_APP_ID && env.CALLS_APP_TOKEN ? (s.voice_on === '0' ? 'Connected, but switched off in settings.' : 'Cloudflare Realtime connected. Top Nepo babies can talk; everybody in the pool can listen.') : 'Not connected, so the mic button is hidden in games.',
+    env.CALLS_APP_ID && env.CALLS_APP_TOKEN ? '' : 'In Cloudflare go to Realtime → Serverless SFU, create an app, then add its App ID as the secret CALLS_APP_ID and its App Secret as CALLS_APP_TOKEN on the tapammm-live worker.');
   add('uploads', env.MEDIA ? 'ok' : 'warn', 'Picture uploads', env.MEDIA ? 'R2 storage connected.' : 'R2 storage is off, so ads, skins and slides can’t use uploaded pictures.', env.MEDIA ? '' : 'Turn on R2 in the Cloudflare dashboard and add the MEDIA bucket binding.');
   if (!s.alert_email) add('alertmail', 'warn', 'Alert emails', 'No alert email address set.', 'Add one in Admin → Overview → Settings.');
   return { checks, dbBytes };
@@ -56,7 +58,7 @@ export async function healthSweep(env) {
   const { checks } = await runChecks(env);
   const s = await settings(env);
   const now = nowIso();
-  const bad = checks.filter(c => c.level !== 'ok' && !['email', 'uploads', 'alertmail'].includes(c.key) && !(c.key === 'payments' && !c.live));   // setup items show on the page only; a key Paystack refuses is emailed
+  const bad = checks.filter(c => c.level !== 'ok' && !['email', 'uploads', 'alertmail', 'voice'].includes(c.key) && !(c.key === 'payments' && !c.live));   // setup items show on the page only; a key Paystack refuses is emailed
   const toEmail = [];
   for (const c of bad) {
     const msg = `${c.title}: ${c.detail}${c.action ? ' → ' + c.action : ''}`;

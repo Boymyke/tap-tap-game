@@ -9,6 +9,13 @@
     var status = $('v-status'), list = $('v-list'), bListen = $('v-listen'), bTalk = $('v-talk'), bLeave = $('v-leave');
     var pc = null, sessionId = null, poolId = null, pulled = {}, localStream = null, hb = 0, poll = 0, audios = {};
     var queue = Promise.resolve();
+    // Phones only let a page play sound that was started by a tap, so the audio players are made (and
+    // unlocked) when the player taps Listen; voices that arrive later play through them.
+    var players = [];
+    function unlockAudio() {
+      if (players.length) return;
+      for (var i = 0; i < 6; i++) { var a = new Audio(); a.autoplay = true; a.setAttribute('playsinline', ''); a.muted = false; try { a.play().catch(function () {}); } catch (e) {} players.push(a); }
+    }
     function serial(fn) { queue = queue.then(fn).catch(function (e) { console.warn('voice', e); }); return queue; }
 
     mic.addEventListener('click', function () { var s = $('voice-sheet'); s.hidden = false; bListen.focus(); });
@@ -27,14 +34,15 @@
       pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }], bundlePolicy: 'max-bundle' });
       pc.ontrack = function (e) {
         var id = e.transceiver && e.transceiver.mid || String(Math.random());
-        var a = audios[id] || (audios[id] = new Audio()); a.autoplay = true; a.srcObject = new MediaStream([e.track]);
-        a.play().catch(function () {});
+        var a = audios[id] || (audios[id] = players.shift() || new Audio()); a.autoplay = true; a.srcObject = new MediaStream([e.track]);
+        a.play().catch(function () { setStatus('Tap Listen again to hear the voices (your phone blocked the sound).'); });
       };
       pc.onconnectionstatechange = function () { if (pc && pc.connectionState === 'failed') { setStatus('Voice connection drop. Tap Listen to join again.'); leave(); } };
     }
 
     function join() {
       var pid = currentPool(); if (!pid) return;
+      unlockAudio();
       bListen.disabled = true; setStatus('Joining voice…');
       return serial(function () {
         return (sessionId ? leave(true) : Promise.resolve()).then(function () { return api('join', { pool: pid }); }).then(function (j) {
@@ -103,7 +111,7 @@
 
     function leave(silent) {
       clearInterval(poll); clearInterval(hb); stopMic();
-      Object.keys(audios).forEach(function (k) { audios[k].srcObject = null; }); audios = {};
+      Object.keys(audios).forEach(function (k) { audios[k].srcObject = null; players.push(audios[k]); }); audios = {};
       if (pc) { try { pc.close(); } catch (e) {} pc = null; }
       var had = sessionId; sessionId = null; list.textContent = ''; bTalk.hidden = true; paint();
       if (!silent) setStatus('You don leave voice.');
