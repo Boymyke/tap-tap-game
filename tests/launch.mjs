@@ -36,6 +36,12 @@ async function signup(name) {
   ok(c.cookie && c.id, `${name} signs up`);
   return c;
 }
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+async function uploadPic(c, purpose) {
+  const fd = new FormData(); fd.append('file', new Blob([PNG], { type: 'image/png' }), 'a.png'); fd.append('purpose', purpose);
+  const r = await fetch(BASE + '/api/upload', { method: 'POST', headers: { cookie: c.cookie, origin: BASE }, body: fd });
+  return { status: r.status, j: await r.json().catch(() => ({})) };
+}
 const state = async (c, id) => (await c.get(`/api/pools/${id}/state`)).j;
 
 const admin = new Client('admin');
@@ -43,6 +49,13 @@ let r = await admin.post('/api/setup-admin', { setupKey: SETUP, username: ADMIN_
 if (r.status === 409) r = await admin.post('/api/admin/login', { identifier: ADMIN_ID, password: ADMIN_PW });
 ok(admin.cookie, 'admin session', r.j);
 await admin.post('/api/admin/settings', { signups_paused: false, lapo_pools_per_day: 50, opt_lapo_rules: true, opt_boosters: true });
+console.log('Marketing emails (off by default: ZeptoMail is for account emails only)');
+await admin.post('/api/admin/settings', { marketing_emails: false });
+r = await admin.post('/api/admin/announcements', { title: 'News ' + tag, body: 'Hello', audience: 'ALL', email: 'NEWS' });
+ok(r.status === 400 && r.j.field === 'email', 'news emails are refused while marketing email is off', r.j);
+r = await admin.post('/api/admin/announcements', { title: 'Service ' + tag, body: 'Server note', audience: 'SPONSORS', email: 'SERVICE' });
+ok(r.status === 200, 'service emails still go', r.j);
+let pg0 = await admin.get(AP + '/messages'); ok(!pg0.text.includes('value="NEWS"') && pg0.text.includes('Off for now'), 'admin page hides the marketing options');
 
 const A = await signup('la' + tag), B = await signup('lb' + tag), C = await signup('lc' + tag), N = await signup('ln' + tag);
 await admin.post(`/api/admin/users/${A.id}/tier`, { tier: 'MAPO', plan: 'month' });
@@ -107,12 +120,16 @@ page = await C.get('/settings'); ok(page.text.includes('name="allowInvites"') &&
 page = await new Client('x').get(`/unsub?k=games&u=x&t=y`); ok(page.text.includes('Stop top games emails?'), 'unsubscribe page for game emails');
 
 console.log('Home page ad requests');
-r = await B.post('/api/ad-requests', { title: 'My song ' + tag, youtube_url: 'https://youtu.be/dQw4w9WgXcQ', period: 'DAY', units: 2 });
+let up = await uploadPic(B, 'logo_url'); ok(up.status === 403, 'players can’t upload anything but an ad picture', up.j);
+up = await uploadPic(B, 'ad_image'); ok(up.status === 200 && /^\/media\//.test(up.j.url || ''), 'a player uploads an ad picture', up.j);
+const pic = up.j.url;
+r = await B.post('/api/ad-requests', { title: 'My song ' + tag, ad_image: pic, period: 'DAY', units: 2 });
 ok(r.status === 402, 'needs money in the wallet', r.j);
 await admin.post(`/api/admin/users/${B.id}/wallet`, { amount: '20000', note: 'test funds' });
-r = await B.post('/api/ad-requests', { title: 'x', youtube_url: 'https://youtu.be/dQw4w9WgXcQ', period: 'DAY' }); ok(r.status === 400 && r.j.field === 'title', 'title is checked', r.j);
-r = await B.post('/api/ad-requests', { title: 'No media ' + tag, period: 'DAY' }); ok(r.status === 400, 'needs a video or a picture link', r.j);
-r = await B.post('/api/ad-requests', { title: 'My song ' + tag, youtube_url: 'https://youtu.be/dQw4w9WgXcQ', target_url: 'https://example.com', period: 'DAY', units: 2 });
+r = await B.post('/api/ad-requests', { title: 'x', ad_image: pic, period: 'DAY' }); ok(r.status === 400 && r.j.field === 'title', 'title is checked', r.j);
+r = await B.post('/api/ad-requests', { title: 'No media ' + tag, youtube_url: 'https://youtu.be/dQw4w9WgXcQ', period: 'DAY' }); ok(r.status === 400 && r.j.field === 'ad_image', 'needs an uploaded picture (YouTube links are not accepted)', r.j);
+r = await B.post('/api/ad-requests', { title: 'Not mine ' + tag, ad_image: '/media/u/2026-10/00000000-0000-0000-0000-000000000000.png', period: 'DAY' }); ok(r.status === 400, 'only their own uploaded picture', r.j);
+r = await B.post('/api/ad-requests', { title: 'My song ' + tag, ad_image: pic, target_url: 'https://example.com', period: 'DAY', units: 2 });
 ok(r.status === 200, 'applies and pays', r.j);
 let w = (await B.get('/api/wallet')).j.wallet;
 ok(w.balance_kobo === 2000000 - 1000000, '2 days × ₦5,000 taken', w);
@@ -127,18 +144,21 @@ q(`UPDATE ad_requests SET live_until='2000-01-01T00:00:00Z' WHERE id='${reqId}';
 page = await C.get('/dashboard'); ok(!page.text.includes('My song ' + tag), 'gone from the home page when its days are up');
 await cron();
 ok(q(`SELECT status FROM ad_requests WHERE id='${reqId}'`)[0].status === 'ENDED', 'the cron ends it');
-r = await B.post('/api/ad-requests', { title: 'Second ' + tag, image_url: 'https://drive.google.com/file/abc', period: 'DAY' });
+q(`DELETE FROM auth_throttle`);   // 5 applications a day
+r = await B.post('/api/ad-requests', { title: 'Second ' + tag, ad_image: pic, period: 'DAY' });
 const r2 = q(`SELECT id FROM ad_requests WHERE user_id='${B.id}' AND title='Second ${tag}'`)[0].id;
 r = await admin.post(`/api/admin/ad-requests/${r2}/reject`, { note: 'Picture is blurry' });
 w = (await B.get('/api/wallet')).j.wallet;
 ok(r.status === 200 && w.balance_kobo === 1000000, 'rejected and refunded', { r: r.j, w });
 q(`DELETE FROM auth_throttle`); await sleep(2000);   // 5 applications a day
-r = await B.post('/api/ad-requests', { title: 'Third ' + tag, youtube_url: 'https://youtu.be/dQw4w9WgXcQ', period: 'DAY' });
+r = await B.post('/api/ad-requests', { title: 'Third ' + tag, ad_image: pic, period: 'DAY' });
 const r3 = q(`SELECT id FROM ad_requests WHERE user_id='${B.id}' AND title='Third ${tag}'`)[0].id;
 r = await C.post(`/api/ad-requests/${r3}/cancel`); ok(r.status === 409, 'someone else can’t cancel it', r.j);
 r = await B.post(`/api/ad-requests/${r3}/cancel`); w = (await B.get('/api/wallet')).j.wallet;
 ok(r.status === 200 && w.balance_kobo === 1000000, 'the owner cancels and gets the money back', { r: r.j, w });
-page = await admin.get(AP + '/ad-requests'); ok(page.status === 200 && page.text.includes('Second ' + tag) && page.text.includes('slide_price_day_kobo'), 'admin ad requests page with prices');
+page = await admin.get(AP + '/ad-requests'); ok(page.status === 200 && page.text.includes('Second ' + tag) && page.text.includes('slide_price_day_kobo') && page.text.includes('Send email'), 'admin ad requests page with prices and an email form');
+r = await admin.post(`/api/admin/ad-requests/${r2}/email`, { message: 'Your picture was blurry. Send a sharper one and apply again.' }); ok(r.status === 200 && /Email sent/.test(r.j.message), 'admin emails the person why it was rejected', r.j);
+r = await B.post(`/api/admin/ad-requests/${r2}/email`, { message: 'hack' }); ok(r.status === 401 || r.status === 403, 'players can’t use the admin email', r.j);
 
 console.log('Inner circle');
 q(`UPDATE users SET referred_by='${A.id}' WHERE id IN ('${B.id}','${C.id}')`); await sleep(2500);
@@ -161,6 +181,8 @@ console.log('Home, winners, health');
 page = await B.get('/dashboard'); ok(page.text.includes('data-stat="online"') && page.text.includes('visits'), 'home shows online and visits');
 r = await B.post('/api/presence', { vid: 'test-visitor-' + tag }); ok(r.status === 200 && r.j.online >= 1 && r.j.visits >= 1, 'presence counts', r.j);
 page = await B.get('/winners'); ok(page.status === 200 && page.text.includes('Top winners') && page.text.includes('Top tappers'), 'top winners page');
+page = await B.get('/winners?p=DAY'); ok(page.text.includes('class="podium"'), 'top winners always has the 1st/2nd/3rd podium');
+page = await B.get('/top?p=DAY'); ok(page.text.includes('class="podium"'), 'top tappers always has the 1st/2nd/3rd podium');
 page = await admin.get(AP + '/health'); ok(page.text.includes('Server load') && page.text.includes('Database round trip'), 'health page shows server load');
 page = await B.get('/u/' + B.name); ok(!page.text.includes('Share my profile') || page.text.includes('&quot;badgeTotal&quot;'), 'profile share card has badges, no QR');
 r = await new Client('anon').get('/api/links'); ok(r.status === 200, 'links');

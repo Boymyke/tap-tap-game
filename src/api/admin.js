@@ -6,7 +6,7 @@ import { roomCall, poolState, pausePool, restartPool, cancelPool, extendPool, vo
 import { processWithdrawal, activateTier } from './money.js';
 import { sendAlertEmail, sendMail, giftEmail, announcementEmail } from '../email.js';
 import { createAnnouncement, emailPool } from '../game/announce.js';
-import { adminAdRequest } from '../game/adrequests.js';
+import { adminAdRequest, emailAdRequester } from '../game/adrequests.js';
 import { isPattern } from '../ui/patterns.js';
 import { decryptPhrase, canKeepCopies } from '../phrase.js';
 import { hashPassword, safeEqual } from '../lib.js';
@@ -15,8 +15,8 @@ const SETTING_KEYS = ['landing_demo_pools', 'mapo_monthly_kobo', 'mapo_yearly_ko
   'starter_boosters', 'mapo_bonus_boosters', 'nepo_bonus_boosters', 'referral_batch', 'max_multi_pools_mapo', 'max_multi_pools', 'voice_min_rank', 'voice_top_n', 'house_cut_pct',
   'tap_rate_lapo', 'tap_rate_mapo', 'tap_rate_nepo', 'tap_limits_on', 'tap_limit_daily', 'tap_limit_monthly', 'auto_payouts', 'auto_payout_max_kobo', 'auto_payout_min_age_days', 'alert_email', 'withdrawals_per_day', 'email_blast_kobo', 'lapo_pools_per_day', 'transfer_daily_max_kobo', 'free_box_days',
   'mapo_pools_per_day', 'nepo_pools_per_day', 'withdraw_daily_max_kobo', 'topup_seconds_per_step', 'vote_continue_pct', 'vote_hours', 'instant_wait_hours',
-  'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'opt_lapo_rules', 'opt_boosters', 'top_games_email', 'slide_price_day_kobo', 'slide_price_week_kobo', 'slide_price_month_kobo', 'slide_price_year_kobo', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
-const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'opt_lapo_rules', 'opt_boosters', 'top_games_email'];
+  'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'opt_lapo_rules', 'opt_boosters', 'top_games_email', 'marketing_emails', 'slide_price_day_kobo', 'slide_price_week_kobo', 'slide_price_month_kobo', 'slide_price_year_kobo', 'whatsapp_community', 'social_twitter', 'social_instagram', 'social_tiktok'];
+const BOOL_KEYS = ['landing_demo_pools', 'tap_limits_on', 'auto_payouts', 'voice_on', 'stakes_on', 'tapoffs_on', 'signups_paused', 'opt_lapo_rules', 'opt_boosters', 'top_games_email', 'marketing_emails'];
 // Link settings: only https links on the expected site (empty = hidden).
 const LINK_KEYS = { whatsapp_community: ['chat.whatsapp.com', 'whatsapp.com', 'wa.me'], social_twitter: ['x.com', 'twitter.com'], social_instagram: ['instagram.com'], social_tiktok: ['tiktok.com'] };
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -95,10 +95,11 @@ export async function handleAdminApi(req, env, path, user) {
   }
 
   // ── home page ad requests ──
-  const rqm = path.match(/^\/api\/admin\/ad-requests\/([0-9a-f-]{36})\/(publish|reject|end)$/);
+  const rqm = path.match(/^\/api\/admin\/ad-requests\/([0-9a-f-]{36})\/(publish|reject|end|email)$/);
   if (rqm && req.method === 'POST') {
     const { data, response } = await body(); if (response) return response;
-    const r = await adminAdRequest(env, user, rqm[1], rqm[2], data);
+    if (rqm[2] === 'email' && !await allow(env, 'adreqmail:' + user.id, 60, 3600)) return json({ error: 'Too many emails. Wait small.' }, 429);
+    const r = rqm[2] === 'email' ? await emailAdRequester(env, rqm[1], data) : await adminAdRequest(env, user, rqm[1], rqm[2], data);
     if (r.status === 200) await audit(env, user.id, 'adreq.' + rqm[2], { id: rqm[1], days: data.days });
     return r;
   }

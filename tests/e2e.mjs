@@ -44,6 +44,7 @@ const ADMIN_ID = process.env.ADMIN_ID || 'bossadmin', ADMIN_PW = process.env.ADM
 let r = await admin.post('/api/setup-admin', { setupKey: SETUP, username: ADMIN_ID, email: `${ADMIN_ID}@example.com`, password: ADMIN_PW });
 if (r.status === 409) { r = await admin.post('/api/admin/login', { identifier: ADMIN_ID, password: ADMIN_PW }); }
 ok(admin.cookie, 'admin session', r.j);
+await admin.post('/api/admin/settings', { lapo_pools_per_day: 3, marketing_emails: true });   // these tests cover pool email blasts (needs marketing email on)
 const bad1 = await new Client('x').post('/api/signup', { nickname: 'nodob' + tag, email: `nodob${tag}@example.com`, password: 'Tapam2026x', whatsapp: '08031234567', agree: true, country: 'NG' });
 ok(bad1.status === 400 && bad1.j.field === 'gender', 'sign-up needs gender', bad1.j);
 const A = await signup('ada' + tag);

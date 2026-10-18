@@ -20,10 +20,11 @@ export async function submitAdRequest(env, user, d) {
   if (open >= 3) return json({ error: 'You have 3 requests waiting already. Wait for Tap Am to reply.' }, 409);
   const title = String(d.title || '').trim();
   if (title.length < 3 || title.length > 60) return json({ error: 'Title must be 3–60 characters.', field: 'title' }, 400);
-  let youtube = null, image = null;
-  if (String(d.youtube_url || '').trim()) { const m = YT.exec(String(d.youtube_url)); if (!m) return json({ error: 'Paste a YouTube link, like https://youtu.be/abc123XYZ00', field: 'youtube_url' }, 400); youtube = `https://youtu.be/${m[1]}`; }
-  if (String(d.image_url || '').trim()) { image = httpsUrl(d.image_url); if (!image) return json({ error: 'Paste the full https:// link to the picture (Google Drive, Docs, Dropbox…).', field: 'image_url' }, 400); }
-  if (!youtube && !image) return json({ error: 'Add a YouTube link or a link to your picture.', field: 'youtube_url' }, 400);
+  // Home page ads are pictures the player or sponsor uploads (no video links).
+  const youtube = null;
+  const image = String(d.ad_image || '').trim();
+  if (!/^\/media\/u\/\d{4}-\d{2}\/[0-9a-f-]{36}\.(png|jpg|webp|gif)$/.test(image) || !await env.DB.prepare('SELECT 1 FROM media WHERE key=? AND owner_id=?').bind(image.slice(7), user.id).first())
+    return json({ error: 'Upload the picture for your ad.', field: 'ad_image' }, 400);
   const target = String(d.target_url || '').trim() ? httpsUrl(d.target_url) : null;
   if (String(d.target_url || '').trim() && !target) return json({ error: 'Enter the full https:// link people should go to.', field: 'target_url' }, 400);
   const details = String(d.details || '').trim().slice(0, 600);
@@ -69,7 +70,7 @@ export async function adminAdRequest(env, admin, id, action, d) {
     let image = String(d.image_url || '').trim();
     if (image && !/^\/media\/[A-Za-z0-9/_.-]+$/.test(image) && !httpsUrl(image)) return json({ error: 'Upload the picture or paste a direct https:// image link.', field: 'image_url' }, 400);
     const yt = req.youtube_url ? YT.exec(req.youtube_url)?.[1] : null;
-    if (!image) image = yt ? `https://i.ytimg.com/vi/${yt}/hqdefault.jpg` : '';
+    if (!image) image = req.image_url && /^\/media\//.test(req.image_url) ? req.image_url : yt ? `https://i.ytimg.com/vi/${yt}/hqdefault.jpg` : '';
     if (!image) return json({ error: 'Their picture link is not a picture we can show. Download it and upload it here.', field: 'image_url' }, 400);
     const until = new Date(Date.now() + days * 86400000).toISOString(), slideId = uid();
     const claim = await env.DB.prepare("UPDATE ad_requests SET status='LIVE', slide_id=?, live_until=?, admin_note=?, updated_at=? WHERE id=? AND status='PENDING'").bind(slideId, until, note || null, nowIso(), id).run();
@@ -95,6 +96,23 @@ export async function adminAdRequest(env, admin, id, action, d) {
     return json({ message: 'Taken down.', reload: true });
   }
   return json({ error: 'Unknown action.' }, 400);
+}
+
+// Super admin: email the person who asked (any time: why it was rejected, what to change, a question…).
+export async function emailAdRequester(env, id, d) {
+  const req = await env.DB.prepare('SELECT r.*, u.email, u.username FROM ad_requests r JOIN users u ON u.id=r.user_id WHERE r.id=?').bind(id).first();
+  if (!req) return json({ error: 'Request not found.' }, 404);
+  const subject = String(d.subject || '').trim().slice(0, 90) || `About your Tap Am home page ad “${req.title}”`;
+  const message = String(d.message || '').trim().slice(0, 3000);
+  if (message.length < 3) return json({ error: 'Write the message.', field: 'message' }, 400);
+  if (!req.email) return json({ error: 'This account has no email address.' }, 400);
+  await notify(env, req.user_id, `Tap Am sent you an email about your home page ad “${req.title}”.`, '/advertise');
+  try {
+    const r = await sendMail(env, req.email, announcementEmail({ site: SITE(env), service: true, title: subject, message, link: SITE(env) + '/advertise', linkLabel: 'See your request' }));
+    if (!r.sent && !r.test) throw new Error('not sent');
+  } catch (e) { return json({ error: 'The email could not be sent right now. Try again in a few minutes.' }, 502); }
+  await env.DB.prepare("UPDATE ad_requests SET admin_note=COALESCE(admin_note,?), updated_at=? WHERE id=?").bind(message.slice(0, 300), nowIso(), id).run();
+  return json({ message: `Email sent to ${req.username}.`, reload: true });
 }
 
 // Cron: slides whose days are up come down by themselves, and their owners are told.

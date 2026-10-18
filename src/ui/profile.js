@@ -1,5 +1,5 @@
 // Me, settings, booster calculator, notifications, top tappers, ranks, suggest a pool.
-import { tapoffButton, appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, tierBadge, field, select, check, form, postBtn, upgradeAttrs, icon, nameTag, copyRow, pager } from './kit.js';
+import { tapoffButton, appPage, anyPage, esc, naira, nairaShort, short, lagos, lagosDate, tierBadge, field, select, check, form, postBtn, upgradeAttrs, icon, nameTag, copyRow, pager, sinceLaunch, upload } from './kit.js';
 import { ICONS } from './theme.js';
 import { rankAvatar, avatarSvg, avatarFor, badgeSvg, RANK_LOOKS, STICKERS } from './avatar.js';
 import { THEMES, SOUNDS, backgroundCss } from '../tiers.js';
@@ -138,7 +138,7 @@ export function invitePage(ctx) {
 </section>
 <h2 class="h2">People wey join</h2>
 ${ctx.inner ? `<div class="panel" style="margin-bottom:12px;box-shadow:0 0 0 3px var(--sunny),var(--sh)"><b>Inner circle</b><p class="muted" style="margin:4px 0 8px">You can see what each person you brought has spent on Tap Am. Keep it to yourself.</p><a class="btn btn--gold btn--sm" href="/inner-circle">Read the rules</a>${joined.length ? ` <span class="small" style="font-weight:800;margin-left:6px">Total spent: ${esc(naira(joined.reduce((a, j) => a + Number(j.spent || 0), 0)))}</span>` : ''}</div>` : ''}
-${joined.length ? `<div class="list" data-paginate="20">${joined.map(j => `<div class="item"><div class="grow"><div class="t">${esc(j.username)}</div><div class="s">Joined ${esc(lagosDate(j.created_at))}</div></div>${ctx.inner ? `<div style="text-align:right"><b class="amt">${esc(naira(j.spent || 0))}</b><div class="small muted">spent</div></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Nobody yet. Share your link!</div>'}`;
+${joined.length ? `<div class="list" data-paginate="20">${joined.map(j => `<div class="item"><div class="grow"><div class="t">${esc(j.username)}</div><div class="s">Joined ${esc(lagosDate(sinceLaunch(j.created_at)))}</div></div>${ctx.inner ? `<div style="text-align:right"><b class="amt">${esc(naira(j.spent || 0))}</b><div class="small muted">spent</div></div>` : ''}</div>`).join('')}</div>` : '<div class="empty">Nobody yet. Share your link!</div>'}`;
   return appPage({ user, title: 'Invite people', active: '', body, wallet, narrow: true, theme, bgCss });
 }
 
@@ -258,7 +258,9 @@ document.querySelectorAll('[data-dismiss]').forEach(function(b){b.addEventListen
 }
 
 // ── Top tappers (day / week / month / year / all time) ──────────────────────
-const TOP_CSS = `.podium{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr) minmax(0,1fr);align-items:end;gap:8px;margin:6px 0 16px}
+const emptyPlace = (cls, place) => `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''} podempty" href="/pools" aria-label="Place ${place} is open"><span class="place">${place}</span><span class="ghost" aria-hidden="true">?</span><div class="n">Your spot</div><div class="s">Take am</div></a>`;
+const TOP_CSS = `.podempty{opacity:.55}.podempty .ghost{display:grid;place-items:center;width:54px;height:54px;border-radius:50%;border:3px dashed rgba(255,255,255,.85);color:#fff;font:900 26px/1 var(--display)}.podempty.p1 .ghost{width:70px;height:70px}
+.podium{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.12fr) minmax(0,1fr);align-items:end;gap:8px;margin:6px 0 16px}
 .podium>a{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:12px 8px 12px;border-radius:22px;text-align:center;text-decoration:none}
 .podium .place{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#fff;color:var(--ink);font:900 15px/1 var(--display);box-shadow:0 2px 0 rgba(0,0,0,.25)}
 .podium .n{width:100%;font:900 14px/1.15 var(--display);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 0 rgba(0,0,0,.35)}
@@ -275,15 +277,16 @@ const TOP_CSS = `.podium{display:grid;grid-template-columns:minmax(0,1fr) minmax
 export function topPage(ctx) {
   const { user, period, rows, me, label, theme, bgCss, badgeKind, page = 1, hasNext = false, term = '' } = ctx;
   const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
-  const podium = page === 1 && !term && rows.length >= 3;
+  const podium = page === 1 && !term;   // the 1st / 2nd / 3rd podium (empty places invite players to take them)
   const [a, b, c] = rows;
-  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps"><span class="place">${place}</span>${rankAvatar(r.rank_level || 1, { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(compact(r.taps))} taps</div></a>` : '<div></div>';
+  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps"><span class="place">${place}</span>${rankAvatar(r.rank_level || 1, { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(compact(r.taps))} taps</div></a>` : emptyPlace(cls, place);
   const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b class="pos">#${short(r.pos)}</b><div class="mini-ava">${rankAvatar(r.rank_level || 1, { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(r.rank_name || '')}</div></div><b class="amt" title="${esc(Number(r.taps || 0).toLocaleString('en-NG'))} taps">${esc(compact(r.taps))}<small>taps</small></b></a>`;
   const qs = `/top?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`;
   const body = `<h1 class="h1">Top tappers</h1><p class="sub">Every player, from the fastest finger down. Whoever taps the most ${label} ${period === 'ALL' ? 'sits on top' : `wins the <b style="color:#fff">Tapper of the ${badgeKind.toLowerCase()}</b> badge`}. Taps count when a pool ends.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/top?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 <form class="row" method="get" action="/top" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
-${rows.length ? `${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
+${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
+${rows.length ? `
 <div class="list toplist">${(podium ? rows.slice(3) : rows).map(row).join('')}</div>
 ${me && me.pos > (page * 50) ? `<div class="item me" style="margin-top:12px"><b style="min-width:44px;font:900 18px var(--display)">#${short(me.pos)}</b><div class="grow"><div class="t">You</div></div><b class="amt">${esc(compact(me.taps))}<small>taps</small></b></div>` : ''}
 ${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No player with that nickname here.' : `No taps counted ${label} yet. ${user ? '<a href="/pools">Go tap!</a>' : '<a href="/signup">Join and tap!</a>'}`}</div>`}
@@ -297,16 +300,17 @@ export function winnersPage(ctx) {
   const tabs = [['ALL', 'All time'], ['DAY', 'Today'], ['WEEK', 'This week'], ['MONTH', 'This month'], ['YEAR', 'This year']];
   const label = { ALL: 'of all time', DAY: 'today', WEEK: 'this week', MONTH: 'this month', YEAR: 'this year' }[period] || '';
   const badge = { DAY: 'Top winner of the day', MONTH: 'Top winner of the month', YEAR: 'Top winner of the year' }[period];
-  const podium = page === 1 && !term && rows.length >= 3;
+  const podium = page === 1 && !term;   // the 1st / 2nd / 3rd podium (empty places invite players to take them)
   const [a, b, c] = rows;
   const won = r => `${nairaCompact(r.won)}`;
-  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(naira(r.won))} won"><span class="place">${place}</span>${rankAvatar(r.rank_level || 1, { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(won(r))} won</div></a>` : '<div></div>';
+  const pod = (r, cls, place) => r ? `<a class="tcard ${cls} ${place === 1 ? 'p1' : ''}" href="/u/${esc(r.username)}" title="${esc(r.username)} · ${esc(naira(r.won))} won"><span class="place">${place}</span>${rankAvatar(r.rank_level || 1, { size: place === 1 ? 70 : 54 })}<div class="n">${nameTag(r.username, r.emoji)}</div><div class="s">${esc(won(r))} won</div></a>` : emptyPlace(cls, place);
   const row = r => `<a class="item ${user && r.id === user.id ? 'me' : ''}" href="/u/${esc(r.username)}"><b class="pos">#${short(r.pos)}</b><div class="mini-ava">${rankAvatar(r.rank_level || 1, { size: 40 })}</div><div class="grow"><div class="t">${nameTag(r.username, r.emoji)}</div><div class="s">${short(r.prizes)} prize${r.prizes == 1 ? '' : 's'}</div></div><b class="amt pos" title="${esc(naira(r.won))}">${esc(won(r))}<small>won</small></b></a>`;
   const qs = `/winners?p=${period}${term ? '&q=' + encodeURIComponent(term) : ''}`;
   const body = `<h1 class="h1">Top winners</h1><p class="sub">Who don chop the most prize money ${label}.${badge ? ` Number one wins the <b style="color:#fff">${badge}</b> badge.` : ' The top winner of each day, month and year gets a badge.'} Winnings count when a pool ends.</p>
 <nav class="tabs">${tabs.map(([k, l]) => `<a href="/winners?p=${k}" ${k === period ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
 <form class="row" method="get" action="/winners" style="gap:8px;margin:0 0 14px"><input type="hidden" name="p" value="${period}"><input class="ta-input" name="q" value="${esc(term)}" placeholder="Search a nickname" aria-label="Search a nickname" autocapitalize="none"><button class="btn btn--green" type="submit">Search</button></form>
-${rows.length ? `${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
+${podium ? `<div class="podium">${pod(b, 'c-sky', 2)}${pod(a, 'c-sunny', 1)}${pod(c, 'c-pink', 3)}</div>` : ''}
+${rows.length ? `
 <div class="list toplist">${(podium ? rows.slice(3) : rows).map(row).join('')}</div>
 ${pager(qs, page, hasNext)}` : `<div class="empty">${term ? 'No winner with that nickname here.' : `Nobody don win prize money ${label} yet. ${user ? '<a href="/pools">Go win!</a>' : '<a href="/signup">Join and win!</a>'}`}</div>`}
 <div class="actions"><a class="btn btn--white btn--sm" href="/top">Top tappers</a><a class="btn btn--ghost btn--sm" href="/players">Find a player</a></div>`;
@@ -338,7 +342,7 @@ export function profilePage(ctx) {
   const { user, p, own, won, prizes, badges, rank, origin, theme, bgCss } = ctx;
   const hidden = false;   // winnings and badges are public for every player
   const url = `${origin}/u/${p.username}`;
-  const joined = lagosDate(p.created_at.includes('T') ? p.created_at : p.created_at.replace(' ', 'T') + 'Z');
+  const joined = lagosDate(sinceLaunch(p.created_at));   // everybody's start is 17 Oct 2026 (launch day) at the earliest
   const badgeTotal = Number(ctx.badgeTotal ?? badges.length);
   const badgeData = b => b.kind.startsWith('X:') ? { color: /^#[0-9a-fA-F]{6}$/.test(b.scolor || '') ? b.scolor : '#9161FF', text: (b.slabel || b.sname || '★').slice(0, 3), label: b.sname || 'Special badge' }
     : { svg: badgeSvg(b.kind, { size: 100 }), label: b.kind.startsWith('WIN_') ? `Top winner · ${b.kind.slice(4).toLowerCase()}` : b.kind === 'ALL' ? 'G.O.A.T' : `Tapper of the ${b.kind.toLowerCase()}` };
@@ -434,12 +438,11 @@ const AD_STATUS = { PENDING: ['Waiting for Tap Am', 'badge'], LIVE: ['Live on th
 export function advertisePage(ctx) {
   const { user, wallet, mine, prices, theme, bgCss } = ctx;
   const P = [['DAY', 'day'], ['WEEK', 'week'], ['MONTH', 'month'], ['YEAR', 'year']];
-  const body = `<h1 class="h1">Advertise with us</h1><p class="sub">Put your brand, music, business or event on the home page every Tap Am player sees. Send us your YouTube video or picture, and we’ll set it up.</p>
+  const body = `<h1 class="h1">Advertise with us</h1><p class="sub">Put your brand, music, business or event on the home page every Tap Am player sees. Upload your picture, tell us what you want, and we’ll set it up.</p>
 <div class="grid g2 g4" style="margin-bottom:14px">${P.map(([k, l], i) => `<div class="tcard card ${['c-sky', 'c-green', 'c-orange', 'c-pink'][i]}" style="padding:12px 14px"><div class="stat"><span class="k">Per ${l}</span><span class="v" style="font-size:22px">${esc(naira(prices[k]))}</span></div></div>`).join('')}</div>
 <div class="panel">${form('/api/ad-requests', `
   ${field({ label: 'Title', name: 'title', placeholder: 'Chop Life Drinks — cold one dey', attrs: 'maxlength="60" required autocomplete="off"' })}
-  ${field({ label: 'YouTube link', name: 'youtube_url', type: 'url', placeholder: 'https://youtu.be/…', attrs: 'inputmode="url" autocomplete="off"', hint: 'Your video. Or use a picture link below (or both).' })}
-  ${field({ label: 'Picture link (optional)', name: 'image_url', type: 'url', placeholder: 'https://drive.google.com/…', attrs: 'inputmode="url" autocomplete="off"', hint: 'A link to your picture on Google Drive, Docs, Dropbox… Wide pictures look best (about 1600×700).' })}
+  ${upload({ label: 'Your ad picture (wide pictures look best, about 1600×700)', name: 'ad_image' })}
   ${field({ label: 'Where people go when they tap it (optional)', name: 'target_url', type: 'url', placeholder: 'https://yourbrand.com', attrs: 'inputmode="url" autocomplete="off"' })}
   <div class="ta-field"><label class="ta-label" for="f-details">What you want <small>(optional)</small></label><textarea class="ta-input" id="f-details" name="details" maxlength="600" rows="3" placeholder="Words on the ad, colours, the dates you want…"></textarea><p class="ta-error" data-err="details"></p></div>
   <div class="two">${select({ label: 'Pay per', name: 'period', options: P.map(([k, l]) => [k, l[0].toUpperCase() + l.slice(1)]), value: 'WEEK' })}${field({ label: 'How many', name: 'units', type: 'number', value: '1', attrs: 'min="1" max="30" inputmode="numeric"' })}</div>

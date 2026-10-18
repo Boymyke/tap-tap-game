@@ -1,7 +1,7 @@
 // Super admin announcements: every chosen player gets a notification; optionally a pop-up (shown once on
 // app pages, never on the game screen) and an email from no-reply@tapammm.live sent by the cron in batches.
 import { json, uid, nowIso } from '../lib.js';
-import { settings, clampInt, tierOf, parseJson } from '../core.js';
+import { settings, clampInt, tierOf, parseJson, marketingEmailOn } from '../core.js';
 import { sendMail, announcementEmail, giftEmail } from '../email.js';
 import { topGamesMessage, unsubUrl } from './gamemail.js';
 import { unsubToken } from './blasts.js';
@@ -28,6 +28,7 @@ export async function createAnnouncement(env, admin, d) {
   const audience = AUD[d.audience] ? d.audience : 'ALL';
   const overlay = d.overlay === true ? 1 : 0;
   const email = ['NEWS', 'SERVICE'].includes(d.email) ? d.email : 'NO';
+  if (email === 'NEWS' && !marketingEmailOn(await settings(env))) return json({ error: 'News emails are off: ZeptoMail is for account emails only. Send it as a notification and pop-up, or connect a marketing email service first.', field: 'email' }, 400);
   const days = clampInt(d.days, 1, 30, 3);
   const id = uid(), now = nowIso();
   await env.DB.prepare('INSERT INTO announcements(id,title,body,link,audience,overlay,email,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
@@ -55,9 +56,13 @@ export async function pendingOverlay(env, user) {
 export async function processEmailJobs(env, origin) {
   const jobs = (await env.DB.prepare("SELECT j.*, a.title, a.body, a.link FROM email_jobs j LEFT JOIN announcements a ON a.id=j.ref_id WHERE j.status IN ('QUEUED','SENDING') ORDER BY j.created_at LIMIT 3").all()).results;
   const now = nowIso();
+  const marketing = marketingEmailOn(await settings(env));
   for (const j of jobs) {
     const payload = parseJson(j.payload, null);
     let users;
+    if (!marketing && (j.kind === 'TOPGAMES' || (j.kind === 'ANNOUNCE' && !j.service))) {   // marketing email is off: drop it
+      await env.DB.prepare("UPDATE email_jobs SET status='SKIPPED', done_at=? WHERE id=?").bind(now, j.id).run(); continue;
+    }
     if (j.kind === 'GIFT' && !payload?.ids) {   // a whole tier (or every player)
       users = (await env.DB.prepare(`SELECT id, email FROM users WHERE status='ACTIVE' AND email IS NOT NULL AND ${audWhere(j.audience)} AND id>? ORDER BY id LIMIT ${BATCH}`)
         .bind(...audBinds(j.audience, now), j.cursor || '').all()).results;
@@ -96,6 +101,7 @@ export async function processEmailJobs(env, origin) {
 
 // Super admin: email any open pool (a sponsor's or Tap Am's) to players who said yes to pool news. Free.
 export async function emailPool(env, admin, d) {
+  if (!marketingEmailOn(await settings(env))) return json({ error: 'Pool news emails are off: ZeptoMail is for account emails only. Connect a marketing email service first.' }, 400);
   const pool = await env.DB.prepare("SELECT id, sponsor_user_id, name FROM pools WHERE id=? AND status NOT IN ('CANCELLED') AND settled_at IS NULL").bind(String(d.pool || '')).first();
   if (!pool) return json({ error: 'Pick a pool that is still open.', field: 'pool' }, 400);
   const aud = ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(d.audience) ? d.audience : 'ALL';

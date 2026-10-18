@@ -22,7 +22,7 @@ import { handleSponsorApi, serveMedia, promoClick } from './api/sponsor.js';
 import { handleVoiceApi } from './api/voice.js';
 import { json, html, uid, nowIso, sessionCookie, hashPassword, currentUser, createSession, destroySession, readJson, allow, clientIp, safeEqual, sameOrigin, sha256Hex, likeEsc, logError, memo } from './lib.js';
 import { PATTERNS } from './ui/patterns.js';
-import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay, naira } from './core.js';
+import { isAdmin, tierLabel, tierOf, getWallet, settings, num, parseJson, itemLock, ensureWallet, randomCode, periodKeys, bump, metricStmt, lagosDay, naira, marketingEmailOn } from './core.js';
 import { perks, PLANS, themeFor, soundFor, backgroundCss } from './tiers.js';
 import { allRanks, rankInfo } from './game/ranks.js';
 import { listStmt, getPool, poolPublic, roomCall, joinBlock, expireWaiting, closeVotes, voteCounts } from './game/pools.js';
@@ -432,7 +432,7 @@ async function route(req, env, url, path, user) {
       if (user.role === 'USER' && !b.perk?.create) return go(req, '/plans');
       const ads = user.role === 'SPONSOR' || user.role === 'ADMIN' ? (await env.DB.prepare(user.role === 'ADMIN' ? "SELECT a.id,a.title,a.approved,a.active,CASE WHEN u.role='ADMIN' THEN 'Tap Am' ELSE COALESCE(sp.company,u.username) END AS owner FROM promos a LEFT JOIN users u ON u.id=a.owner_id LEFT JOIN sponsor_profiles sp ON sp.user_id=a.owner_id WHERE a.approved=1 AND a.active=1 ORDER BY a.created_at DESC LIMIT 100" : 'SELECT id,title,approved,active FROM promos WHERE owner_id=? ORDER BY created_at DESC').bind(...(user.role === 'ADMIN' ? [] : [user.id])).all()).results : [];
       let blast = null, lapoLeft = null;
-      if (user.role === 'SPONSOR') {   // price + how many players would get the email, per tier
+      if (user.role === 'SPONSOR' && marketingEmailOn(b.s)) {   // price + how many players would get the email, per tier (marketing email must be on)
         const now = nowIso();
         const c = await env.DB.prepare(`SELECT COUNT(*) a, SUM(CASE WHEN tier='LAPO' OR tier_until<=? THEN 1 ELSE 0 END) l, SUM(CASE WHEN tier='MAPO' AND (tier_until IS NULL OR tier_until>?) THEN 1 ELSE 0 END) m, SUM(CASE WHEN tier='NEPO' AND (tier_until IS NULL OR tier_until>?) THEN 1 ELSE 0 END) n FROM users WHERE role='USER' AND status='ACTIVE' AND email_news=1`).bind(now, now, now).first();
         blast = { price: num(b.s, 'email_blast_kobo', 2500000), counts: { ALL: Number(c?.a || 0), LAPO: Number(c?.l || 0), MAPO: Number(c?.m || 0), NEPO: Number(c?.n || 0) } };
@@ -760,7 +760,7 @@ async function adminRoute(req, env, url, path, user) {
       env.DB.prepare("SELECT id,name,sponsor_name FROM pools WHERE settled_at IS NULL AND status!='CANCELLED' AND ends_at>? AND is_private=0 ORDER BY starts_at LIMIT 100").bind(nowIso()),
       env.DB.prepare(`SELECT 'Announcement: ' || a.title AS what, j.status, j.sent, j.created_at FROM email_jobs j JOIN announcements a ON a.id=j.ref_id
         UNION ALL SELECT 'Pool: ' || p.name, b.status, b.sent, b.created_at FROM email_blasts b JOIN pools p ON p.id=b.pool_id ORDER BY 4 DESC LIMIT 15`)]);
-    return html(adminMessages({ ...b, recent: recent.results, pools: pools.results, jobs: jobs.results, emailOn: emailConfigured(env) }));
+    return html(adminMessages({ ...b, recent: recent.results, pools: pools.results, jobs: jobs.results, emailOn: emailConfigured(env), marketingOn: marketingEmailOn(await settings(env)) }));
   }
   if (path === '/admin/health') {
     const { checks, dbBytes } = await runChecks(env);
