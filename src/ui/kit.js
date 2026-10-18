@@ -143,7 +143,7 @@ html,body{min-height:100%}
 .pc .prize small{display:block;font:700 12px var(--body);opacity:.9;margin-bottom:3px}
 .pc .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;gap:8px;flex-wrap:wrap}
 .pc .art{position:absolute;right:-18px;top:-18px;width:86px;opacity:.95;pointer-events:none}
-.vsrow{display:flex;align-items:center;gap:10px}.vsrow .code{flex:1 1 0;min-width:0;font-size:clamp(17px,4.8vw,26px);line-height:1.05;overflow-wrap:break-word}.vsrow .code:last-child{text-align:right}.vsrow .vs{flex:none;min-width:40px;height:32px;font-size:16px}
+.vsrow{display:flex;align-items:center;gap:10px}.vsrow .code{flex:0 1 auto;min-width:0;max-width:42%;font-size:clamp(17px,4.8vw,26px);line-height:1.05;overflow-wrap:break-word}.vsrow .vs{flex:none;min-width:40px;height:32px;font-size:16px}
 /* forms */
 .form{display:grid;gap:15px}
 .form .ta-field{margin:0}
@@ -235,7 +235,8 @@ export const nameTag = (name, emoji, meaning = null) => `${esc(name)}${emoji ? (
   : ` <span class="nemoji" aria-hidden="true">${esc(emoji)}</span>`) : ''}`;
 // Live countdown pill: "Starts in 2h 03m 10s" / "Ends in 14m 09s" (updated by app.js).
 // VS side names show in full; long names get a smaller size so whole words fit on the card.
-const vsSize = n => { const w = Math.max(...String(n).split(/\s+/).map(x => x.length)), l = String(n).length; return Math.round(Math.max(13, Math.min(26, 120 / (w * 0.75), l > 14 ? 20 : 26))) + 'px'; };
+// Long names sit on two lines with the box hugging the words, so both names stay close to the VS badge.
+const vsSize = n => { const w = Math.max(...String(n).split(/\s+/).map(x => x.length)), l = String(n).length; return `font-size:${Math.round(Math.max(13, Math.min(26, 120 / (w * 0.75), l > 14 ? 20 : 26)))}px${l > 12 && /\s/.test(String(n).trim()) ? ';width:min-content' : ''}`; };
 export const whenPill = p => p.state === 'paused' ? `<span class="when ended">${p.voteUntil ? 'Paused · vote open' : 'Paused · scores saved'}</span>` : p.state === 'waiting'
   ? `<span class="when waiting" data-waiting>${short(p.players || 0)}/${short(p.needed || p.maxPlayers)} joined · starts at ${short(p.needed || p.maxPlayers)}</span>`
   : p.state === 'ended' || p.state === 'cancelled'
@@ -248,7 +249,7 @@ const LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke
 export function poolCard(p, i = 0) {
   const color = p.kind === 'SPONSORED' ? 'c-orange' : p.kind === 'PAID' ? 'c-pink' : COLORS[i % COLORS.length];
   const head = p.gameType === 'MATCH' && p.sideA
-    ? `<div class="vsrow"><span class="code" style="font-size:${vsSize(p.sideA)}" title="${esc(p.sideA)}">${esc(p.sideA)}</span><span class="vs">VS</span><span class="code" style="font-size:${vsSize(p.sideB)}" title="${esc(p.sideB)}">${esc(p.sideB)}</span></div><div class="t" style="font-size:17px">${esc(p.name)}</div>`
+    ? `<div class="vsrow"><span class="code" style="${vsSize(p.sideA)}" title="${esc(p.sideA)}">${esc(p.sideA)}</span><span class="vs">VS</span><span class="code" style="${vsSize(p.sideB)}" title="${esc(p.sideB)}">${esc(p.sideB)}</span></div><div class="t" style="font-size:17px">${esc(p.name)}</div>`
     : `<div class="t">${esc(p.name)}</div>`;
   const tags = [p.instant ? '<span class="badge instant">⚡ Instant</span>' : '', p.kind === 'SPONSORED' ? `<span class="badge sponsor">${esc(p.sponsor || 'Sponsored')}</span>` : p.kind === 'PAID' ? '<span class="badge paid">Paid</span>' : '<span class="badge">Free</span>',
     p.audience !== 'ALL' ? `<span class="badge ${p.audience === 'NEPO' ? 'nepo' : p.audience === 'MAPO' ? 'mapo' : 'lapo'}">${{ NEPO: 'Nepo only', MAPO: 'Mapo + Nepo', LAPO: 'Lapo match' }[p.audience]}</span>` : '',
