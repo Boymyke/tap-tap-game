@@ -2,7 +2,7 @@
 // pool news (users.email_news = 1), filtered by tier. The cron sends up to 150 per run per blast.
 // Every email carries a one-click "stop these emails" link signed for that player.
 import { nowIso, sha256Hex, safeEqual, appSecret } from '../lib.js';
-import { naira } from '../core.js';
+import { naira, settings, marketingEmailOn } from '../core.js';
 import { sendMail, poolNewsEmail } from '../email.js';
 
 const BATCH = 150;
@@ -10,6 +10,7 @@ export const unsubToken = async (env, userId) => (await sha256Hex(`${await appSe
 export const unsubOk = async (env, userId, token) => /^[0-9a-f]{32}$/.test(String(token || '')) && safeEqual(await unsubToken(env, userId), String(token));
 
 export async function processEmailBlasts(env, origin) {
+  if (!marketingEmailOn(await settings(env))) return 0;   // marketing email is off (ZeptoMail is transactional only)
   const blasts = (await env.DB.prepare("SELECT b.*, p.name, p.prize_kobo, p.ends_at, COALESCE(sp.company, u.username) AS sponsor FROM email_blasts b JOIN pools p ON p.id=b.pool_id LEFT JOIN sponsor_profiles sp ON sp.user_id=b.sponsor_id LEFT JOIN users u ON u.id=b.sponsor_id WHERE b.status IN ('QUEUED','SENDING') ORDER BY b.created_at LIMIT 3").all()).results;
   const now = nowIso();
   for (const b of blasts) {

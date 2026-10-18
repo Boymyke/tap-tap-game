@@ -38,7 +38,7 @@ const admin = new Client('admin');
 let r = await admin.post('/api/setup-admin', { setupKey: SETUP, username: ADMIN_ID, email: `${ADMIN_ID}@example.com`, password: ADMIN_PW });
 if (r.status === 409) r = await admin.post('/api/admin/login', { identifier: ADMIN_ID, password: ADMIN_PW });
 ok(admin.cookie, 'admin session', r.j);
-await admin.post('/api/admin/settings', { stakes_on: false, signups_paused: false, lapo_pools_per_day: 3 });
+await admin.post('/api/admin/settings', { stakes_on: false, signups_paused: false, lapo_pools_per_day: 3, marketing_emails: true });
 
 
 console.log('Sign-up with an email code');

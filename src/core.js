@@ -117,6 +117,9 @@ export async function notify(env, userId, text, link = null) {
 export async function audit(env, adminId, action, detail) {
   await env.DB.prepare('INSERT INTO audit_logs(id,admin_user_id,action,detail) VALUES(?,?,?,?)').bind(uid(), adminId, action, typeof detail === 'string' ? detail : JSON.stringify(detail)).run();
 }
+// Marketing emails (pool news, sponsor email blasts, the daily top games, news announcements). ZeptoMail only allows
+// transactional email, so these stay off until the super admin connects a marketing email service and switches them on.
+export const marketingEmailOn = s => s?.marketing_emails === '1';
 export const lagosDay = (d = new Date()) => new Date(d.getTime() + 3600000).toISOString().slice(0, 10);   // Africa/Lagos = UTC+1, no DST
 export const metricStmt = (env, key, n = 1, day = lagosDay()) => env.DB.prepare('INSERT INTO metrics(key,day,n) VALUES(?,?,?) ON CONFLICT(key,day) DO UPDATE SET n=n+excluded.n').bind(key, day, n);
 export const bump = (env, key, n = 1) => metricStmt(env, key, n).run().catch(() => {});

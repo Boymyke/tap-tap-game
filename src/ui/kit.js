@@ -3,6 +3,9 @@ import { themeShell, esc, ICONS, menuSheet, LOGO_IMG } from './theme.js';
 import { short } from '../tiers.js';
 
 export { esc, short };
+// Tap Am launched on 17 Oct 2026 (Lagos): accounts made before then show the launch day as their start.
+export const LAUNCH_ISO = '2026-10-16T23:00:00.000Z';
+export const sinceLaunch = iso => { const t = String(iso || '').includes('T') ? String(iso) : String(iso || '').replace(' ', 'T') + 'Z'; return !Date.parse(t) || t < LAUNCH_ISO ? LAUNCH_ISO : t; };
 // 1,234 → 1.2K, 3,400,000 → 3.4M (online and visit counters)
 export const compact = n => { n = Number(n || 0); try { return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(n); } catch { return String(n); } };
 export const naira = k => '₦' + (Number(k || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });

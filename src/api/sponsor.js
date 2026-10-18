@@ -11,6 +11,7 @@ const TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', '
 const MAX_UPLOAD = 3 * 1024 * 1024;   // super admin, R2
 const DB_MAX = 900 * 1024;            // super admin, stored in the database (no R2)
 const LOGO_MAX = 200 * 1024;          // sponsor logos
+const AD_MAX = 900 * 1024;            // home page ad pictures (the browser shrinks them to 1600 px first)
 
 function sniff(bytes) {
   const b = bytes;
@@ -26,17 +27,19 @@ export async function handleSponsorApi(req, env, path, user) {
   // The browser shrinks pictures before upload. Stored in R2 when it is switched on, otherwise in the database
   // (small files only). Every account has a storage cap, and a sponsor keeps one logo (old ones are removed).
   if (path === '/api/upload' && req.method === 'POST') {
-    const deny = requireRole(user, ['SPONSOR', 'ADMIN']); if (deny) return deny;
+    const deny = requireRole(user, ['SPONSOR', 'ADMIN', 'USER']); if (deny) return deny;
     if (!await allow(env, 'upload:' + user.id, user.role === 'ADMIN' ? 60 : 10, 3600)) return json({ error: 'Too many uploads. Wait small.' }, 429);
     const origin = req.headers.get('origin');
     if (origin && new URL(origin).host !== new URL(req.url).host) return json({ error: 'Request blocked.' }, 403);
     const form = await req.formData().catch(() => null);
     const file = form?.get('file');
     const purpose = String(form?.get('purpose') || '');
-    if (user.role === 'SPONSOR' && purpose !== 'logo_url') return json({ error: 'Sponsors can upload their logo only. Ads use YouTube videos.' }, 403);
+    // sponsors: their logo or a home page ad picture; players: a home page ad picture only
+    if (user.role === 'SPONSOR' && !['logo_url', 'ad_image'].includes(purpose)) return json({ error: 'Sponsors can upload their logo or a home page ad picture only. Pool ads use YouTube videos.' }, 403);
+    if (user.role === 'USER' && purpose !== 'ad_image') return json({ error: 'Players can upload a picture for a home page ad only.' }, 403);
     if (!file || typeof file === 'string') return json({ error: 'Pick an image.' }, 400);
-    const max = user.role === 'ADMIN' ? (env.MEDIA ? MAX_UPLOAD : DB_MAX) : LOGO_MAX;
-    if (file.size > max) return json({ error: `Image too big (${Math.round(max / 1024)} KB max${user.role === 'SPONSOR' ? ' for a logo' : ''}).` }, 413);
+    const max = user.role === 'ADMIN' ? (env.MEDIA ? MAX_UPLOAD : DB_MAX) : purpose === 'ad_image' ? AD_MAX : LOGO_MAX;
+    if (file.size > max) return json({ error: `Image too big (${Math.round(max / 1024)} KB max${purpose === 'logo_url' ? ' for a logo' : ''}).` }, 413);
     const used = Number((await env.DB.prepare('SELECT COALESCE(SUM(size),0) n FROM media WHERE owner_id=?').bind(user.id).first())?.n || 0);
     if (used + file.size > (user.role === 'ADMIN' ? 200 : 2) * 1024 * 1024) return json({ error: 'Your picture storage is full. Remove old pictures first.' }, 413);
     const buf = new Uint8Array(await file.arrayBuffer());

@@ -2,7 +2,7 @@
 // lobby, and the daily top-games email for Mapo and Nepo babies. Every list is capped so one pool can't burn
 // the day's email allowance, and each email is claimed in the database before it is sent (never sent twice).
 import { nowIso, uid } from '../lib.js';
-import { naira, settings, lagosDay } from '../core.js';
+import { naira, settings, lagosDay, marketingEmailOn } from '../core.js';
 import { sendMail, inviteEmail, startingEmail, topGamesEmail } from '../email.js';
 import { unsubToken } from './blasts.js';
 import { holdIfShort, neededOf } from './pools.js';
@@ -68,7 +68,7 @@ export async function prestart(env, poolId, absent = []) {
 // yes to game emails. Queued as an email job so the cron sends it in batches.
 export async function queueTopGames(env) {
   const s = await settings(env);
-  if (s.top_games_email === '0') return null;
+  if (s.top_games_email === '0' || !marketingEmailOn(s)) return null;   // marketing: only with a marketing email service
   const day = lagosDay();
   if (new Date(Date.now() + 3600000).getUTCHours() < 12) return null;
   const now = nowIso();

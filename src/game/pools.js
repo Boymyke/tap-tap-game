@@ -3,7 +3,7 @@ import { uid, nowIso, json, allow, logError, likeEsc } from '../lib.js';
 import { isPattern } from '../ui/patterns.js';
 import { adLeadMs, runningAdminAd, NO_AD } from './ads.js';
 import { emailInvitees } from './gamemail.js';
-import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, giveItem, notify, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay } from '../core.js';
+import { isAdmin, isSponsor, tierOf, isNepo, isPaid, debit, credit, giveItem, notify, randomCode, poolPassword, clampInt, parseJson, naira, settings, num, toKobo, upgradeError, fundsError, adultError, lagosDay, marketingEmailOn } from '../core.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 export const MAX_WINNERS = 100;
@@ -199,7 +199,9 @@ export async function createPool(env, user, d) {
   if (mode === 'NOW' && adSecs) { start = now + (adSecs + 5) * 1000; end = start + dur * 1000; }
 
   // Sponsors: Tap Am emails the pool to players who said yes to pool news (paid from the wallet).
-  const blastAud = sponsor && ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(d.email_blast) ? d.email_blast : null;
+  // (marketing email: only when the super admin has switched it on)
+  if (sponsor && ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(d.email_blast) && !marketingEmailOn(s)) return json({ error: 'Emailing players about pools is not available right now.', field: 'email_blast' }, 400);
+  const blastAud = sponsor && marketingEmailOn(s) && ['ALL', 'LAPO', 'MAPO', 'NEPO'].includes(d.email_blast) ? d.email_blast : null;
   const blastPrice = blastAud ? num(s, 'email_blast_kobo', 2500000) : 0;
   const id = uid();
   if (blastAud && !await debit(env, user.id, blastPrice, { type: 'EMAIL_BLAST', reference: id, note: `Email: ${name}` }))
