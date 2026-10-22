@@ -55,6 +55,12 @@
   .nav a:hover{background:#111;color:#fff}
   .themebtn{cursor:pointer;font-size:12px;font-weight:700;padding:6px 10px;border:2px solid #111;background:#fff;color:#111}
   .themebtn:hover{background:#111;color:#fff}
+  .right{display:flex;align-items:center;gap:8px}
+  .livepill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;padding:6px 10px;border:2px solid #111;background:#fff;color:#111;letter-spacing:.04em;white-space:nowrap}
+  .livepill .dot{width:10px;height:10px;border-radius:50%;background:#1fc16b;border:1.5px solid #111;flex:0 0 auto;box-shadow:0 0 0 0 rgba(31,193,107,.7);animation:pulse 1.8s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,193,107,.65)}70%{box-shadow:0 0 0 7px rgba(31,193,107,0)}100%{box-shadow:0 0 0 0 rgba(31,193,107,0)}}
+  @media(prefers-reduced-motion:reduce){.livepill .dot{animation:none}}
+  @media(max-width:420px){.livepill .livetext{display:none}}
   @media(max-width:720px){.nav{display:none}}
 
   /* hero */
@@ -161,7 +167,10 @@
       <a href="#fix">Fix it</a>
       <a href="#sources">Sources</a>
     </nav>
-    <button class="themebtn" id="themebtn">◐ Theme</button>
+    <div class="right">
+      <div class="livepill" id="livepill" title="Site is live"><span class="dot" aria-hidden="true"></span><span class="livetext" id="livetext">LIVE</span></div>
+      <button class="themebtn" id="themebtn">◐ Theme</button>
+    </div>
   </div>
 </header>
 
@@ -295,6 +304,27 @@
     root.setAttribute('data-theme',next);
     try{localStorage.setItem('pew-theme',next);}catch(e){}
   });
+
+  // ---- live visits counter (progressive enhancement; never shows a fake number) ----
+  (function(){
+    var pill=document.getElementById('livepill'), txt=document.getElementById('livetext');
+    if(!pill||!txt) return;
+    // Abacus: free, no-signup, CORS-enabled hit counter. Counts page loads ("visits"),
+    // not unique visitors. Change the key below to a private random string to keep your
+    // count separate, or point ENDPOINT at your own Vercel function (see README) to own
+    // the data. If the request fails for any reason, the pill simply keeps reading "LIVE".
+    var ENDPOINT='https://abacus.jasoncameron.dev/hit/php-exposure-watch-ng/home';
+    if(!ENDPOINT) return;
+    fetch(ENDPOINT,{cache:'no-store'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        var n=(d&&typeof d.value==='number')?d.value:null;
+        if(n===null) return;
+        txt.textContent=n.toLocaleString()+' VISITS';
+        pill.title='Total page visits since launch (source: abacus.jasoncameron.dev)';
+      })
+      .catch(function(){/* leave the pill reading LIVE — no fabricated number */});
+  })();
 
   // ---- global PHP major-version share (REAL DATA, W3Techs 2026-10-22) ----
   // Global share of PHP websites by MAJOR version.

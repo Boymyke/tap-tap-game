@@ -4,7 +4,31 @@ A single-file, self-contained public-interest **awareness** dashboard about outd
 end-of-life PHP across the Nigerian web, with a **check-your-own-site** helper and real
 remediation guidance.
 
-Open `index.html` in any browser — no build step, no dependencies, no network calls on load.
+Open `index.html` in any browser — no build step, no dependencies.
+
+## Deploy to Vercel
+No build config needed — it's a static file.
+
+**Option A — dashboard (no merge required):**
+1. vercel.com → **Add New → Project** → import `Boymyke/tap-tap-game`.
+2. Under **Git Branch**, pick `claude/sweet-galileo-aok7g4` (or merge to `main` first).
+3. **Root Directory** → set to `php-exposure-watch`.
+4. Framework preset: **Other**. Leave build/output empty. **Deploy**.
+
+**Option B — CLI:** `cd php-exposure-watch && npx vercel --prod`
+
+## Visits counter
+The green **LIVE** pill in the header shows a pulsing dot always, and upgrades to a real
+visit count when it can reach a counter endpoint. It counts **page loads** ("visits"), not
+unique visitors, and if the request fails it silently stays as "LIVE" — it never shows a
+fabricated number.
+
+- **Default:** a free, no-signup, CORS-enabled hit counter (`abacus.jasoncameron.dev`).
+  The namespace is public, so change the key in `index.html` (`ENDPOINT=...`) to a private
+  random string if you want your count kept separate.
+- **Own the data instead:** point `ENDPOINT` at your own Vercel Serverless Function backed
+  by Vercel KV / Upstash Redis (a few lines: `INCR` a key, return `{"value": n}` with
+  `Access-Control-Allow-Origin`). Ask and I'll scaffold `api/count.js` + `vercel.json`.
 
 ## What it is
 - Plain-language explanation of why unsupported PHP = unpatched PHP.
