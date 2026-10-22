@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHP Exposure Watch — Nigeria</title>
+<meta name="description" content="A public-interest awareness dashboard about outdated, end-of-life PHP across the Nigerian web — with a self-check guide and real migration guidance. Awareness and remediation, not a target list.">
+<style>
+  :root{
+    --bg:#f4f1e8; --ink:#111111; --card:#ffffff;
+    --line:#111111;
+    --yellow:#ffd23f; --cyan:#4de2e0; --pink:#ff5dc8;
+    --lime:#b8f24d; --orange:#ff8a3d; --red:#ff4d4d; --blue:#5b8cff;
+    --muted:#5b5750;
+    --shadow:6px 6px 0 var(--line);
+    --shadow-sm:4px 4px 0 var(--line);
+    --radius:0px;
+  }
+  :root:not([data-theme="light"]){}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#17150f; --ink:#f4f1e8; --card:#221f18; --line:#f4f1e8;
+      --muted:#b3aca0;
+      --shadow:6px 6px 0 var(--line);
+      --shadow-sm:4px 4px 0 var(--line);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17150f; --ink:#f4f1e8; --card:#221f18; --line:#f4f1e8;
+    --muted:#b3aca0; --shadow:6px 6px 0 var(--line); --shadow-sm:4px 4px 0 var(--line);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"DM Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    font-feature-settings:"ss01";
+    line-height:1.5;
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+  h1,h2,h3{font-family:"Arial Black","Helvetica Neue",Arial,sans-serif;letter-spacing:-.02em;line-height:1.02;margin:0}
+  a{color:inherit}
+
+  /* top bar */
+  .topbar{
+    border-bottom:3px solid var(--line); background:var(--yellow); color:#111;
+    position:sticky; top:0; z-index:40;
+  }
+  .topbar .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;height:58px}
+  .brand{display:flex;align-items:center;gap:10px;font-family:"Arial Black",Arial,sans-serif;font-size:18px;letter-spacing:-.03em}
+  .logo{width:28px;height:28px;background:#111;color:var(--yellow);display:grid;place-items:center;border:2px solid #111;font-weight:900;transform:rotate(-4deg)}
+  .nav{display:flex;gap:6px;flex-wrap:wrap}
+  .nav a{text-decoration:none;font-size:13px;font-weight:700;padding:6px 10px;border:2px solid #111;background:#fff;color:#111}
+  .nav a:hover{background:#111;color:#fff}
+  .themebtn{cursor:pointer;font-size:12px;font-weight:700;padding:6px 10px;border:2px solid #111;background:#fff;color:#111}
+  .themebtn:hover{background:#111;color:#fff}
+  @media(max-width:720px){.nav{display:none}}
+
+  /* hero */
+  .hero{padding:48px 0 28px;border-bottom:3px solid var(--line)}
+  .tag{display:inline-block;background:var(--pink);color:#111;border:3px solid var(--line);padding:4px 12px;font-weight:800;font-size:12px;letter-spacing:.08em;transform:rotate(-1deg);box-shadow:var(--shadow-sm)}
+  .hero h1{font-size:clamp(38px,8vw,88px);margin:18px 0 10px;text-transform:uppercase}
+  .hero h1 .mark{background:var(--cyan);padding:0 8px;border:3px solid var(--line);box-shadow:var(--shadow);display:inline-block}
+  .hero p.lead{font-size:clamp(15px,2.4vw,19px);max-width:640px;color:var(--ink)}
+  .cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+  .btn{display:inline-block;text-decoration:none;font-weight:800;font-size:14px;padding:12px 18px;border:3px solid var(--line);box-shadow:var(--shadow-sm);background:var(--lime);color:#111;cursor:pointer}
+  .btn:hover{transform:translate(-2px,-2px);box-shadow:7px 7px 0 var(--line)}
+  .btn:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--line)}
+  .btn.alt{background:var(--card);color:var(--ink)}
+
+  /* disclaimer */
+  .disclaimer{background:var(--red);color:#111;border:3px solid var(--line);box-shadow:var(--shadow);padding:16px 18px;margin:26px 0;font-weight:700;font-size:14px}
+  .disclaimer b{text-transform:uppercase;letter-spacing:.04em}
+
+  section{padding:40px 0;border-bottom:3px solid var(--line)}
+  .kicker{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  h2{font-size:clamp(26px,5vw,44px);text-transform:uppercase;margin-top:6px}
+  .sub{color:var(--muted);max-width:680px;margin-top:10px;font-size:14px}
+
+  /* stat tiles */
+  .grid{display:grid;gap:16px}
+  .stats{grid-template-columns:repeat(4,1fr);margin-top:24px}
+  @media(max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:460px){.stats{grid-template-columns:1fr}}
+  .tile{background:var(--card);border:3px solid var(--line);box-shadow:var(--shadow);padding:18px}
+  .tile .num{font-family:"Arial Black",Arial,sans-serif;font-size:40px;line-height:1}
+  .tile .lbl{font-size:12px;font-weight:700;margin-top:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .tile.c1{background:var(--yellow);color:#111}.tile.c2{background:var(--cyan);color:#111}
+  .tile.c3{background:var(--pink);color:#111}.tile.c4{background:var(--lime);color:#111}
+  .sampletag{font-size:11px;font-weight:800;background:#111;color:#fff;padding:2px 6px;display:inline-block;margin-top:10px;letter-spacing:.05em}
+
+  /* chart */
+  .bars{margin-top:22px;display:flex;flex-direction:column;gap:12px}
+  .bar-row{display:grid;grid-template-columns:120px 1fr 54px;align-items:center;gap:12px}
+  .bar-row .name{font-weight:800;font-size:13px}
+  .bar-track{border:3px solid var(--line);background:var(--card);height:34px;position:relative;overflow:hidden}
+  .bar-fill{height:100%;border-right:3px solid var(--line);display:block}
+  .bar-row .pct{font-weight:800;font-size:13px;text-align:right}
+  @media(max-width:560px){.bar-row{grid-template-columns:84px 1fr 44px;gap:8px}.bar-row .name{font-size:11px}}
+
+  /* version table */
+  .vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+  @media(max-width:860px){.vgrid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:460px){.vgrid{grid-template-columns:1fr}}
+  .vcard{background:var(--card);border:3px solid var(--line);box-shadow:var(--shadow-sm);padding:14px}
+  .vcard .ver{font-family:"Arial Black",Arial,sans-serif;font-size:26px}
+  .pill{display:inline-block;font-size:11px;font-weight:800;padding:3px 8px;border:2px solid var(--line);margin-top:8px;text-transform:uppercase;letter-spacing:.04em}
+  .pill.eol{background:var(--red);color:#111}
+  .pill.sec{background:var(--orange);color:#111}
+  .pill.active{background:var(--lime);color:#111}
+  .vcard .note{font-size:12px;color:var(--muted);margin-top:8px}
+
+  /* checker */
+  .checker{background:var(--card);border:3px solid var(--line);box-shadow:var(--shadow);padding:22px;margin-top:22px}
+  .checker label{font-weight:800;font-size:13px;display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
+  .inrow{display:flex;gap:10px;flex-wrap:wrap}
+  .checker input{flex:1;min-width:220px;border:3px solid var(--line);padding:12px;font:inherit;font-weight:700;background:var(--bg);color:var(--ink)}
+  .checker input:focus{outline:none;box-shadow:var(--shadow-sm)}
+  .out{margin-top:18px;display:none}
+  .out.show{display:block}
+  .cmd{background:#111;color:#b8f24d;border:3px solid var(--line);padding:12px 14px;font-size:13px;overflow-x:auto;white-space:pre;margin:10px 0;position:relative}
+  .cmd .copy{position:absolute;top:8px;right:8px;background:var(--yellow);color:#111;border:2px solid var(--yellow);font-weight:800;font-size:11px;padding:3px 8px;cursor:pointer}
+  .linkrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .linkrow a{text-decoration:none;font-weight:800;font-size:13px;padding:8px 12px;border:3px solid var(--line);background:var(--cyan);color:#111;box-shadow:var(--shadow-sm)}
+  .linkrow a:hover{transform:translate(-2px,-2px)}
+
+  /* steps / remediation */
+  .steps{counter-reset:s;margin-top:22px;display:grid;gap:14px}
+  .step{display:grid;grid-template-columns:52px 1fr;gap:14px;align-items:start;background:var(--card);border:3px solid var(--line);box-shadow:var(--shadow-sm);padding:14px}
+  .step .n{counter-increment:s;width:40px;height:40px;background:var(--blue);color:#111;border:3px solid var(--line);display:grid;place-items:center;font-family:"Arial Black",Arial,sans-serif;font-size:18px}
+  .step .n::before{content:counter(s)}
+  .step h3{font-size:16px;font-family:"Arial Black",Arial,sans-serif;text-transform:uppercase}
+  .step p{margin:6px 0 0;font-size:13px;color:var(--ink)}
+  .step a{font-weight:800}
+
+  footer{padding:36px 0 60px;background:var(--bg)}
+  footer .box{background:var(--card);border:3px solid var(--line);box-shadow:var(--shadow);padding:20px;font-size:13px;color:var(--muted)}
+  footer b{color:var(--ink)}
+  .ethic{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+  @media(max-width:620px){.ethic{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="logo">P</span>PHP EXPOSURE WATCH</div>
+    <nav class="nav">
+      <a href="#why">Why</a>
+      <a href="#picture">Picture</a>
+      <a href="#versions">Versions</a>
+      <a href="#check">Check yours</a>
+      <a href="#fix">Fix it</a>
+    </nav>
+    <button class="themebtn" id="themebtn">◐ Theme</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="tag">PUBLIC-INTEREST · NIGERIA · AWARENESS TOOL</span>
+    <h1>Old PHP is a<br><span class="mark">quiet risk</span></h1>
+    <p class="lead">Across Nigeria's web — fintech, government, campuses, media, SMEs — a lot of sites still run PHP versions that stopped getting security fixes years ago. This is a plain-language awareness board and a <b>check-your-own-site</b> helper. It is not a list of other people's weak spots.</p>
+    <div class="cta-row">
+      <a class="btn" href="#check">Check my own site →</a>
+      <a class="btn alt" href="#versions">See which versions are dead</a>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="disclaimer">
+    <b>Read this first.</b> &nbsp;This site shows <u>illustrative sample figures</u> and <u>factual PHP support dates</u> to raise awareness. It does <b>not</b> publish a searchable list of named organisations and their live vulnerabilities — that would be a targeting aid, not a public good. A version banner can also be wrong (hidden headers, backported security patches). Only ever test infrastructure you own or are authorised to test.
+  </div>
+</div>
+
+<section id="why">
+  <div class="wrap">
+    <div class="kicker">The problem in one breath</div>
+    <h2>Unsupported = unpatched</h2>
+    <p class="sub">When a PHP branch reaches end-of-life, the PHP project stops shipping security fixes for it. New flaws found after that date simply stay open on those servers. The code still "works", so nobody notices — until someone else does.</p>
+    <div class="grid stats">
+      <div class="tile c1"><div class="num">~79%</div><div class="lbl">of the web runs on PHP (server-side)</div><span class="sampletag">PUBLIC ESTIMATE</span></div>
+      <div class="tile c2"><div class="num">6+ yrs</div><div class="lbl">since PHP 7.x lost all support</div><span class="sampletag">FACT · php.net</span></div>
+      <div class="tile c3"><div class="num">0</div><div class="lbl">security fixes shipped to EOL branches</div><span class="sampletag">FACT</span></div>
+      <div class="tile c4"><div class="num">~5 min</div><div class="lbl">to check your own site (see below)</div><span class="sampletag">GUIDE</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="picture">
+  <div class="wrap">
+    <div class="kicker">What the landscape looks like</div>
+    <h2>Illustrative version spread</h2>
+    <p class="sub">Numbers below are <b>sample / illustrative</b> — a realistic-looking shape to explain the idea, not a live measurement. Replace them with real aggregate data from a proper source (see "Fix it") before presenting this as fact. Nothing here names any organisation.</p>
+    <div class="bars" id="bars"><!-- filled by JS --></div>
+    <p class="sub" style="margin-top:18px">Read it as: the red/orange slices are branches that no longer receive security fixes. The goal of a dashboard like this is to make that red slice shrink over time.</p>
+  </div>
+</section>
+
+<section id="versions">
+  <div class="wrap">
+    <div class="kicker">The only list that matters</div>
+    <h2>Is your PHP branch alive?</h2>
+    <p class="sub">Support status as of <b>22 Oct 2026</b>. Always confirm against the official source: <a href="https://www.php.net/supported-versions.php" target="_blank" rel="noopener"><b>php.net/supported-versions</b></a> and <a href="https://endoflife.date/php" target="_blank" rel="noopener"><b>endoflife.date/php</b></a>.</p>
+    <div class="vgrid" id="vgrid"><!-- filled by JS --></div>
+  </div>
+</section>
+
+<section id="check">
+  <div class="wrap">
+    <div class="kicker">Self-service</div>
+    <h2>Check a site you own</h2>
+    <p class="sub">Type a domain you control. This page can't scan it for you (and shouldn't) — instead it builds copy-paste commands you run yourself, plus links to passive fingerprinting services. Everything runs on <b>your</b> machine against <b>your</b> site.</p>
+    <div class="checker">
+      <label for="dom">Your domain</label>
+      <div class="inrow">
+        <input id="dom" type="text" placeholder="example.com.ng" autocomplete="off" spellcheck="false">
+        <button class="btn" id="go">Build my checks →</button>
+      </div>
+      <div class="out" id="out">
+        <div class="cmd" id="c1"><button class="copy">COPY</button></div>
+        <div class="cmd" id="c2"><button class="copy">COPY</button></div>
+        <div class="cmd" id="c3"><button class="copy">COPY</button></div>
+        <div class="linkrow" id="links"></div>
+        <p class="sub" style="margin-top:14px">Tip: the cleanest answer is from inside your own server — run <code>php -v</code> on the box, or drop a one-line <code>&lt;?php echo PHP_VERSION;</code> script behind auth. Headers can be hidden or stale.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="fix">
+  <div class="wrap">
+    <div class="kicker">Remediation</div>
+    <h2>If you're on a dead branch</h2>
+    <div class="steps">
+      <div class="step"><span class="n"></span><div><h3>Confirm the real version</h3><p>Headers lie. Check <code>php -v</code> on the server, or your hosting panel. Many distros backport security patches onto an old version number — if you're on supported distro packages, you may be safer than the banner suggests.</p></div></div>
+      <div class="step"><span class="n"></span><div><h3>Plan the jump to a supported branch</h3><p>Target PHP 8.3+ (ideally the newest). Use the official <a href="https://www.php.net/manual/en/migration84.php" target="_blank" rel="noopener">migration guides</a> and tools like <a href="https://github.com/rectorphp/rector" target="_blank" rel="noopener">Rector</a> and <a href="https://phpstan.org/" target="_blank" rel="noopener">PHPStan</a> to find breaking changes before you flip the switch.</p></div></div>
+      <div class="step"><span class="n"></span><div><h3>Patch the stack around PHP too</h3><p>Update your framework (Laravel / CodeIgniter / WordPress + plugins) and web server. An outdated CMS plugin is as common an entry point as old PHP itself.</p></div></div>
+      <div class="step"><span class="n"></span><div><h3>Reduce what you advertise</h3><p>Set <code>expose_php = Off</code> in php.ini and strip the <code>X-Powered-By</code> header. This isn't a fix — it just stops handing attackers a free fingerprint while you migrate.</p></div></div>
+      <div class="step"><span class="n"></span><div><h3>Get real aggregate data (for this dashboard)</h3><p>To turn the sample charts above into facts, pull <b>aggregate counts</b> from passive sources — <a href="https://www.shodan.io/" target="_blank" rel="noopener">Shodan</a>, <a href="https://search.censys.io/" target="_blank" rel="noopener">Censys</a>, <a href="https://trends.builtwith.com/" target="_blank" rel="noopener">BuiltWith trends</a> — and publish the <i>percentages</i>, not a per-organisation index.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="box">
+      <b>About this project.</b> PHP Exposure Watch is a public-interest awareness and self-help tool aimed at Nigeria's digital economy. Its purpose is to help organisations patch their own systems, not to catalogue anyone's weaknesses.
+      <div class="ethic">
+        <div><b>What it is →</b> awareness, factual version-support dates, a self-check helper for sites you own, and remediation guidance.</div>
+        <div><b>What it is not →</b> a scanner, an exploit tool, or a searchable directory of named organisations and their live flaws.</div>
+      </div>
+      <p style="margin-top:16px">Sample statistics are clearly labelled and must be replaced with properly-sourced aggregate data before being cited. Support dates reflect the official PHP release calendar as of 22 Oct 2026 — verify at php.net. Only test infrastructure you own or are explicitly authorised to assess.</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- theme toggle (persisted best-effort) ----
+  var root=document.documentElement, tb=document.getElementById('themebtn');
+  function sysDark(){return window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;}
+  try{var saved=localStorage.getItem('pew-theme'); if(saved) root.setAttribute('data-theme',saved);}catch(e){}
+  tb.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    if(!cur) cur=sysDark()?'dark':'light';
+    var next=cur==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem('pew-theme',next);}catch(e){}
+  });
+
+  // ---- illustrative version spread (SAMPLE DATA) ----
+  var spread=[
+    {name:'PHP ≤7.4', pct:18, color:'var(--red)'},
+    {name:'PHP 8.0', pct:11, color:'var(--orange)'},
+    {name:'PHP 8.1', pct:16, color:'var(--orange)'},
+    {name:'PHP 8.2', pct:21, color:'var(--yellow)'},
+    {name:'PHP 8.3', pct:19, color:'var(--lime)'},
+    {name:'PHP 8.4+', pct:15, color:'var(--cyan)'}
+  ];
+  var max=Math.max.apply(null,spread.map(function(s){return s.pct;}));
+  var bars=document.getElementById('bars');
+  spread.forEach(function(s){
+    var row=document.createElement('div'); row.className='bar-row';
+    var w=Math.round((s.pct/max)*100);
+    row.innerHTML='<div class="name">'+s.name+'</div>'+
+      '<div class="bar-track"><span class="bar-fill" style="width:'+w+'%;background:'+s.color+'"></span></div>'+
+      '<div class="pct">'+s.pct+'%</div>';
+    bars.appendChild(row);
+  });
+
+  // ---- version lifecycle reference (FACTUAL, as of 2026-10-22) ----
+  var versions=[
+    {ver:'≤ 8.0', cls:'eol', pill:'END OF LIFE', note:'No security fixes. 8.0 ended 26 Nov 2023; everything older, long before.'},
+    {ver:'8.1', cls:'eol', pill:'END OF LIFE', note:'Security support ended 31 Dec 2025. Time to move.'},
+    {ver:'8.2', cls:'sec', pill:'SECURITY ONLY', note:'Security fixes only, ending 31 Dec 2026 — nearly out of runway.'},
+    {ver:'8.3', cls:'sec', pill:'SECURITY ONLY', note:'Security fixes until 31 Dec 2027. A safe near-term target.'},
+    {ver:'8.4', cls:'active', pill:'ACTIVE', note:'Actively supported; security fixes through ~end 2028.'},
+    {ver:'8.5', cls:'active', pill:'ACTIVE · NEWEST', note:'Current branch — the best place to land a migration.'}
+  ];
+  var vg=document.getElementById('vgrid');
+  versions.forEach(function(v){
+    var c=document.createElement('div'); c.className='vcard';
+    c.innerHTML='<div class="ver">'+v.ver+'</div><span class="pill '+v.cls+'">'+v.pill+'</span><div class="note">'+v.note+'</div>';
+    vg.appendChild(c);
+  });
+
+  // ---- self-check command builder ----
+  function clean(d){
+    d=(d||'').trim().toLowerCase();
+    d=d.replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/[^a-z0-9.\-]/g,'');
+    return d;
+  }
+  var out=document.getElementById('out');
+  function build(){
+    var d=clean(document.getElementById('dom').value);
+    if(!d){out.classList.remove('show');return;}
+    var set=function(id,txt){var el=document.getElementById(id);el.textContent=txt;var b=document.createElement('button');b.className='copy';b.textContent='COPY';el.appendChild(b);};
+    set('c1','# Look for the PHP version it advertises (if any)\ncurl -sI https://'+d+' | grep -i -E "x-powered-by|server"');
+    set('c2','# Same check, but follow redirects and show all headers\ncurl -sIL https://'+d+' | grep -i -E "php|powered|server"');
+    set('c3','# From inside the server you own, the honest answer:\nphp -v');
+    var links=document.getElementById('links');
+    links.innerHTML='';
+    [['BuiltWith','https://builtwith.com/?'+d],
+     ['Wappalyzer','https://www.wappalyzer.com/lookup/'+d],
+     ['WhatCMS','https://whatcms.org/?s='+d]].forEach(function(l){
+      var a=document.createElement('a');a.href=l[1];a.target='_blank';a.rel='noopener';a.textContent=l[0]+' →';links.appendChild(a);
+    });
+    out.classList.add('show');
+  }
+  document.getElementById('go').addEventListener('click',build);
+  document.getElementById('dom').addEventListener('keydown',function(e){if(e.key==='Enter')build();});
+
+  // ---- copy buttons (event delegation) ----
+  document.addEventListener('click',function(e){
+    if(!e.target.classList.contains('copy'))return;
+    var box=e.target.parentNode;
+    var text=box.textContent.replace(/COPY$/,'').trim();
+    var done=function(){var o=e.target.textContent;e.target.textContent='✓';setTimeout(function(){e.target.textContent=o;},1200);};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done).catch(done);}
+    else{try{var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();done();}catch(_){}}
+  });
+})();
+</script>
+</body>
+</html>
