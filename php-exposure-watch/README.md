@@ -20,10 +20,21 @@ Open `index.html` in any browser — no build step, no dependencies, no network 
   vulnerabilities. A per-organisation vulnerability index is a targeting aid, not a public
   good — so this tool stays on the awareness + self-help side of that line.
 
-## The statistics are samples
-The version-spread chart uses clearly-labelled **illustrative** figures. Replace them with
-properly-sourced **aggregate** percentages (Shodan / Censys / BuiltWith trends) before
-citing anything here as fact. Keep published data aggregate — never per-organisation.
+## Every figure is sourced and dated
+All quantitative claims are backed by primary sources and carry an inline citation plus a
+`Sources` section. Verified on **2026-10-22**:
+
+- **PHP usage + version split** — [W3Techs](https://w3techs.com/technologies/details/pl-php)
+  (global: PHP = 69.3% of sites with a known server-side language; of PHP sites, v8 65.3% /
+  v7 26.9% / v5 7.7% / v4 0.1%).
+- **Support / end-of-life dates** — [php.net/supported-versions](https://www.php.net/supported-versions.php)
+  and [php.net/eol](https://www.php.net/eol.php), cross-checked against
+  [endoflife.date/php](https://endoflife.date/php).
+
+The usage data is **global**, not a Nigeria-specific measurement, and is labelled as such on
+the page. W3Techs updates daily, so re-verify before citing. Any Nigeria-specific figure
+added later must be **aggregate percentages only** (never a per-organisation index) and must
+carry its own source and date.
 
 ## Ethics
 Only test infrastructure you own or are explicitly authorised to assess. Version banners can
